@@ -14,7 +14,8 @@ import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 @Composable
 fun HomeMenu(
     firstName: String,
-    onCloseDrawer: () -> Unit
+    onCloseDrawer: () -> Unit,
+    onSignOut: () -> Unit = {}
 ) {
     ModalDrawerSheet(
         modifier = Modifier.fillMaxHeight().width(300.dp),
@@ -55,20 +56,25 @@ fun HomeMenu(
             Spacer(modifier = Modifier.height(32.dp))
 
             // Menu Items
-            val menuItems = listOf("Settings", "Certificates", "Claims", "Balance")
+            val menuItems = listOf("Settings", "Certificates", "Claims", "Balance", "Sign Out")
             menuItems.forEach { item ->
                 NavigationDrawerItem(
                     label = { 
                         Text(
                             text = item, 
                             style = MaterialTheme.typography.bodyLarge,
-                            color = if (item == "Balance") MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface
+                            color = when (item) {
+                                "Balance" -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                "Sign Out" -> MaterialTheme.colorScheme.error
+                                else -> MaterialTheme.colorScheme.onSurface
+                            }
                         ) 
                     },
                     selected = false,
                     onClick = {
-                        if (item != "Balance") {
-                            onCloseDrawer()
+                        onCloseDrawer()
+                        if (item == "Sign Out") {
+                            onSignOut()
                         }
                     },
                     colors = NavigationDrawerItemDefaults.colors(

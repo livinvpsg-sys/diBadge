@@ -17,10 +17,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.fabxdi.dibadge.ui.auth.AuthScreen
 import com.fabxdi.dibadge.ui.calendar.CalendarScreen
 import com.fabxdi.dibadge.ui.home.HomeTab
 import com.fabxdi.dibadge.ui.home.MainDashboard
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import com.fabxdi.dibadge.viewmodel.AuthViewModel
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
 import java.time.LocalDate
 
@@ -39,54 +41,68 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             DiBadgeTheme {
-                val reminderViewModel: ReminderViewModel = viewModel()
-                val todayRemindersCount by reminderViewModel.todayRemindersCount.collectAsState()
+                val authViewModel: AuthViewModel = viewModel()
+                val currentUser by authViewModel.currentUser.collectAsState()
 
-                // State to manage the currently selected tab
-                var selectedTab by remember { mutableStateOf(HomeTab.Home) }
-                var initialReminderToEdit by rememberSaveable { mutableStateOf<Int?>(null) }
-                var initialDateForCalendar by remember { mutableStateOf<LocalDate?>(null) }
-
-                LaunchedEffect(reminderIdToOpen) {
-                    if (reminderIdToOpen != -1) {
-                        selectedTab = HomeTab.Calendar
-                        initialReminderToEdit = reminderIdToOpen
-                    }
-                }
-
-                if (selectedTab == HomeTab.Calendar) {
-                    CalendarScreen(
-                        onTabClick = { tab ->
-                            selectedTab = tab
-                        },
-                        onBackClick = {
-                            selectedTab = HomeTab.Home
-                        },
-                        viewModel = reminderViewModel,
-                        initialReminderId = initialReminderToEdit,
-                        onReminderOpened = { initialReminderToEdit = null },
-                        initialSelectedDate = initialDateForCalendar
-                    )
+                if (currentUser == null) {
+                    AuthScreen(viewModel = authViewModel)
                 } else {
-                    MainDashboard(
-                        selectedTab = selectedTab,
-                        onTabSelected = { tab ->
-                            selectedTab = tab
-                            if (tab != HomeTab.Calendar) {
+                    val user = currentUser
+                    val displayName = user?.displayName?.ifBlank { null }
+                        ?: user?.email?.substringBefore("@")
+                        ?: "User"
+
+                    val reminderViewModel: ReminderViewModel = viewModel()
+                    val todayRemindersCount by reminderViewModel.todayRemindersCount.collectAsState()
+
+                    // State to manage the currently selected tab
+                    var selectedTab by remember { mutableStateOf(HomeTab.Home) }
+                    var initialReminderToEdit by rememberSaveable { mutableStateOf<Int?>(null) }
+                    var initialDateForCalendar by remember { mutableStateOf<LocalDate?>(null) }
+
+                    LaunchedEffect(reminderIdToOpen) {
+                        if (reminderIdToOpen != -1) {
+                            selectedTab = HomeTab.Calendar
+                            initialReminderToEdit = reminderIdToOpen
+                        }
+                    }
+
+                    if (selectedTab == HomeTab.Calendar) {
+                        CalendarScreen(
+                            onTabClick = { tab ->
+                                selectedTab = tab
+                            },
+                            onBackClick = {
+                                selectedTab = HomeTab.Home
+                            },
+                            viewModel = reminderViewModel,
+                            initialReminderId = initialReminderToEdit,
+                            onReminderOpened = { initialReminderToEdit = null },
+                            initialSelectedDate = initialDateForCalendar
+                        )
+                    } else {
+                        MainDashboard(
+                            selectedTab = selectedTab,
+                            onTabSelected = { tab ->
+                                selectedTab = tab
+                                if (tab != HomeTab.Calendar) {
+                                    initialDateForCalendar = null
+                                }
+                            },
+                            onCalendarTabClick = {
+                                selectedTab = HomeTab.Calendar
                                 initialDateForCalendar = null
-                            }
-                        },
-                        onCalendarTabClick = {
-                            selectedTab = HomeTab.Calendar
-                            initialDateForCalendar = null
-                        },
-                        onReminderClick = {
-                            initialDateForCalendar = LocalDate.now()
-                            selectedTab = HomeTab.Calendar
-                        },
-                        reminderCount = todayRemindersCount,
-                        notificationCount = 0 // Placeholder
-                    )
+                            },
+                            onReminderClick = {
+                                initialDateForCalendar = LocalDate.now()
+                                selectedTab = HomeTab.Calendar
+                            },
+                            reminderCount = todayRemindersCount,
+                            notificationCount = 0,
+                            firstName = displayName,
+                            onSignOut = { authViewModel.signOut() }
+                        )
+                    }
                 }
             }
         }

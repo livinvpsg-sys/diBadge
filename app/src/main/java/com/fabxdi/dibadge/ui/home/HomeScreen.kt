@@ -59,6 +59,7 @@ fun MainDashboard(
     reminderCount: Int = 0,
     notificationCount: Int = 0,
     firstName: String = "User",
+    onSignOut: () -> Unit = {},
     viewModel: ReminderViewModel = viewModel()
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
@@ -149,7 +150,8 @@ fun MainDashboard(
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                     HomeMenu(
                         firstName = firstName,
-                        onCloseDrawer = { scope.launch { drawerState.close() } }
+                        onCloseDrawer = { scope.launch { drawerState.close() } },
+                        onSignOut = onSignOut
                     )
                 }
             }
