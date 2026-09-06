@@ -1,4 +1,4 @@
-package com.dibadge
+package com.fabxdi.dibadge
 
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -19,6 +19,6 @@ class ExampleInstrumentedTest {
     fun useAppContext() {
         // Context of the app under test.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("com.dibadge", appContext.packageName)
+        assertEquals("com.fabxdi.dibadge", appContext.packageName)
     }
 }

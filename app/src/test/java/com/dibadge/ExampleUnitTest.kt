@@ -1,4 +1,4 @@
-package com.dibadge
+package com.fabxdi.dibadge
 
 import org.junit.Test
 

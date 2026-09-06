@@ -11,7 +11,7 @@ import android.media.RingtoneManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.fabxdi.dibadge.MainActivity
-import com.dibadge.R
+import com.fabxdi.dibadge.R
 
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

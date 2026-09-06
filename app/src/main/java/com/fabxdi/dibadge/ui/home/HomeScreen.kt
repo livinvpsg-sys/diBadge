@@ -25,12 +25,13 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.dibadge.R
+import com.fabxdi.dibadge.R
 import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
 import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
 import com.fabxdi.dibadge.ui.calendar.reminder.ReminderFormScreen
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import com.fabxdi.dibadge.ui.theme.TealGreen
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
 import com.fabxdi.dibadge.data.HomeEntryEntity
 import kotlinx.coroutines.launch
@@ -201,11 +202,18 @@ fun MainDashboard(
                                         )
                                     },
                                     icon = {
+                                        val iconTint = if (tab == HomeTab.Home) {
+                                            if (selectedTab == tab) TealGreen else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        } else {
+                                            if (selectedTab == tab) Color.White else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        }
+
                                         if (tab == HomeTab.Calendar) {
                                             Box(contentAlignment = Alignment.Center) {
                                                 Icon(
                                                     imageVector = Icons.Default.CalendarToday,
-                                                    contentDescription = tab.label
+                                                    contentDescription = tab.label,
+                                                    tint = iconTint
                                                 )
                                                 Text(
                                                     text = LocalDate.now().dayOfMonth.toString(),
@@ -214,14 +222,15 @@ fun MainDashboard(
                                                         fontWeight = FontWeight.Bold,
                                                         lineHeight = 9.sp
                                                     ),
-                                                    color = if (selectedTab == tab) Color.White else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                                    color = iconTint,
                                                     modifier = Modifier.padding(top = 4.dp)
                                                 )
                                             }
                                         } else {
                                             Icon(
                                                 painter = painterResource(id = tab.iconRes),
-                                                contentDescription = tab.label
+                                                contentDescription = tab.label,
+                                                tint = iconTint
                                             )
                                         }
                                     }

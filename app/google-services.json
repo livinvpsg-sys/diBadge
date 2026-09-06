@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "390433769514",
+    "project_id": "dibadge-fabxdi",
+    "storage_bucket": "dibadge-fabxdi.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:390433769514:android:1e5b62dfc2766baa0b1b53",
+        "android_client_info": {
+          "package_name": "com.fabxdi.dibadge"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAgpnFVQuapi2cX7ob9yI58xBCer0c-myg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
