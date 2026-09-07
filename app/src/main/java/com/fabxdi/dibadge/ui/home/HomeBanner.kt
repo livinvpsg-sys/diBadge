@@ -103,7 +103,8 @@ fun HomeBanner(
                 ) {
                     Icon(
                         imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Menu"
+                        contentDescription = "Menu",
+                        tint = MaterialTheme.colorScheme.onBackground
                     )
                 }
             }

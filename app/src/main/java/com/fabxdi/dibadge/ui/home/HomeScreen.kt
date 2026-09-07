@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,7 +47,7 @@ enum class HomeTab(
     Home("Home", R.drawable.ic_home),
     Calendar("Calendar", R.drawable.ic_calendar),
     Presence("Presence", R.drawable.ic_presence),
-    Note("Notes", R.drawable.ic_note)
+    Note("Inbox", R.drawable.ic_note)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -59,6 +60,7 @@ fun MainDashboard(
     reminderCount: Int = 0,
     notificationCount: Int = 0,
     firstName: String = "User",
+    onSettingsClick: () -> Unit = {},
     onSignOut: () -> Unit = {},
     viewModel: ReminderViewModel = viewModel()
 ) {
@@ -151,6 +153,7 @@ fun MainDashboard(
                     HomeMenu(
                         firstName = firstName,
                         onCloseDrawer = { scope.launch { drawerState.close() } },
+                        onSettingsClick = onSettingsClick,
                         onSignOut = onSignOut
                     )
                 }
@@ -190,11 +193,11 @@ fun MainDashboard(
                                         }
                                     },
                                     colors = NavigationBarItemDefaults.colors(
-                                        selectedIconColor = Color.White,
-                                        selectedTextColor = Color.White,
+                                        selectedIconColor = MaterialTheme.colorScheme.onSurface,
+                                        selectedTextColor = MaterialTheme.colorScheme.onSurface,
                                         indicatorColor = Color.Transparent,
-                                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                        unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                     ),
                                     alwaysShowLabel = true,
                                     label = {
@@ -205,9 +208,9 @@ fun MainDashboard(
                                     },
                                     icon = {
                                         val iconTint = if (tab == HomeTab.Home) {
-                                            if (selectedTab == tab) TealGreen else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                            if (selectedTab == tab) TealGreen else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                         } else {
-                                            if (selectedTab == tab) Color.White else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                            if (selectedTab == tab) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                         }
 
                                         if (tab == HomeTab.Calendar) {
@@ -228,6 +231,12 @@ fun MainDashboard(
                                                     modifier = Modifier.padding(top = 4.dp)
                                                 )
                                             }
+                                        } else if (tab == HomeTab.Note) {
+                                            Icon(
+                                                imageVector = Icons.Default.Mail,
+                                                contentDescription = tab.label,
+                                                tint = iconTint
+                                            )
                                         } else {
                                             Icon(
                                                 painter = painterResource(id = tab.iconRes),

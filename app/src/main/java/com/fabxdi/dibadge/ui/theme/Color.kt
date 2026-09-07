@@ -12,11 +12,13 @@ val Pink40 = Color(0xFF7D5260)
 
 // DiBadge Colors
 val JetBlack      = Color(0xFF000000)
+val SlateCharcoal = Color(0xFF1C1C1E) // Premium soft slate charcoal for light mode text
 val SlateSurface  = Color(0xFF1E1E1E)
 val CoolAsh       = Color(0xFF6E6E6E)
 val MutedGray     = Color(0xFFB4B4B4)
 val SoftBorder    = Color(0xFFE0E0E0)
-val PaperWhite    = Color(0xFFF5F5F5)
+val SoftOffWhite  = Color(0xFFEBECEF) // Matching FAB light gray/off-white background
+val PaperWhite    = Color(0xFFF4F4F6)
 val AccentWhite   = Color(0xFFFFFFFF)
 
 // Status Colors

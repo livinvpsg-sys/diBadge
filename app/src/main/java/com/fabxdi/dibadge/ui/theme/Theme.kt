@@ -33,7 +33,12 @@ object DiBadgeTheme {
 
 @Composable
 fun DiBadgeTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    darkTheme: Boolean = when (themeMode) {
+        AppThemeMode.SYSTEM -> isSystemInDarkTheme()
+        AppThemeMode.LIGHT -> false
+        AppThemeMode.DARK -> true
+    },
     content: @Composable () -> Unit
 ) {
     val colorScheme = if (darkTheme) {
@@ -50,12 +55,13 @@ fun DiBadgeTheme(
         )
     } else {
         lightColorScheme(
-            primary = JetBlack,
+            primary = SlateCharcoal,
             onPrimary = AccentWhite,
-            background = PaperWhite,
-            onBackground = JetBlack,
+            background = SoftOffWhite,
+            onBackground = SlateCharcoal,
             surface = AccentWhite,
-            onSurface = JetBlack,
+            onSurface = SlateCharcoal,
+            surfaceVariant = PaperWhite,
             onSurfaceVariant = CoolAsh,
             outline = SoftBorder,
             error = ErrorRed

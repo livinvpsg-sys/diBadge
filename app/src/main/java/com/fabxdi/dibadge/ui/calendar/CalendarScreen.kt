@@ -21,11 +21,13 @@ import androidx.compose.ui.text.font.FontWeight
 import com.fabxdi.dibadge.ui.home.HomeTab
 import java.time.LocalDate
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Mail
 import com.fabxdi.dibadge.ui.calendar.reminder.ReminderFormScreen
 import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
 import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
 import com.fabxdi.dibadge.ui.calendar.logbook.LogbookScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import com.fabxdi.dibadge.ui.theme.TealGreen
 import androidx.compose.foundation.shape.CircleShape
 
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -371,11 +373,11 @@ fun CalendarScreen(
                                     }
                                 },
                                 colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = Color.White,
-                                    selectedTextColor = Color.White,
+                                    selectedIconColor = MaterialTheme.colorScheme.onSurface,
+                                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
                                     indicatorColor = Color.Transparent,
-                                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                 ),
                                 alwaysShowLabel = true,
                                 label = {
@@ -385,11 +387,18 @@ fun CalendarScreen(
                                     )
                                 },
                                 icon = {
+                                    val iconTint = if (tab == HomeTab.Home) {
+                                        if (isSelected) TealGreen else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    } else {
+                                        if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    }
+
                                     if (tab == HomeTab.Calendar) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Icon(
                                                 imageVector = Icons.Default.CalendarToday,
-                                                contentDescription = tab.label
+                                                contentDescription = tab.label,
+                                                tint = iconTint
                                             )
                                             Text(
                                                 text = LocalDate.now().dayOfMonth.toString(),
@@ -398,14 +407,21 @@ fun CalendarScreen(
                                                     fontWeight = FontWeight.Bold,
                                                     lineHeight = 9.sp
                                                 ),
-                                                color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                                color = iconTint,
                                                 modifier = Modifier.padding(top = 4.dp)
                                             )
                                         }
+                                    } else if (tab == HomeTab.Note) {
+                                        Icon(
+                                            imageVector = Icons.Default.Mail,
+                                            contentDescription = tab.label,
+                                            tint = iconTint
+                                        )
                                     } else {
                                         Icon(
                                             painter = painterResource(id = tab.iconRes),
-                                            contentDescription = tab.label
+                                            contentDescription = tab.label,
+                                            tint = iconTint
                                         )
                                     }
                                 }

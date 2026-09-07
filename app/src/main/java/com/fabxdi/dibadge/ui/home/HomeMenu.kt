@@ -15,6 +15,7 @@ import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 fun HomeMenu(
     firstName: String,
     onCloseDrawer: () -> Unit,
+    onSettingsClick: () -> Unit = {},
     onSignOut: () -> Unit = {}
 ) {
     ModalDrawerSheet(
@@ -73,8 +74,9 @@ fun HomeMenu(
                     selected = false,
                     onClick = {
                         onCloseDrawer()
-                        if (item == "Sign Out") {
-                            onSignOut()
+                        when (item) {
+                            "Settings" -> onSettingsClick()
+                            "Sign Out" -> onSignOut()
                         }
                     },
                     colors = NavigationDrawerItemDefaults.colors(

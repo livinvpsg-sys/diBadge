@@ -21,9 +21,11 @@ import com.fabxdi.dibadge.ui.auth.AuthScreen
 import com.fabxdi.dibadge.ui.calendar.CalendarScreen
 import com.fabxdi.dibadge.ui.home.HomeTab
 import com.fabxdi.dibadge.ui.home.MainDashboard
+import com.fabxdi.dibadge.ui.settings.SettingsDialog
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.AuthViewModel
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
+import com.fabxdi.dibadge.viewmodel.ThemeViewModel
 import java.time.LocalDate
 
 class MainActivity : ComponentActivity() {
@@ -40,9 +42,24 @@ class MainActivity : ComponentActivity() {
         val reminderIdToOpen = intent.getIntExtra("OPEN_REMINDER_ID", -1)
 
         setContent {
-            DiBadgeTheme {
+            val themeViewModel: ThemeViewModel = viewModel()
+            val themeMode by themeViewModel.themeMode.collectAsState()
+
+            DiBadgeTheme(themeMode = themeMode) {
                 val authViewModel: AuthViewModel = viewModel()
                 val currentUser by authViewModel.currentUser.collectAsState()
+
+                var showSettingsDialog by remember { mutableStateOf(false) }
+
+                if (showSettingsDialog) {
+                    SettingsDialog(
+                        currentThemeMode = themeMode,
+                        onThemeModeSelected = { mode ->
+                            themeViewModel.setThemeMode(mode)
+                        },
+                        onDismissRequest = { showSettingsDialog = false }
+                    )
+                }
 
                 if (currentUser == null) {
                     AuthScreen(viewModel = authViewModel)
@@ -100,6 +117,7 @@ class MainActivity : ComponentActivity() {
                             reminderCount = todayRemindersCount,
                             notificationCount = 0,
                             firstName = displayName,
+                            onSettingsClick = { showSettingsDialog = true },
                             onSignOut = { authViewModel.signOut() }
                         )
                     }
