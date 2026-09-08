@@ -533,10 +533,10 @@ fun ChatScreen(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color(0xFF1F2C34),
-                        titleContentColor = Color.White,
-                        navigationIconContentColor = Color.White,
-                        actionIconContentColor = Color.White
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                        actionIconContentColor = MaterialTheme.colorScheme.onSurface
                     )
                 )
             } else {
@@ -545,13 +545,14 @@ fun ChatScreen(
                         Column {
                             Text(
                                 text = entry.title, 
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Normal)
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Normal),
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             if (entry.subtitle.isNotBlank()) {
                                 Text(
                                     text = entry.subtitle,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.6f),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -564,7 +565,12 @@ fun ChatScreen(
                             modifier = Modifier.padding(start = 4.dp)
                         ) {
                             IconButton(onClick = onBack, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", modifier = Modifier.size(24.dp))
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowBack, 
+                                    contentDescription = "Back", 
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(24.dp)
+                                )
                             }
                             
                             Spacer(modifier = Modifier.width(8.dp))
@@ -588,14 +594,18 @@ fun ChatScreen(
                     },
                     actions = {
                         IconButton(onClick = {}, modifier = Modifier.size(40.dp)) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "More")
+                            Icon(
+                                Icons.Default.MoreVert, 
+                                contentDescription = "More",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Black,
-                        titleContentColor = Color.White,
-                        navigationIconContentColor = Color.White,
-                        actionIconContentColor = Color.White
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                        actionIconContentColor = MaterialTheme.colorScheme.onSurface
                     )
                 )
             }
@@ -916,7 +926,7 @@ fun ChatScreen(
                                 Icon(
                                     if (attachedFiles.isNotEmpty()) Icons.Default.Add else Icons.Default.AttachFile, 
                                     null, 
-                                    tint = if (attachedFiles.size < 101) Color.Gray else Color.DarkGray
+                                    tint = MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
@@ -947,11 +957,11 @@ fun ChatScreen(
                                         Text(
                                             text = if (isPaused) "Paused" else String.format(Locale.getDefault(), "%02d:%02d", recordingTime / 60, recordingTime % 60),
                                             style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                                            color = Color.White
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
                                         Spacer(modifier = Modifier.weight(1f))
                                         if (isLocked) {
-                                            IconButton(onClick = { if (isPaused) { recorder.resume(); isPaused = false } else { recorder.pause(); isPaused = true } }, modifier = Modifier.size(32.dp)) { Icon(if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause, null, tint = Color.White, modifier = Modifier.size(20.dp)) }
+                                            IconButton(onClick = { if (isPaused) { recorder.resume(); isPaused = false } else { recorder.pause(); isPaused = true } }, modifier = Modifier.size(32.dp)) { Icon(if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp)) }
                                             IconButton(onClick = { 
                                                 val finalDuration = recordingTime
                                                 recorder.stop()
@@ -962,18 +972,18 @@ fun ChatScreen(
                                                     pendingDurations = pendingDurations + (uri.toString() to finalDuration)
                                                 }
                                             }, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.Stop, null, tint = Color.Red, modifier = Modifier.size(20.dp)) }
-                                        } else { Text("Slide to lock", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), color = Color.Gray) }
-                                        IconButton(onClick = { recorder.stop(); audioFile?.delete(); isRecording = false; isLocked = false; isPaused = false }, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.Close, null, tint = Color.Gray, modifier = Modifier.size(20.dp)) }
+                                        } else { Text("Slide to lock", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                        IconButton(onClick = { recorder.stop(); audioFile?.delete(); isRecording = false; isLocked = false; isPaused = false }, modifier = Modifier.size(32.dp)) { Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
                                     }
                                 } else {
                                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 2.dp)) {
-                                        IconButton(onClick = { showEmojiPicker = !showEmojiPicker }, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.SentimentSatisfiedAlt, null, tint = Color(0xFF869694), modifier = Modifier.size(24.dp)) }
+                                        IconButton(onClick = { showEmojiPicker = !showEmojiPicker }, modifier = Modifier.size(36.dp)) { Icon(Icons.Default.SentimentSatisfiedAlt, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp)) }
                                         TextField(
                                             value = inputText,
                                             onValueChange = { inputText = it },
                                             modifier = Modifier.weight(1f),
-                                            placeholder = { Text("Message", color = Color(0xFF869694), fontSize = 16.sp) },
-                                            textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp, color = Color.White),
+                                            placeholder = { Text("Message", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), fontSize = 16.sp) },
+                                            textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface),
                                             colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent)
                                         )
                                         if (attachedFiles.isEmpty()) {
@@ -987,7 +997,7 @@ fun ChatScreen(
                                                 },
                                                 modifier = Modifier.size(36.dp),
                                                 enabled = attachedFiles.size < 101
-                                            ) { Icon(Icons.Default.CameraAlt, null, tint = if (attachedFiles.size < 101) Color(0xFF869694) else Color.DarkGray, modifier = Modifier.size(22.dp)) }
+                                            ) { Icon(Icons.Default.CameraAlt, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp)) }
                                         }
                                     }
                                 }
@@ -1036,7 +1046,8 @@ fun ChatScreen(
                                     }
                                 },
                             shape = CircleShape,
-                            color = if (showSend) MaterialTheme.colorScheme.primary else Color.Transparent,
+                            color = if (showSend) MaterialTheme.colorScheme.surface else Color.Transparent,
+                            shadowElevation = if (showSend) 2.dp else 0.dp,
                             onClick = {
                                 if (showSend) {
                                     if (editingMessage != null) {
@@ -1063,7 +1074,7 @@ fun ChatScreen(
                             }
                         ) {
                             Box(contentAlignment = Alignment.Center) {
-                                Icon(if (showSend) Icons.AutoMirrored.Filled.Send else Icons.Default.Mic, null, tint = if (showSend) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(24.dp))
+                                Icon(if (showSend) Icons.AutoMirrored.Filled.Send else Icons.Default.Mic, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(24.dp))
                             }
                         }
                     }

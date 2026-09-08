@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.fabxdi.dibadge.util.AudioPlayer
 import com.fabxdi.dibadge.util.UserColorUtils
+import com.fabxdi.dibadge.ui.theme.SlateCharcoal
 import com.fabxdi.dibadge.util.FilePickerUtils
 import java.time.format.DateTimeFormatter
 
@@ -176,8 +177,8 @@ fun MessageBubble(
                 if (isEmojiOnly) {
                     EmojiMessage(message.text, message.timestamp.format(timeFormatter).lowercase(), alignment)
                 } else {
-                    val bubbleColor = if (message.isSentByMe) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
-                    val contentColor = if (message.isSentByMe) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                    val bubbleColor = if (message.isSentByMe) Color.White else Color(0xFFE3E4E8)
+                    val contentColor = SlateCharcoal
                     
                     Surface(
                         color = bubbleColor,
