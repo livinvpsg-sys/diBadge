@@ -22,6 +22,7 @@ import com.fabxdi.dibadge.ui.home.HomeTab
 import java.time.LocalDate
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Mail
+import androidx.compose.material.icons.filled.People
 import com.fabxdi.dibadge.ui.calendar.reminder.ReminderFormScreen
 import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
 import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
@@ -376,21 +377,23 @@ fun CalendarScreen(
                                     selectedIconColor = MaterialTheme.colorScheme.onSurface,
                                     selectedTextColor = MaterialTheme.colorScheme.onSurface,
                                     indicatorColor = Color.Transparent,
-                                    unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                    unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                                    unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
                                 ),
                                 alwaysShowLabel = true,
                                 label = {
                                     Text(
                                         text = tab.label,
-                                        style = MaterialTheme.typography.labelMedium
+                                        style = MaterialTheme.typography.labelMedium.copy(
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
                                     )
                                 },
                                 icon = {
                                     val iconTint = if (tab == HomeTab.Home) {
-                                        if (isSelected) TealGreen else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                        if (isSelected) TealGreen else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
                                     } else {
-                                        if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                        if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
                                     }
 
                                     if (tab == HomeTab.Calendar) {
@@ -414,6 +417,12 @@ fun CalendarScreen(
                                     } else if (tab == HomeTab.Note) {
                                         Icon(
                                             imageVector = Icons.Default.Mail,
+                                            contentDescription = tab.label,
+                                            tint = iconTint
+                                        )
+                                    } else if (tab == HomeTab.People) {
+                                        Icon(
+                                            imageVector = Icons.Default.People,
                                             contentDescription = tab.label,
                                             tint = iconTint
                                         )

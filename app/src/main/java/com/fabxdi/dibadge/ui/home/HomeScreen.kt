@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Mail
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,7 +47,7 @@ enum class HomeTab(
 ) {
     Home("Home", R.drawable.ic_home),
     Calendar("Calendar", R.drawable.ic_calendar),
-    Presence("Presence", R.drawable.ic_presence),
+    People("People", R.drawable.ic_people),
     Note("Inbox", R.drawable.ic_note)
 }
 
@@ -196,21 +197,23 @@ fun MainDashboard(
                                         selectedIconColor = MaterialTheme.colorScheme.onSurface,
                                         selectedTextColor = MaterialTheme.colorScheme.onSurface,
                                         indicatorColor = Color.Transparent,
-                                        unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                        unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                        unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                                        unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
                                     ),
                                     alwaysShowLabel = true,
                                     label = {
                                         Text(
                                             text = tab.label,
-                                            style = MaterialTheme.typography.labelMedium
+                                            style = MaterialTheme.typography.labelMedium.copy(
+                                                fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
+                                            )
                                         )
                                     },
                                     icon = {
                                         val iconTint = if (tab == HomeTab.Home) {
-                                            if (selectedTab == tab) TealGreen else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                            if (selectedTab == tab) TealGreen else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
                                         } else {
-                                            if (selectedTab == tab) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                            if (selectedTab == tab) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
                                         }
 
                                         if (tab == HomeTab.Calendar) {
@@ -234,6 +237,12 @@ fun MainDashboard(
                                         } else if (tab == HomeTab.Note) {
                                             Icon(
                                                 imageVector = Icons.Default.Mail,
+                                                contentDescription = tab.label,
+                                                tint = iconTint
+                                            )
+                                        } else if (tab == HomeTab.People) {
+                                            Icon(
+                                                imageVector = Icons.Default.People,
                                                 contentDescription = tab.label,
                                                 tint = iconTint
                                             )
@@ -337,8 +346,8 @@ fun MainDashboard(
                                 }
                             }
                             HomeTab.Calendar -> Text("Calendar View", style = MaterialTheme.typography.titleLarge)
-                            HomeTab.Presence -> Text("Presence View", style = MaterialTheme.typography.titleLarge)
-                            HomeTab.Note -> Text("Notes View", style = MaterialTheme.typography.titleLarge)
+                            HomeTab.People -> Text("People View", style = MaterialTheme.typography.titleLarge)
+                            HomeTab.Note -> Text("Inbox View", style = MaterialTheme.typography.titleLarge)
                         }
                     }
                 }

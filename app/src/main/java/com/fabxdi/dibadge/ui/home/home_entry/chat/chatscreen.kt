@@ -55,6 +55,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.core.content.ContextCompat
+import com.fabxdi.dibadge.ui.home.home_entry.chat_details.ChatDetailsScreen
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.fabxdi.dibadge.util.UserColorUtils
 import java.time.LocalDateTime
@@ -255,6 +256,15 @@ fun ChatScreen(
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showGroupDetails by remember { mutableStateOf(false) }
+
+    if (showGroupDetails) {
+        ChatDetailsScreen(
+            groupId = entry.id.toString(),
+            onBack = { showGroupDetails = false }
+        )
+        return
+    }
 
     val groupedMessages = remember(messages) {
         messages.groupBy { it.timestamp.toLocalDate() }.toSortedMap()
@@ -542,7 +552,7 @@ fun ChatScreen(
             } else {
                 TopAppBar(
                     title = {
-                        Column {
+                        Column(modifier = Modifier.clickable { showGroupDetails = true }) {
                             Text(
                                 text = entry.title, 
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Normal),
@@ -576,7 +586,9 @@ fun ChatScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             
                             Surface(
-                                modifier = Modifier.size(36.dp),
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clickable { showGroupDetails = true },
                                 shape = CircleShape,
                                 color = UserColorUtils.getColorForName(entry.title)
                             ) {
@@ -593,10 +605,10 @@ fun ChatScreen(
                         }
                     },
                     actions = {
-                        IconButton(onClick = {}, modifier = Modifier.size(40.dp)) {
+                        IconButton(onClick = { showGroupDetails = true }, modifier = Modifier.size(40.dp)) {
                             Icon(
                                 Icons.Default.MoreVert, 
-                                contentDescription = "More",
+                                contentDescription = "Group Details",
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
