@@ -16,8 +16,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import java.security.SecureRandom
 import java.util.UUID
+import kotlin.math.abs
 
 data class GroupMember(
     val uid: String,
@@ -55,6 +55,9 @@ class GroupDetailsViewModel : ViewModel() {
 
     private val _groupName = MutableStateFlow<String>("")
     val groupName: StateFlow<String> = _groupName.asStateFlow()
+
+    private val _groupSubtitle = MutableStateFlow<String>("")
+    val groupSubtitle: StateFlow<String> = _groupSubtitle.asStateFlow()
 
     private val _members = MutableStateFlow<List<GroupMember>>(emptyList())
     val members: StateFlow<List<GroupMember>> = _members.asStateFlow()
@@ -102,43 +105,83 @@ class GroupDetailsViewModel : ViewModel() {
     }
 
     private suspend fun fetchOrCreateGroupCode(groupId: String) {
-        val groupDocRef = db.collection("personalGroups").document(groupId)
-        val snapshot = groupDocRef.get().await()
+        val fallbackCode = generateGroupCode(groupId)
+        _groupCode.value = fallbackCode
 
-        val name = snapshot.getString("name") ?: snapshot.getString("title") ?: "Group"
-        _groupName.value = name
+        try {
+            val groupDocRef = db.collection("personalGroups").document(groupId)
+            val snapshot = groupDocRef.get().await()
 
-        val creatorId = snapshot.getString("creatorId") ?: snapshot.getString("createdBy") ?: ""
-        val currentUid = auth.currentUser?.uid ?: ""
-        _isAdmin.value = (creatorId == currentUid)
+            if (snapshot.exists()) {
+                val name = snapshot.getString("name") ?: snapshot.getString("title") ?: "Group"
+                _groupName.value = name
 
-        val existingCode = snapshot.getString("code")
-        if (!existingCode.isNull_or_Empty()) {
-            _groupCode.value = existingCode ?: ""
-        } else {
-            val generatedCode = generateGroupCode()
-            _groupCode.value = generatedCode
+                val subtitle = snapshot.getString("subtitle") ?: snapshot.getString("description") ?: ""
+                _groupSubtitle.value = subtitle
 
-            // Write to groupCodes collection
-            val codeDoc = mapOf(
-                "entityId" to groupId,
-                "entityType" to "personalGroup",
-                "name" to name,
-                "createdAt" to FieldValue.serverTimestamp()
-            )
-            db.collection("groupCodes").document(generatedCode).set(codeDoc, SetOptions.merge()).await()
+                val creatorId = snapshot.getString("creatorId") ?: snapshot.getString("createdBy") ?: ""
+                val currentUid = auth.currentUser?.uid ?: ""
+                _isAdmin.value = (creatorId == currentUid)
 
-            // Update personalGroups document
-            groupDocRef.update("code", generatedCode, "creatorId", creatorId.ifBlank { currentUid }).await()
+                val existingCode = snapshot.getString("code")
+                if (!existingCode.isNullOrEmpty()) {
+                    _groupCode.value = existingCode
+                } else {
+                    val generatedCode = fallbackCode
+                    _groupCode.value = generatedCode
+
+                    val codeDoc = mapOf(
+                        "entityId" to groupId,
+                        "entityType" to "personalGroup",
+                        "name" to name,
+                        "createdAt" to FieldValue.serverTimestamp()
+                    )
+                    db.collection("groupCodes").document(generatedCode).set(codeDoc, SetOptions.merge())
+                    groupDocRef.set(mapOf("code" to generatedCode, "creatorId" to creatorId.ifBlank { currentUid }), SetOptions.merge())
+                }
+            } else {
+                if (_groupName.value.isBlank()) _groupName.value = "Group #$groupId"
+                _isAdmin.value = true
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            // Fallback unique code remains active
         }
     }
 
-    private fun generateGroupCode(): String {
+    fun updateGroupDetails(newName: String, newSubtitle: String, onDone: () -> Unit = {}) {
+        if (currentGroupId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                db.collection("personalGroups").document(currentGroupId)
+                    .set(
+                        mapOf(
+                            "name" to newName.trim(),
+                            "title" to newName.trim(),
+                            "subtitle" to newSubtitle.trim()
+                        ),
+                        SetOptions.merge()
+                    ).await()
+                _groupName.value = newName.trim()
+                _groupSubtitle.value = newSubtitle.trim()
+                onDone()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private fun generateGroupCode(groupId: String): String {
         val charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789!@$%*"
-        val rand = SecureRandom()
-        val p1 = (1..4).map { charset[rand.nextInt(charset.length)] }.joinToString("")
-        val p2 = (1..4).map { charset[rand.nextInt(charset.length)] }.joinToString("")
-        return "$p1-$p2"
+        var hash = abs(groupId.hashCode().toLong()) + 17L
+        val sb = StringBuilder()
+        for (i in 0 until 8) {
+            val charIndex = abs((hash + i * 31).toInt()) % charset.length
+            sb.append(charset[charIndex])
+            hash = (hash * 31 + i + 7) % 1000000007
+        }
+        val code = sb.toString()
+        return "${code.substring(0, 4)}-${code.substring(4, 8)}"
     }
 
     private fun CharSequence?.isNull_or_Empty(): Boolean = this == null || this.isEmpty()
