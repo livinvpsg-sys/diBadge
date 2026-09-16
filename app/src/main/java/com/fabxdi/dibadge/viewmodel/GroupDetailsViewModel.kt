@@ -45,6 +45,13 @@ data class GroupFolderFile(
     val uploadPath: String = ""
 )
 
+data class GroupMediaItem(
+    val id: String,
+    val url: String,
+    val name: String = "",
+    val mediaType: String = "image"
+)
+
 class GroupDetailsViewModel : ViewModel() {
     private val db = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
@@ -74,6 +81,9 @@ class GroupDetailsViewModel : ViewModel() {
     private val _files = MutableStateFlow<List<GroupFolderFile>>(emptyList())
     val files: StateFlow<List<GroupFolderFile>> = _files.asStateFlow()
 
+    private val _media = MutableStateFlow<List<GroupMediaItem>>(emptyList())
+    val media: StateFlow<List<GroupMediaItem>> = _media.asStateFlow()
+
     private val _isLoading = MutableStateFlow<Boolean>(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -96,6 +106,7 @@ class GroupDetailsViewModel : ViewModel() {
                 listenToMembers(groupId)
                 listenToConnections(groupId)
                 listenToFiles(groupId)
+                listenToMedia(groupId)
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
@@ -531,5 +542,35 @@ class GroupDetailsViewModel : ViewModel() {
                 Toast.makeText(context, "Upload failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    private fun listenToMedia(groupId: String) {
+        db.collection("personalGroups").document(groupId)
+            .collection("media")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) return@addSnapshotListener
+
+                val mediaList = snapshot.documents.mapNotNull { doc ->
+                    val url = doc.getString("url") ?: doc.getString("downloadUrl") ?: return@mapNotNull null
+                    val name = doc.getString("name") ?: doc.getString("fileName") ?: "File"
+                    val explicitType = doc.getString("type") ?: doc.getString("mediaType")
+                    
+                    val type = when {
+                        explicitType != null -> explicitType.lowercase()
+                        doc.getBoolean("isVideo") == true || url.contains(".mp4") || url.contains("video") || name.endsWith(".mp4") -> "video"
+                        name.endsWith(".pdf") || name.endsWith(".doc") || name.endsWith(".docx") || name.endsWith(".xls") || name.endsWith(".xlsx") || name.endsWith(".txt") -> "document"
+                        else -> "image"
+                    }
+
+                    GroupMediaItem(
+                        id = doc.id,
+                        url = url,
+                        name = name,
+                        mediaType = type
+                    )
+                }
+
+                _media.value = mediaList
+            }
     }
 }

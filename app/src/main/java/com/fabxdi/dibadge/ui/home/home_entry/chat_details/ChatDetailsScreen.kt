@@ -5,19 +5,24 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -35,6 +40,8 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -47,6 +54,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.fabxdi.dibadge.viewmodel.GroupFolderFile
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.fabxdi.dibadge.util.UserColorUtils
 import com.fabxdi.dibadge.viewmodel.GroupDetailsViewModel
@@ -104,6 +112,8 @@ fun ChatDetailsScreen(
     onBack: () -> Unit,
     detailsViewModel: GroupDetailsViewModel = viewModel()
 ) {
+    BackHandler { onBack() }
+
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val tileHeight = (configuration.screenHeightDp / 4).dp.coerceAtLeast(150.dp)
@@ -120,11 +130,13 @@ fun ChatDetailsScreen(
     val acceptedConnections by detailsViewModel.acceptedConnections.collectAsState()
     val pendingRequests by detailsViewModel.pendingRequests.collectAsState()
     val files by detailsViewModel.files.collectAsState()
+    val media by detailsViewModel.media.collectAsState()
     val isLoading by detailsViewModel.isLoading.collectAsState()
     val codeLookupResult by detailsViewModel.codeLookupResult.collectAsState()
     val memberSearchCandidates by detailsViewModel.memberSearchCandidates.collectAsState()
 
-    var activeTab by remember { mutableIntStateOf(0) } // 0=Members, 1=Groups, 2=Forms, 3=Folders
+    var activeTab by remember { mutableIntStateOf(0) } // 0=Media, 1=Members, 2=Groups, 3=Forms, 4=Folders
+    var selectedMediaCategory by remember { mutableStateOf("Image") } // "Image", "Video", "Documents"
     var showEditDialog by remember { mutableStateOf(false) }
     var editNameInput by remember { mutableStateOf("") }
     var editSubtitleInput by remember { mutableStateOf("") }
@@ -183,7 +195,8 @@ fun ChatDetailsScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
+                    .padding(innerPadding),
+                contentAlignment = Alignment.BottomCenter
             ) {
                 Column(
                     modifier = Modifier
@@ -316,48 +329,255 @@ fun ChatDetailsScreen(
                     }
                 }
 
-                // 4 ICONS IN ONE ROW (Members, Groups, Forms, Folders)
+                // 5 ICONS IN ONE ROW (Media, Members, Groups, Forms, Folders)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     DetailActionItem(
-                        icon = Icons.Outlined.Person,
-                        label = "Members",
+                        icon = Icons.Outlined.PhotoLibrary,
+                        label = "Media",
                         isSelected = (activeTab == 0),
                         onClick = { activeTab = 0 }
                     )
                     DetailActionItem(
-                        icon = Icons.Outlined.People,
-                        label = "Groups",
+                        icon = Icons.Outlined.Person,
+                        label = "Members",
                         isSelected = (activeTab == 1),
                         onClick = { activeTab = 1 }
                     )
                     DetailActionItem(
-                        icon = Icons.Outlined.Description,
-                        label = "Forms",
+                        icon = Icons.Outlined.People,
+                        label = "Groups",
                         isSelected = (activeTab == 2),
                         onClick = { activeTab = 2 }
                     )
                     DetailActionItem(
-                        icon = Icons.Outlined.Folder,
-                        label = "Folders",
+                        icon = Icons.Outlined.Description,
+                        label = "Forms",
                         isSelected = (activeTab == 3),
                         onClick = { activeTab = 3 }
                     )
+                    DetailActionItem(
+                        icon = Icons.Outlined.Folder,
+                        label = "Folders",
+                        isSelected = (activeTab == 4),
+                        onClick = { activeTab = 4 }
+                    )
                 }
 
+                // THIN DIVIDER LINE AFTER ACTION ICONS
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                    thickness = 1.dp,
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
+
                 // SECTION CONTENT BASED ON SELECTED ICON
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        when (activeTab) {
-                            0 -> {
-                                // TAB 0: Members
+                if (activeTab == 0) {
+                    // TAB 0: Media with Single Floating Pill at Bottom Center
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 280.dp)
+                            .padding(top = 4.dp)
+                    ) {
+                        // Media Content
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 60.dp)
+                        ) {
+                            when (selectedMediaCategory) {
+                                "Image" -> {
+                                    val imageMedia = media.filter { it.mediaType == "image" }
+                                    if (imageMedia.isEmpty()) {
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "no images",
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                    } else {
+                                        LazyVerticalGrid(
+                                            columns = GridCells.Fixed(3),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                            modifier = Modifier.heightIn(max = 320.dp)
+                                        ) {
+                                            items(imageMedia.size) { idx ->
+                                                val item = imageMedia[idx]
+                                                Box(
+                                                    modifier = Modifier
+                                                        .aspectRatio(1f)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .clickable {
+                                                            FilePickerUtils.openFile(context, Uri.parse(item.url))
+                                                        }
+                                                ) {
+                                                    AsyncImage(
+                                                        model = item.url,
+                                                        contentDescription = "Image",
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentScale = ContentScale.Crop
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                "Video" -> {
+                                    val videoMedia = media.filter { it.mediaType == "video" }
+                                    if (videoMedia.isEmpty()) {
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "no videos",
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                    } else {
+                                        LazyVerticalGrid(
+                                            columns = GridCells.Fixed(3),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                            modifier = Modifier.heightIn(max = 320.dp)
+                                        ) {
+                                            items(videoMedia.size) { idx ->
+                                                val item = videoMedia[idx]
+                                                Box(
+                                                    modifier = Modifier
+                                                        .aspectRatio(1f)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .clickable {
+                                                            FilePickerUtils.openFile(context, Uri.parse(item.url))
+                                                        }
+                                                ) {
+                                                    AsyncImage(
+                                                        model = item.url,
+                                                        contentDescription = "Video",
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentScale = ContentScale.Crop
+                                                    )
+                                                    Icon(
+                                                        imageVector = Icons.Default.PlayArrow,
+                                                        contentDescription = "Play Video",
+                                                        tint = Color.White,
+                                                        modifier = Modifier
+                                                            .size(28.dp)
+                                                            .align(Alignment.Center)
+                                                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                                            .padding(4.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                "Documents" -> {
+                                    val docFiles = files + media.filter { it.mediaType == "document" }.map {
+                                        GroupFolderFile(
+                                            id = it.id,
+                                            name = it.name.ifBlank { "Document" },
+                                            downloadUrl = it.url
+                                        )
+                                    }
+
+                                    if (docFiles.isEmpty()) {
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "no documents",
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                    } else {
+                                        docFiles.distinctBy { it.downloadUrl }.forEach { file ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        FilePickerUtils.openFile(context, Uri.parse(file.downloadUrl))
+                                                    }
+                                                    .padding(vertical = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.InsertDriveFile,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(12.dp))
+                                                Text(
+                                                    text = file.name,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                            }
+                                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // SINGLE FLOATING PILL AT BOTTOM CENTER
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 8.dp),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surface,
+                            shadowElevation = 6.dp
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val categories = listOf("Image", "Video", "Documents")
+                                categories.forEach { category ->
+                                    val isCategorySelected = (selectedMediaCategory == category)
+                                    Text(
+                                        text = category,
+                                        fontSize = 14.sp,
+                                        fontWeight = if (isCategorySelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isCategorySelected) {
+                                            MaterialTheme.colorScheme.onSurface
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                        },
+                                        modifier = Modifier.clickable { selectedMediaCategory = category }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            when (activeTab) {
+                                1 -> {
+                                    // TAB 1: Members
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -420,8 +640,8 @@ fun ChatDetailsScreen(
                                 }
                             }
 
-                            1 -> {
-                                // TAB 1: Groups (Connections)
+                            2 -> {
+                                // TAB 2: Groups (Connections)
                                 Text(
                                     text = "Connected Groups",
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -549,8 +769,8 @@ fun ChatDetailsScreen(
                                 }
                             }
 
-                            2 -> {
-                                // TAB 2: Forms
+                            3 -> {
+                                // TAB 3: Forms
                                 Text(
                                     text = "Forms",
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -564,8 +784,8 @@ fun ChatDetailsScreen(
                                 )
                             }
 
-                            3 -> {
-                                // TAB 3: Folders
+                            4 -> {
+                                // TAB 4: Folders
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -624,14 +844,12 @@ fun ChatDetailsScreen(
                         }
                     }
                 }
-            }
+            } // end main Column inside Box
 
             // Custom Pure Text Toast Overlay (No Android App Icon!)
             AnimatedVisibility(
                 visible = customToastMessage != null,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 32.dp)
+                modifier = Modifier.padding(bottom = 32.dp)
             ) {
                 Surface(
                     color = MaterialTheme.colorScheme.surface,
@@ -647,8 +865,9 @@ fun ChatDetailsScreen(
                     )
                 }
             }
-        }
-    }
+        } // end Box
+    } // end else isLoading
+} // end Scaffold lambda
 
     // Edit Group Details Dialog
     if (showEditDialog) {

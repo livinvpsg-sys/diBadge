@@ -552,43 +552,15 @@ fun ChatScreen(
             } else {
                 TopAppBar(
                     title = {
-                        Column(modifier = Modifier.clickable { showGroupDetails = true }) {
-                            Text(
-                                text = entry.title, 
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Normal),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            if (entry.subtitle.isNotBlank()) {
-                                Text(
-                                    text = entry.subtitle,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    },
-                    navigationIcon = {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(start = 4.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showGroupDetails = true }
+                                .padding(vertical = 4.dp)
                         ) {
-                            IconButton(onClick = onBack, modifier = Modifier.size(32.dp)) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.ArrowBack, 
-                                    contentDescription = "Back", 
-                                    tint = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-                            
-                            Spacer(modifier = Modifier.width(8.dp))
-                            
                             Surface(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clickable { showGroupDetails = true },
+                                modifier = Modifier.size(36.dp),
                                 shape = CircleShape,
                                 color = UserColorUtils.getColorForName(entry.title)
                             ) {
@@ -600,8 +572,35 @@ fun ChatScreen(
                                     )
                                 }
                             }
-                            
-                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = entry.title, 
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Normal),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                if (entry.subtitle.isNotBlank()) {
+                                    Text(
+                                        text = entry.subtitle,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack, modifier = Modifier.size(36.dp).padding(start = 4.dp)) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack, 
+                                contentDescription = "Back", 
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(24.dp)
+                            )
                         }
                     },
                     actions = {
