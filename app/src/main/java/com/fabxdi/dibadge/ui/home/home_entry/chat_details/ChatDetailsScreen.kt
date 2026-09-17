@@ -24,6 +24,7 @@ import coil.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -51,6 +52,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -59,6 +61,10 @@ import com.fabxdi.dibadge.util.FilePickerUtils
 import com.fabxdi.dibadge.util.UserColorUtils
 import com.fabxdi.dibadge.viewmodel.GroupDetailsViewModel
 import kotlinx.coroutines.delay
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 @Composable
 fun DetailActionItem(
@@ -105,6 +111,20 @@ fun DetailActionItem(
     }
 }
 
+private fun formatTimestampToDateHeader(timestamp: Long): String {
+    val date = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).toLocalDate()
+    val today = LocalDate.now()
+    return when (date) {
+        today -> "Today"
+        today.minusDays(1) -> "Yesterday"
+        else -> if (date.year == today.year) {
+            date.format(DateTimeFormatter.ofPattern("MMMM d"))
+        } else {
+            date.format(DateTimeFormatter.ofPattern("MMMM d, yyyy"))
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatDetailsScreen(
@@ -115,8 +135,6 @@ fun ChatDetailsScreen(
     BackHandler { onBack() }
 
     val context = LocalContext.current
-    val configuration = LocalConfiguration.current
-    val tileHeight = (configuration.screenHeightDp / 4).dp.coerceAtLeast(150.dp)
 
     LaunchedEffect(groupId) {
         detailsViewModel.loadGroupDetails(groupId)
@@ -124,6 +142,7 @@ fun ChatDetailsScreen(
 
     val groupName by detailsViewModel.groupName.collectAsState()
     val groupSubtitle by detailsViewModel.groupSubtitle.collectAsState()
+    val groupPhotoUrl by detailsViewModel.groupPhotoUrl.collectAsState()
     val groupCode by detailsViewModel.groupCode.collectAsState()
     val members by detailsViewModel.members.collectAsState()
     val isAdmin by detailsViewModel.isAdmin.collectAsState()
@@ -136,7 +155,7 @@ fun ChatDetailsScreen(
     val memberSearchCandidates by detailsViewModel.memberSearchCandidates.collectAsState()
 
     var activeTab by remember { mutableIntStateOf(0) } // 0=Media, 1=Members, 2=Groups, 3=Forms, 4=Folders
-    var selectedMediaCategory by remember { mutableStateOf("Image") } // "Image", "Video", "Documents"
+    var selectedMediaCategory by remember { mutableStateOf("Media") } // "Media", "Docs"
     var showEditDialog by remember { mutableStateOf(false) }
     var editNameInput by remember { mutableStateOf("") }
     var editSubtitleInput by remember { mutableStateOf("") }
@@ -159,6 +178,15 @@ fun ChatDetailsScreen(
         onResult = { uri ->
             if (uri != null) {
                 detailsViewModel.uploadFileToGroupFolder(context, uri)
+            }
+        }
+    )
+
+    val avatarPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+        onResult = { uri ->
+            if (uri != null) {
+                detailsViewModel.uploadGroupAvatarPhoto(context, uri)
             }
         }
     )
@@ -206,130 +234,75 @@ fun ChatDetailsScreen(
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                // RECTANGLE TILE (1/4th screen height)
-                Card(
+                // HEADER SECTION (Moved UP, NO camera icon badge, NO "Group 0 members" line)
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(tileHeight),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        .padding(top = 0.dp, bottom = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        // Right Top Pencil Edit Icon
-                        IconButton(
-                            onClick = {
-                                editNameInput = groupName
-                                editSubtitleInput = groupSubtitle
-                                showEditDialog = true
-                            },
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = "Edit Group Details",
-                                tint = MaterialTheme.colorScheme.onSurface
+                    // Profile Image / Avatar (Clickable to change photo, NO camera badge)
+                    Surface(
+                        modifier = Modifier
+                            .size(100.dp)
+                            .clickable { avatarPickerLauncher.launch("image/*") },
+                        shape = CircleShape,
+                        color = UserColorUtils.getColorForName(groupName)
+                    ) {
+                        if (groupPhotoUrl.isNotBlank()) {
+                            AsyncImage(
+                                model = groupPhotoUrl,
+                                contentDescription = "Group Photo",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
                             )
-                        }
-
-                        // Center Group Details
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Surface(
-                                modifier = Modifier.size(56.dp),
-                                shape = CircleShape,
-                                color = UserColorUtils.getColorForName(groupName)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = groupName.take(1).uppercase(),
-                                        style = MaterialTheme.typography.titleLarge.copy(
-                                            fontSize = 24.sp,
-                                            fontWeight = FontWeight.Bold
-                                        ),
-                                        color = Color.White
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            Text(
-                                text = groupName.ifBlank { "Group" },
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-
-                            if (groupSubtitle.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(4.dp))
+                        } else {
+                            Box(contentAlignment = Alignment.Center) {
                                 Text(
-                                    text = groupSubtitle,
-                                    fontSize = 13.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    text = groupName.take(1).uppercase(),
+                                    style = MaterialTheme.typography.titleLarge.copy(
+                                        fontSize = 40.sp,
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    color = Color.White
                                 )
                             }
                         }
                     }
-                }
 
-                // GROUP CODE SECTION (Without white card background)
-                val displayCode = groupCode.ifBlank { "A7B9-K2%X" }
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val clip = ClipData.newPlainText("group_code", displayCode)
-                            clipboard.setPrimaryClip(clip)
-                            customToastMessage = "Code copied"
-                        }
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                    // Group Name (Clickable -> Edit Popup)
                     Text(
-                        text = "Your group code: ",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
-
-                    Text(
-                        text = displayCode,
-                        fontSize = 15.sp,
+                        text = groupName.ifBlank { "Group" },
+                        fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.clickable {
+                            editNameInput = groupName
+                            editSubtitleInput = groupSubtitle
+                            showEditDialog = true
+                        }
                     )
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
 
-                    IconButton(
-                        onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val clip = ClipData.newPlainText("group_code", displayCode)
-                            clipboard.setPrimaryClip(clip)
-                            customToastMessage = "Code copied"
-                        },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "Copy Code",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                        )
-                    }
+                    // Description Text (Clickable -> Edit Popup)
+                    Text(
+                        text = groupSubtitle.ifBlank { "Add group description" },
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.clickable {
+                            editNameInput = groupName
+                            editSubtitleInput = groupSubtitle
+                            showEditDialog = true
+                        }
+                    )
                 }
 
-                // 5 ICONS IN ONE ROW (Media, Members, Groups, Forms, Folders)
+                // 5 ICONS IN ONE ROW (Media, Members, Groups, Forms, Folders) - Directly below description
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
@@ -371,12 +344,61 @@ fun ChatDetailsScreen(
                 HorizontalDivider(
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
                     thickness = 1.dp,
-                    modifier = Modifier.padding(vertical = 4.dp)
+                    modifier = Modifier.padding(vertical = 2.dp)
                 )
+
+                // GROUP CODE SECTION
+                val displayCode = groupCode.ifBlank { "A7B9-K2%X" }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val clip = ClipData.newPlainText("group_code", displayCode)
+                            clipboard.setPrimaryClip(clip)
+                            customToastMessage = "Code copied"
+                        }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Your group code: ",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+
+                    Text(
+                        text = displayCode,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    IconButton(
+                        onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val clip = ClipData.newPlainText("group_code", displayCode)
+                            clipboard.setPrimaryClip(clip)
+                            customToastMessage = "Code copied"
+                        },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy Code",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                    }
+                }
 
                 // SECTION CONTENT BASED ON SELECTED ICON
                 if (activeTab == 0) {
-                    // TAB 0: Media with Single Floating Pill at Bottom Center
+                    // TAB 0: Media with 2 Floating Pill Categories ("Media" and "Docs")
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -387,111 +409,90 @@ fun ChatDetailsScreen(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 60.dp)
+                                .padding(bottom = 68.dp)
                         ) {
                             when (selectedMediaCategory) {
-                                "Image" -> {
-                                    val imageMedia = media.filter { it.mediaType == "image" }
-                                    if (imageMedia.isEmpty()) {
+                                "Media" -> {
+                                    val mediaItems = media.filter { it.mediaType == "image" || it.mediaType == "video" }
+                                    if (mediaItems.isEmpty()) {
                                         Box(
                                             modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Text(
-                                                text = "no images",
+                                                text = "no media",
                                                 fontSize = 13.sp,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                                             )
                                         }
                                     } else {
-                                        LazyVerticalGrid(
-                                            columns = GridCells.Fixed(3),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                                            modifier = Modifier.heightIn(max = 320.dp)
-                                        ) {
-                                            items(imageMedia.size) { idx ->
-                                                val item = imageMedia[idx]
-                                                Box(
-                                                    modifier = Modifier
-                                                        .aspectRatio(1f)
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .clickable {
-                                                            FilePickerUtils.openFile(context, Uri.parse(item.url))
-                                                        }
-                                                ) {
-                                                    AsyncImage(
-                                                        model = item.url,
-                                                        contentDescription = "Image",
-                                                        modifier = Modifier.fillMaxSize(),
-                                                        contentScale = ContentScale.Crop
-                                                    )
-                                                }
-                                            }
+                                        val groupedMedia = remember(mediaItems) {
+                                            mediaItems.groupBy { formatTimestampToDateHeader(it.timestamp) }
                                         }
-                                    }
-                                }
 
-                                "Video" -> {
-                                    val videoMedia = media.filter { it.mediaType == "video" }
-                                    if (videoMedia.isEmpty()) {
-                                        Box(
-                                            modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
+                                        groupedMedia.forEach { (dateHeader, itemsList) ->
                                             Text(
-                                                text = "no videos",
-                                                fontSize = 13.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                text = dateHeader,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                                modifier = Modifier.padding(vertical = 8.dp)
                                             )
-                                        }
-                                    } else {
-                                        LazyVerticalGrid(
-                                            columns = GridCells.Fixed(3),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                                            modifier = Modifier.heightIn(max = 320.dp)
-                                        ) {
-                                            items(videoMedia.size) { idx ->
-                                                val item = videoMedia[idx]
-                                                Box(
-                                                    modifier = Modifier
-                                                        .aspectRatio(1f)
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .clickable {
-                                                            FilePickerUtils.openFile(context, Uri.parse(item.url))
-                                                        }
+
+                                            itemsList.chunked(3).forEach { rowItems ->
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                 ) {
-                                                    AsyncImage(
-                                                        model = item.url,
-                                                        contentDescription = "Video",
-                                                        modifier = Modifier.fillMaxSize(),
-                                                        contentScale = ContentScale.Crop
-                                                    )
-                                                    Icon(
-                                                        imageVector = Icons.Default.PlayArrow,
-                                                        contentDescription = "Play Video",
-                                                        tint = Color.White,
-                                                        modifier = Modifier
-                                                            .size(28.dp)
-                                                            .align(Alignment.Center)
-                                                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                                            .padding(4.dp)
-                                                    )
+                                                    rowItems.forEach { item ->
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .weight(1f)
+                                                                .aspectRatio(1f)
+                                                                .clip(RoundedCornerShape(8.dp))
+                                                                .clickable {
+                                                                    FilePickerUtils.openFile(context, Uri.parse(item.url))
+                                                                }
+                                                        ) {
+                                                            AsyncImage(
+                                                                model = item.url,
+                                                                contentDescription = "Media",
+                                                                modifier = Modifier.fillMaxSize(),
+                                                                contentScale = ContentScale.Crop
+                                                            )
+                                                            if (item.mediaType == "video") {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.PlayArrow,
+                                                                    contentDescription = "Play Video",
+                                                                    tint = Color.White,
+                                                                    modifier = Modifier
+                                                                        .size(28.dp)
+                                                                        .align(Alignment.Center)
+                                                                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                                                        .padding(4.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                    repeat(3 - rowItems.size) {
+                                                        Spacer(modifier = Modifier.weight(1f))
+                                                    }
                                                 }
                                             }
+                                            Spacer(modifier = Modifier.height(12.dp))
                                         }
                                     }
                                 }
 
-                                "Documents" -> {
-                                    val docFiles = files + media.filter { it.mediaType == "document" }.map {
+                                "Docs" -> {
+                                    val docFiles = (files + media.filter { it.mediaType == "document" }.map {
                                         GroupFolderFile(
                                             id = it.id,
                                             name = it.name.ifBlank { "Document" },
-                                            downloadUrl = it.url
+                                            downloadUrl = it.url,
+                                            timestamp = it.timestamp
                                         )
-                                    }
+                                    }).distinctBy { it.downloadUrl }
 
                                     if (docFiles.isEmpty()) {
                                         Box(
@@ -505,52 +506,67 @@ fun ChatDetailsScreen(
                                             )
                                         }
                                     } else {
-                                        docFiles.distinctBy { it.downloadUrl }.forEach { file ->
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .clickable {
-                                                        FilePickerUtils.openFile(context, Uri.parse(file.downloadUrl))
-                                                    }
-                                                    .padding(vertical = 8.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.InsertDriveFile,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(24.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(12.dp))
-                                                Text(
-                                                    text = file.name,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = MaterialTheme.colorScheme.onSurface,
-                                                    modifier = Modifier.weight(1f)
-                                                )
+                                        val groupedDocs = remember(docFiles) {
+                                            docFiles.groupBy { formatTimestampToDateHeader(it.timestamp) }
+                                        }
+
+                                        groupedDocs.forEach { (dateHeader, filesList) ->
+                                            Text(
+                                                text = dateHeader,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                                modifier = Modifier.padding(vertical = 8.dp)
+                                            )
+
+                                            filesList.forEach { file ->
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable {
+                                                            FilePickerUtils.openFile(context, Uri.parse(file.downloadUrl))
+                                                        }
+                                                        .padding(vertical = 8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.InsertDriveFile,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(24.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(12.dp))
+                                                    Text(
+                                                        text = file.name,
+                                                        fontWeight = FontWeight.Medium,
+                                                        color = MaterialTheme.colorScheme.onSurface,
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+                                                }
+                                                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                                             }
-                                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                                            Spacer(modifier = Modifier.height(12.dp))
                                         }
                                     }
                                 }
                             }
                         }
 
-                        // SINGLE FLOATING PILL AT BOTTOM CENTER
+                        // SINGLE FLOATING PILL AT BOTTOM CENTER (2 OPTIONS: Media and Docs)
                         Surface(
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
-                                .padding(bottom = 8.dp),
+                                .padding(bottom = 0.dp),
                             shape = CircleShape,
                             color = MaterialTheme.colorScheme.surface,
                             shadowElevation = 6.dp
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-                                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(28.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                val categories = listOf("Image", "Video", "Documents")
+                                val categories = listOf("Media", "Docs")
                                 categories.forEach { category ->
                                     val isCategorySelected = (selectedMediaCategory == category)
                                     Text(
@@ -869,27 +885,61 @@ fun ChatDetailsScreen(
     } // end else isLoading
 } // end Scaffold lambda
 
-    // Edit Group Details Dialog
+    // Edit Group Details Popup (Styled like Home page HomeEntryDialog, NO heading title)
     if (showEditDialog) {
         AlertDialog(
             onDismissRequest = { showEditDialog = false },
-            title = { Text("Edit Group Details") },
+            title = null, // NO HEADING TITLE AS REQUESTED
             text = {
                 Column {
-                    OutlinedTextField(
+                    TextField(
                         value = editNameInput,
                         onValueChange = { editNameInput = it },
-                        label = { Text("Group Name") },
+                        placeholder = { 
+                            Text(
+                                text = "Name",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.Normal,
+                                    fontSize = 13.sp
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            ) 
+                        },
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        singleLine = true,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent
+                        )
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        thickness = 1.dp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                    )
+                    TextField(
                         value = editSubtitleInput,
                         onValueChange = { editSubtitleInput = it },
-                        label = { Text("Details / Subtitle") },
+                        placeholder = { 
+                            Text(
+                                text = "Details",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.Normal,
+                                    fontSize = 13.sp
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            ) 
+                        },
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
+                        singleLine = true,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent
+                        )
                     )
                 }
             },
@@ -897,11 +947,12 @@ fun ChatDetailsScreen(
                 Button(
                     onClick = {
                         if (editNameInput.isNotBlank()) {
-                            detailsViewModel.updateGroupDetails(editNameInput, editSubtitleInput) {
+                            detailsViewModel.updateGroupDetails(context, editNameInput, editSubtitleInput) {
                                 showEditDialog = false
                             }
                         }
-                    }
+                    },
+                    enabled = editNameInput.isNotBlank()
                 ) {
                     Text("Save")
                 }

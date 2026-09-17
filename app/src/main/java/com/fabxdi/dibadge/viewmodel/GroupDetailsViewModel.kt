@@ -5,12 +5,15 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fabxdi.dibadge.data.AppDatabase
+import com.fabxdi.dibadge.data.HomeEntryEntity
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.storage.FirebaseStorage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,14 +45,16 @@ data class GroupFolderFile(
     val name: String,
     val downloadUrl: String,
     val sizeBytes: Long = 0,
-    val uploadPath: String = ""
+    val uploadPath: String = "",
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 data class GroupMediaItem(
     val id: String,
     val url: String,
     val name: String = "",
-    val mediaType: String = "image"
+    val mediaType: String = "image",
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 class GroupDetailsViewModel : ViewModel() {
@@ -65,6 +70,9 @@ class GroupDetailsViewModel : ViewModel() {
 
     private val _groupSubtitle = MutableStateFlow<String>("")
     val groupSubtitle: StateFlow<String> = _groupSubtitle.asStateFlow()
+
+    private val _groupPhotoUrl = MutableStateFlow<String>("")
+    val groupPhotoUrl: StateFlow<String> = _groupPhotoUrl.asStateFlow()
 
     private val _members = MutableStateFlow<List<GroupMember>>(emptyList())
     val members: StateFlow<List<GroupMember>> = _members.asStateFlow()
@@ -130,6 +138,9 @@ class GroupDetailsViewModel : ViewModel() {
                 val subtitle = snapshot.getString("subtitle") ?: snapshot.getString("description") ?: ""
                 _groupSubtitle.value = subtitle
 
+                val photoUrl = snapshot.getString("photoUrl") ?: snapshot.getString("avatarUrl") ?: ""
+                _groupPhotoUrl.value = photoUrl
+
                 val creatorId = snapshot.getString("creatorId") ?: snapshot.getString("createdBy") ?: ""
                 val currentUid = auth.currentUser?.uid ?: ""
                 _isAdmin.value = (creatorId == currentUid)
@@ -160,7 +171,23 @@ class GroupDetailsViewModel : ViewModel() {
         }
     }
 
-    fun updateGroupDetails(newName: String, newSubtitle: String, onDone: () -> Unit = {}) {
+    private fun updateRoomHomeEntry(context: Context, newName: String, newSubtitle: String) {
+        val id = currentGroupId.toIntOrNull() ?: return
+        val dao = AppDatabase.getDatabase(context).reminderDao()
+        viewModelScope.launch(Dispatchers.IO) {
+            val initials = newName.take(1).uppercase()
+            dao.insertHomeEntry(
+                HomeEntryEntity(
+                    id = id,
+                    title = newName,
+                    subtitle = newSubtitle,
+                    initials = initials
+                )
+            )
+        }
+    }
+
+    fun updateGroupDetails(context: Context, newName: String, newSubtitle: String, onDone: () -> Unit = {}) {
         if (currentGroupId.isBlank()) return
         viewModelScope.launch {
             try {
@@ -169,15 +196,39 @@ class GroupDetailsViewModel : ViewModel() {
                         mapOf(
                             "name" to newName.trim(),
                             "title" to newName.trim(),
-                            "subtitle" to newSubtitle.trim()
+                            "subtitle" to newSubtitle.trim(),
+                            "description" to newSubtitle.trim()
                         ),
                         SetOptions.merge()
                     ).await()
                 _groupName.value = newName.trim()
                 _groupSubtitle.value = newSubtitle.trim()
+                updateRoomHomeEntry(context, newName.trim(), newSubtitle.trim())
                 onDone()
             } catch (e: Exception) {
                 e.printStackTrace()
+            }
+        }
+    }
+
+    fun uploadGroupAvatarPhoto(context: Context, imageUri: Uri, onDone: () -> Unit = {}) {
+        if (currentGroupId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val storageRef = storage.reference.child("personalGroups/$currentGroupId/avatar_${System.currentTimeMillis()}.jpg")
+                storageRef.putFile(imageUri).await()
+                val downloadUrl = storageRef.downloadUrl.await().toString()
+
+                db.collection("personalGroups").document(currentGroupId)
+                    .set(mapOf("photoUrl" to downloadUrl, "avatarUrl" to downloadUrl), SetOptions.merge())
+                    .await()
+
+                _groupPhotoUrl.value = downloadUrl
+                Toast.makeText(context, "Group photo updated!", Toast.LENGTH_SHORT).show()
+                onDone()
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Toast.makeText(context, "Failed to update photo: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -496,14 +547,18 @@ class GroupDetailsViewModel : ViewModel() {
                     val name = doc.getString("name") ?: doc.getString("fileName") ?: "File"
                     val size = doc.getLong("size") ?: 0L
                     val path = doc.getString("uploadPath") ?: ""
+                    val ts = doc.getTimestamp("createdAt")?.toDate()?.time
+                        ?: doc.getLong("timestamp")
+                        ?: System.currentTimeMillis()
                     GroupFolderFile(
                         id = doc.id,
                         name = name,
                         downloadUrl = url,
                         sizeBytes = size,
-                        uploadPath = path
+                        uploadPath = path,
+                        timestamp = ts
                     )
-                }
+                }.sortedByDescending { it.timestamp }
 
                 _files.value = fileList
             }
@@ -554,7 +609,10 @@ class GroupDetailsViewModel : ViewModel() {
                     val url = doc.getString("url") ?: doc.getString("downloadUrl") ?: return@mapNotNull null
                     val name = doc.getString("name") ?: doc.getString("fileName") ?: "File"
                     val explicitType = doc.getString("type") ?: doc.getString("mediaType")
-                    
+                    val ts = doc.getTimestamp("createdAt")?.toDate()?.time
+                        ?: doc.getLong("timestamp")
+                        ?: System.currentTimeMillis()
+
                     val type = when {
                         explicitType != null -> explicitType.lowercase()
                         doc.getBoolean("isVideo") == true || url.contains(".mp4") || url.contains("video") || name.endsWith(".mp4") -> "video"
@@ -566,7 +624,8 @@ class GroupDetailsViewModel : ViewModel() {
                         id = doc.id,
                         url = url,
                         name = name,
-                        mediaType = type
+                        mediaType = type,
+                        timestamp = ts
                     )
                 }
 
