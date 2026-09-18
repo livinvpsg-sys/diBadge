@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fabxdi.dibadge.data.AppDatabase
 import com.fabxdi.dibadge.data.HomeEntryEntity
+import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatMessage
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import java.time.ZoneId
 import java.util.UUID
 import kotlin.math.abs
 
@@ -103,10 +105,17 @@ class GroupDetailsViewModel : ViewModel() {
 
     private var currentGroupId: String = ""
 
-    fun loadGroupDetails(groupId: String) {
+    fun loadGroupDetails(groupId: String, initialName: String = "", initialSubtitle: String = "") {
         if (groupId.isBlank()) return
         currentGroupId = groupId
         _isLoading.value = true
+
+        if (initialName.isNotBlank()) {
+            _groupName.value = initialName
+        }
+        if (initialSubtitle.isNotBlank()) {
+            _groupSubtitle.value = initialSubtitle
+        }
 
         viewModelScope.launch {
             try {
@@ -132,10 +141,10 @@ class GroupDetailsViewModel : ViewModel() {
             val snapshot = groupDocRef.get().await()
 
             if (snapshot.exists()) {
-                val name = snapshot.getString("name") ?: snapshot.getString("title") ?: "Group"
+                val name = snapshot.getString("name") ?: snapshot.getString("title") ?: _groupName.value.ifBlank { "Group" }
                 _groupName.value = name
 
-                val subtitle = snapshot.getString("subtitle") ?: snapshot.getString("description") ?: ""
+                val subtitle = snapshot.getString("subtitle") ?: snapshot.getString("description") ?: _groupSubtitle.value
                 _groupSubtitle.value = subtitle
 
                 val photoUrl = snapshot.getString("photoUrl") ?: snapshot.getString("avatarUrl") ?: ""
@@ -187,6 +196,40 @@ class GroupDetailsViewModel : ViewModel() {
         }
     }
 
+    fun updateGroupName(context: Context, newName: String, onDone: () -> Unit = {}) {
+        if (currentGroupId.isBlank()) return
+        val trimmed = newName.trim()
+        _groupName.value = trimmed
+        updateRoomHomeEntry(context, trimmed, _groupSubtitle.value)
+        onDone()
+
+        viewModelScope.launch {
+            try {
+                db.collection("personalGroups").document(currentGroupId)
+                    .set(mapOf("name" to trimmed, "title" to trimmed), SetOptions.merge())
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun updateGroupSubtitle(context: Context, newSubtitle: String, onDone: () -> Unit = {}) {
+        if (currentGroupId.isBlank()) return
+        val trimmed = newSubtitle.trim()
+        _groupSubtitle.value = trimmed
+        updateRoomHomeEntry(context, _groupName.value, trimmed)
+        onDone()
+
+        viewModelScope.launch {
+            try {
+                db.collection("personalGroups").document(currentGroupId)
+                    .set(mapOf("subtitle" to trimmed, "description" to trimmed), SetOptions.merge())
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     fun updateGroupDetails(context: Context, newName: String, newSubtitle: String, onDone: () -> Unit = {}) {
         if (currentGroupId.isBlank()) return
         viewModelScope.launch {
@@ -209,6 +252,84 @@ class GroupDetailsViewModel : ViewModel() {
                 e.printStackTrace()
             }
         }
+    }
+
+    fun syncChatMessagesMedia(context: Context, messages: List<ChatMessage>) {
+        if (messages.isEmpty()) return
+
+        val extractedMedia = mutableListOf<GroupMediaItem>()
+        val extractedFiles = mutableListOf<GroupFolderFile>()
+
+        for (msg in messages) {
+            val ts = try {
+                msg.timestamp.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            } catch (e: Exception) {
+                System.currentTimeMillis()
+            }
+
+            for (url in msg.attachments) {
+                if (url.isBlank()) continue
+                val name = try {
+                    FilePickerUtils.getFileName(context, Uri.parse(url))
+                } catch (e: Exception) {
+                    url.substringAfterLast("/").substringBefore("?")
+                }
+
+                val mediaType = getMediaTypeFromUri(context, url)
+                val mediaId = "${msg.id}_${url.hashCode()}"
+
+                if (mediaType == "document") {
+                    extractedFiles.add(
+                        GroupFolderFile(
+                            id = mediaId,
+                            name = if (name.isBlank() || name == url) "Document" else name,
+                            downloadUrl = url,
+                            timestamp = ts
+                        )
+                    )
+                } else {
+                    extractedMedia.add(
+                        GroupMediaItem(
+                            id = mediaId,
+                            url = url,
+                            name = name,
+                            mediaType = mediaType,
+                            timestamp = ts
+                        )
+                    )
+                }
+            }
+        }
+
+        if (extractedMedia.isNotEmpty()) {
+            val combinedMedia = (_media.value + extractedMedia).distinctBy { it.url }.sortedByDescending { it.timestamp }
+            _media.value = combinedMedia
+        }
+
+        if (extractedFiles.isNotEmpty()) {
+            val combinedFiles = (_files.value + extractedFiles).distinctBy { it.downloadUrl }.sortedByDescending { it.timestamp }
+            _files.value = combinedFiles
+        }
+    }
+
+    private fun getMediaTypeFromUri(context: Context, uriString: String): String {
+        val lower = uriString.lowercase()
+        if (lower.contains(".mp4") || lower.contains(".mkv") || lower.contains(".avi") || lower.contains(".mov") || lower.contains("video")) {
+            return "video"
+        }
+        if (lower.contains(".pdf") || lower.contains(".doc") || lower.contains(".docx") || lower.contains(".xls") || lower.contains(".xlsx") || lower.contains(".txt") || lower.contains(".zip")) {
+            return "document"
+        }
+        try {
+            val uri = Uri.parse(uriString)
+            val mimeType = context.contentResolver.getType(uri)
+            if (mimeType != null) {
+                if (mimeType.startsWith("video/")) return "video"
+                if (mimeType.startsWith("image/")) return "image"
+                if (mimeType.startsWith("application/") || mimeType.startsWith("text/")) return "document"
+            }
+        } catch (e: Exception) {}
+        return "image"
     }
 
     fun uploadGroupAvatarPhoto(context: Context, imageUri: Uri, onDone: () -> Unit = {}) {

@@ -120,9 +120,9 @@ fun HomeEntryCard(
 ) {
     val timeFormatter = remember { DateTimeFormatter.ofPattern("hh:mm a", Locale.getDefault()) }
     
-    // Generate a consistent color based on the title/name
-    val avatarColor = remember(entry.title) {
-        UserColorUtils.getColorForName(entry.title)
+    // Generate a consistent color based on the group id (immutable across name changes)
+    val avatarColor = remember(entry.id) {
+        UserColorUtils.getColorForName(entry.id.toString())
     }
 
     Surface(

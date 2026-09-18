@@ -55,9 +55,11 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.ui.home.home_entry.chat_details.ChatDetailsScreen
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.fabxdi.dibadge.util.UserColorUtils
+import com.fabxdi.dibadge.viewmodel.ReminderViewModel
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -227,6 +229,10 @@ fun ChatScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    val reminderViewModel: ReminderViewModel = viewModel()
+    val homeEntries by reminderViewModel.allHomeEntries.collectAsState(initial = emptyList())
+    val currentEntry = homeEntries.find { it.id == entry.id } ?: entry
+
     var messages by remember {
         mutableStateOf(
             listOf(
@@ -260,7 +266,7 @@ fun ChatScreen(
 
     if (showGroupDetails) {
         ChatDetailsScreen(
-            groupId = entry.id.toString(),
+            entry = currentEntry,
             onBack = { showGroupDetails = false }
         )
         return
@@ -562,11 +568,11 @@ fun ChatScreen(
                             Surface(
                                 modifier = Modifier.size(36.dp),
                                 shape = CircleShape,
-                                color = UserColorUtils.getColorForName(entry.title)
+                                color = UserColorUtils.getColorForName(currentEntry.id.toString())
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Text(
-                                        text = entry.title.take(1).uppercase(),
+                                        text = currentEntry.title.take(1).uppercase(),
                                         style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold),
                                         color = Color.White
                                     )
@@ -577,13 +583,13 @@ fun ChatScreen(
 
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = entry.title, 
+                                    text = currentEntry.title, 
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Normal),
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
-                                if (entry.subtitle.isNotBlank()) {
+                                if (currentEntry.subtitle.isNotBlank()) {
                                     Text(
-                                        text = entry.subtitle,
+                                        text = currentEntry.subtitle,
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                         maxLines = 1,

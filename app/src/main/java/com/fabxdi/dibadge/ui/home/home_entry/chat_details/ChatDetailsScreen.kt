@@ -56,6 +56,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.fabxdi.dibadge.data.HomeEntryEntity
+import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatMessage
 import com.fabxdi.dibadge.viewmodel.GroupFolderFile
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.fabxdi.dibadge.util.UserColorUtils
@@ -128,7 +130,8 @@ private fun formatTimestampToDateHeader(timestamp: Long): String {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatDetailsScreen(
-    groupId: String,
+    entry: HomeEntryEntity,
+    messages: List<ChatMessage> = emptyList(),
     onBack: () -> Unit,
     detailsViewModel: GroupDetailsViewModel = viewModel()
 ) {
@@ -136,8 +139,15 @@ fun ChatDetailsScreen(
 
     val context = LocalContext.current
 
-    LaunchedEffect(groupId) {
-        detailsViewModel.loadGroupDetails(groupId)
+    LaunchedEffect(entry.id, entry.title, entry.subtitle, messages) {
+        detailsViewModel.loadGroupDetails(
+            groupId = entry.id.toString(),
+            initialName = entry.title,
+            initialSubtitle = entry.subtitle
+        )
+        if (messages.isNotEmpty()) {
+            detailsViewModel.syncChatMessagesMedia(context, messages)
+        }
     }
 
     val groupName by detailsViewModel.groupName.collectAsState()
@@ -156,9 +166,10 @@ fun ChatDetailsScreen(
 
     var activeTab by remember { mutableIntStateOf(0) } // 0=Media, 1=Members, 2=Groups, 3=Forms, 4=Folders
     var selectedMediaCategory by remember { mutableStateOf("Media") } // "Media", "Docs"
-    var showEditDialog by remember { mutableStateOf(false) }
+    var showEditNameDialog by remember { mutableStateOf(false) }
+    var showEditDescriptionDialog by remember { mutableStateOf(false) }
     var editNameInput by remember { mutableStateOf("") }
-    var editSubtitleInput by remember { mutableStateOf("") }
+    var editDescriptionInput by remember { mutableStateOf("") }
 
     var showAddMemberDialog by remember { mutableStateOf(false) }
     var memberSearchQuery by remember { mutableStateOf("") }
@@ -247,7 +258,7 @@ fun ChatDetailsScreen(
                             .size(100.dp)
                             .clickable { avatarPickerLauncher.launch("image/*") },
                         shape = CircleShape,
-                        color = UserColorUtils.getColorForName(groupName)
+                        color = UserColorUtils.getColorForName(entry.id.toString())
                     ) {
                         if (groupPhotoUrl.isNotBlank()) {
                             AsyncImage(
@@ -272,7 +283,7 @@ fun ChatDetailsScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Group Name (Clickable -> Edit Popup)
+                    // Group Name (Clickable -> Edit Name Popup ONLY)
                     Text(
                         text = groupName.ifBlank { "Group" },
                         fontSize = 22.sp,
@@ -281,23 +292,21 @@ fun ChatDetailsScreen(
                         textAlign = TextAlign.Center,
                         modifier = Modifier.clickable {
                             editNameInput = groupName
-                            editSubtitleInput = groupSubtitle
-                            showEditDialog = true
+                            showEditNameDialog = true
                         }
                     )
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    // Description Text (Clickable -> Edit Popup)
+                    // Description Text (Clickable -> Edit Description Popup ONLY)
                     Text(
                         text = groupSubtitle.ifBlank { "Add group description" },
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                         textAlign = TextAlign.Center,
                         modifier = Modifier.clickable {
-                            editNameInput = groupName
-                            editSubtitleInput = groupSubtitle
-                            showEditDialog = true
+                            editDescriptionInput = groupSubtitle
+                            showEditDescriptionDialog = true
                         }
                     )
                 }
@@ -548,38 +557,6 @@ fun ChatDetailsScreen(
                                             Spacer(modifier = Modifier.height(12.dp))
                                         }
                                     }
-                                }
-                            }
-                        }
-
-                        // SINGLE FLOATING PILL AT BOTTOM CENTER (2 OPTIONS: Media and Docs)
-                        Surface(
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(bottom = 0.dp),
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surface,
-                            shadowElevation = 6.dp
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
-                                horizontalArrangement = Arrangement.spacedBy(28.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                val categories = listOf("Media", "Docs")
-                                categories.forEach { category ->
-                                    val isCategorySelected = (selectedMediaCategory == category)
-                                    Text(
-                                        text = category,
-                                        fontSize = 14.sp,
-                                        fontWeight = if (isCategorySelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isCategorySelected) {
-                                            MaterialTheme.colorScheme.onSurface
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                        },
-                                        modifier = Modifier.clickable { selectedMediaCategory = category }
-                                    )
                                 }
                             }
                         }
@@ -862,6 +839,44 @@ fun ChatDetailsScreen(
                 }
             } // end main Column inside Box
 
+            // FLOATING PILL AT SCREEN BOTTOM CENTER (Media & Docs - Perfectly Centered at Bottom)
+            if (activeTab == 0) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surface,
+                        shadowElevation = 8.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(28.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val categories = listOf("Media", "Docs")
+                            categories.forEach { category ->
+                                val isCategorySelected = (selectedMediaCategory == category)
+                                Text(
+                                    text = category,
+                                    fontSize = 14.sp,
+                                    fontWeight = if (isCategorySelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isCategorySelected) {
+                                        MaterialTheme.colorScheme.onSurface
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                    },
+                                    modifier = Modifier.clickable { selectedMediaCategory = category }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // Custom Pure Text Toast Overlay (No Android App Icon!)
             AnimatedVisibility(
                 visible = customToastMessage != null,
@@ -885,11 +900,11 @@ fun ChatDetailsScreen(
     } // end else isLoading
 } // end Scaffold lambda
 
-    // Edit Group Details Popup (Styled like Home page HomeEntryDialog, NO heading title)
-    if (showEditDialog) {
+    // Edit Group Name Popup (NO heading title, Name field ONLY)
+    if (showEditNameDialog) {
         AlertDialog(
-            onDismissRequest = { showEditDialog = false },
-            title = null, // NO HEADING TITLE AS REQUESTED
+            onDismissRequest = { showEditNameDialog = false },
+            title = null, // NO HEADING TITLE
             text = {
                 Column {
                     TextField(
@@ -914,14 +929,39 @@ fun ChatDetailsScreen(
                             focusedIndicatorColor = Color.Transparent
                         )
                     )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(vertical = 4.dp),
-                        thickness = 1.dp,
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (editNameInput.isNotBlank()) {
+                            detailsViewModel.updateGroupName(context, editNameInput)
+                            showEditNameDialog = false
+                        }
+                    },
+                    enabled = editNameInput.isNotBlank()
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditNameDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Edit Group Description Popup (NO heading title, Description field ONLY)
+    if (showEditDescriptionDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditDescriptionDialog = false },
+            title = null, // NO HEADING TITLE
+            text = {
+                Column {
                     TextField(
-                        value = editSubtitleInput,
-                        onValueChange = { editSubtitleInput = it },
+                        value = editDescriptionInput,
+                        onValueChange = { editDescriptionInput = it },
                         placeholder = { 
                             Text(
                                 text = "Details",
@@ -946,19 +986,15 @@ fun ChatDetailsScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        if (editNameInput.isNotBlank()) {
-                            detailsViewModel.updateGroupDetails(context, editNameInput, editSubtitleInput) {
-                                showEditDialog = false
-                            }
-                        }
-                    },
-                    enabled = editNameInput.isNotBlank()
+                        detailsViewModel.updateGroupSubtitle(context, editDescriptionInput)
+                        showEditDescriptionDialog = false
+                    }
                 ) {
                     Text("Save")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showEditDialog = false }) {
+                TextButton(onClick = { showEditDescriptionDialog = false }) {
                     Text("Cancel")
                 }
             }
