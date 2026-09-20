@@ -10,6 +10,7 @@ import com.fabxdi.dibadge.data.HomeEntryEntity
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatMessage
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
@@ -110,12 +111,8 @@ class GroupDetailsViewModel : ViewModel() {
         currentGroupId = groupId
         _isLoading.value = true
 
-        if (initialName.isNotBlank()) {
-            _groupName.value = initialName
-        }
-        if (initialSubtitle.isNotBlank()) {
-            _groupSubtitle.value = initialSubtitle
-        }
+        _groupName.value = initialName.ifBlank { "Group" }
+        _groupSubtitle.value = if (initialSubtitle == "test") "" else initialSubtitle
 
         viewModelScope.launch {
             try {
@@ -141,10 +138,11 @@ class GroupDetailsViewModel : ViewModel() {
             val snapshot = groupDocRef.get().await()
 
             if (snapshot.exists()) {
-                val name = snapshot.getString("name") ?: snapshot.getString("title") ?: _groupName.value.ifBlank { "Group" }
+                val name = (snapshot.getString("name") ?: snapshot.getString("title") ?: _groupName.value).ifBlank { "Group" }
                 _groupName.value = name
 
-                val subtitle = snapshot.getString("subtitle") ?: snapshot.getString("description") ?: _groupSubtitle.value
+                val rawSubtitle = snapshot.getString("subtitle") ?: snapshot.getString("description") ?: _groupSubtitle.value
+                val subtitle = if (rawSubtitle == "test") "" else rawSubtitle
                 _groupSubtitle.value = subtitle
 
                 val photoUrl = snapshot.getString("photoUrl") ?: snapshot.getString("avatarUrl") ?: ""
@@ -254,6 +252,42 @@ class GroupDetailsViewModel : ViewModel() {
         }
     }
 
+    fun deleteMediaItem(context: Context, item: GroupMediaItem) {
+        viewModelScope.launch {
+            _media.value = _media.value.filter { it.id != item.id }
+            _files.value = _files.value.filter { it.id != item.id && it.downloadUrl != item.url }
+            Toast.makeText(context, "Media deleted", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun deleteSelectedMediaForMe(context: Context, idsToDelete: Set<String>) {
+        if (idsToDelete.isEmpty()) return
+        viewModelScope.launch {
+            _media.value = _media.value.filterNot { idsToDelete.contains(it.id) }
+            _files.value = _files.value.filterNot { idsToDelete.contains(it.id) }
+            Toast.makeText(context, "Deleted for you", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun deleteSelectedMediaForAll(context: Context, idsToDelete: Set<String>) {
+        if (idsToDelete.isEmpty()) return
+        viewModelScope.launch {
+            _media.value = _media.value.filterNot { idsToDelete.contains(it.id) }
+            _files.value = _files.value.filterNot { idsToDelete.contains(it.id) }
+            if (currentGroupId.isNotBlank()) {
+                for (id in idsToDelete) {
+                    try {
+                        db.collection("personalGroups").document(currentGroupId).collection("media").document(id).delete()
+                        db.collection("personalGroups").document(currentGroupId).collection("files").document(id).delete()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+            Toast.makeText(context, "Deleted for everyone", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     fun syncChatMessagesMedia(context: Context, messages: List<ChatMessage>) {
         if (messages.isEmpty()) return
 
@@ -332,24 +366,59 @@ class GroupDetailsViewModel : ViewModel() {
         return "image"
     }
 
+    private suspend fun ensureAuthenticated(): FirebaseUser? {
+        var user = auth.currentUser
+        if (user == null) {
+            try {
+                val result = auth.signInAnonymously().await()
+                user = result.user
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        return user
+    }
+
     fun uploadGroupAvatarPhoto(context: Context, imageUri: Uri, onDone: () -> Unit = {}) {
         if (currentGroupId.isBlank()) return
+
+        // Local update for instant UI feedback
+        _groupPhotoUrl.value = imageUri.toString()
+        updateRoomHomeEntry(context, _groupName.value, _groupSubtitle.value)
+
         viewModelScope.launch {
             try {
+                ensureAuthenticated()
                 val storageRef = storage.reference.child("personalGroups/$currentGroupId/avatar_${System.currentTimeMillis()}.jpg")
                 storageRef.putFile(imageUri).await()
                 val downloadUrl = storageRef.downloadUrl.await().toString()
+
+                _groupPhotoUrl.value = downloadUrl
 
                 db.collection("personalGroups").document(currentGroupId)
                     .set(mapOf("photoUrl" to downloadUrl, "avatarUrl" to downloadUrl), SetOptions.merge())
                     .await()
 
-                _groupPhotoUrl.value = downloadUrl
                 Toast.makeText(context, "Group photo updated!", Toast.LENGTH_SHORT).show()
                 onDone()
             } catch (e: Exception) {
                 e.printStackTrace()
-                Toast.makeText(context, "Failed to update photo: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun deleteGroupAvatarPhoto(context: Context) {
+        _groupPhotoUrl.value = ""
+        updateRoomHomeEntry(context, _groupName.value, _groupSubtitle.value)
+        viewModelScope.launch {
+            try {
+                if (currentGroupId.isNotBlank()) {
+                    db.collection("personalGroups").document(currentGroupId)
+                        .set(mapOf("photoUrl" to "", "avatarUrl" to ""), SetOptions.merge())
+                }
+                Toast.makeText(context, "Group photo removed", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }
@@ -688,9 +757,21 @@ class GroupDetailsViewModel : ViewModel() {
     fun uploadFileToGroupFolder(context: Context, fileUri: Uri, onComplete: () -> Unit = {}) {
         if (currentGroupId.isBlank()) return
 
+        val fileName = FilePickerUtils.getFileName(context, fileUri).ifBlank { "Document" }
+        val fileId = UUID.randomUUID().toString()
+        val localFile = GroupFolderFile(
+            id = fileId,
+            name = fileName,
+            downloadUrl = fileUri.toString(),
+            timestamp = System.currentTimeMillis()
+        )
+
+        // Local update for instant UI feedback
+        _files.value = (listOf(localFile) + _files.value).distinctBy { it.downloadUrl }
+
         viewModelScope.launch {
             try {
-                val fileName = FilePickerUtils.getFileName(context, fileUri)
+                ensureAuthenticated()
                 val folderId = UUID.randomUUID().toString().take(8)
                 val storagePath = "personalGroups/$currentGroupId/folders/$folderId/$fileName"
 
@@ -708,14 +789,14 @@ class GroupDetailsViewModel : ViewModel() {
 
                 db.collection("personalGroups").document(currentGroupId)
                     .collection("files")
-                    .add(fileDoc)
+                    .document(fileId)
+                    .set(fileDoc, SetOptions.merge())
                     .await()
 
                 Toast.makeText(context, "File uploaded successfully!", Toast.LENGTH_SHORT).show()
                 onComplete()
             } catch (e: Exception) {
                 e.printStackTrace()
-                Toast.makeText(context, "Upload failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
             }
         }
     }

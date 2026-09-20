@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -54,18 +55,21 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.ui.home.home_entry.chat_details.ChatDetailsScreen
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.fabxdi.dibadge.util.UserColorUtils
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
+import com.fabxdi.dibadge.viewmodel.ChatViewModel
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.delay
 import java.io.File
 import java.time.LocalDate
+import kotlin.math.abs
 
 data class ChatMessage(
     val id: String,
@@ -230,19 +234,15 @@ fun ChatScreen(
     val scope = rememberCoroutineScope()
 
     val reminderViewModel: ReminderViewModel = viewModel()
+    val chatViewModel: ChatViewModel = viewModel()
     val homeEntries by reminderViewModel.allHomeEntries.collectAsState(initial = emptyList())
     val currentEntry = homeEntries.find { it.id == entry.id } ?: entry
 
-    var messages by remember {
-        mutableStateOf(
-            listOf(
-                ChatMessage("1", "Hi there!", "John", false),
-                ChatMessage("2", "Hello! How can I help you?", "Me", true),
-                ChatMessage("3", "I have a question about the certificate.", "Mary", false),
-                ChatMessage("4", "Sure, go ahead and ask.", "Me", true)
-            )
-        )
+    LaunchedEffect(currentEntry.id) {
+        chatViewModel.listenToChatMessages(context, currentEntry.id.toString())
     }
+
+    val messages by chatViewModel.messages.collectAsState()
 
     var inputText by remember { mutableStateOf("") }
     var showEmojiPicker by remember { mutableStateOf(false) }
@@ -267,7 +267,33 @@ fun ChatScreen(
     if (showGroupDetails) {
         ChatDetailsScreen(
             entry = currentEntry,
-            onBack = { showGroupDetails = false }
+            messages = messages,
+            onBack = { showGroupDetails = false },
+            onReplyMedia = { mediaUrl: String ->
+                showGroupDetails = false
+                val targetMsg = messages.find { msg -> msg.attachments.contains(mediaUrl) }
+                if (targetMsg != null) {
+                    replyingTo = targetMsg
+                    replyingToAttachmentUriState = mediaUrl
+                } else {
+                    val syntheticMsg = ChatMessage(
+                        id = "synthetic_${mediaUrl.hashCode()}",
+                        text = "",
+                        senderName = currentEntry.title,
+                        isSentByMe = false,
+                        attachments = listOf(mediaUrl)
+                    )
+                    replyingTo = syntheticMsg
+                    replyingToAttachmentUriState = mediaUrl
+                }
+            },
+            onShowInChat = { mediaUrl: String ->
+                showGroupDetails = false
+                val targetMsg = messages.find { msg -> msg.attachments.contains(mediaUrl) }
+                if (targetMsg != null) {
+                    highlightedMessageId = targetMsg.id
+                }
+            }
         )
         return
     }
@@ -420,7 +446,9 @@ fun ChatScreen(
                 galleryMessage = null
             },
             onDelete = {
-                messages = messages.filter { it.id != galleryMessage?.id }
+                galleryMessage?.let {
+                    chatViewModel.deleteMessages(context, currentEntry.id.toString(), setOf(it.id))
+                }
                 galleryMedia = null
                 galleryMessage = null
             }
@@ -464,7 +492,7 @@ fun ChatScreen(
                     if (onlyMineSelected) {
                         TextButton(
                             onClick = {
-                                messages = messages.filter { !selectedMessages.contains(it.id) }
+                                chatViewModel.deleteMessages(context, currentEntry.id.toString(), selectedMessages)
                                 selectedMessages = emptySet()
                                 showDeleteDialog = false
                             }
@@ -474,7 +502,7 @@ fun ChatScreen(
                     }
                     TextButton(
                         onClick = {
-                            messages = messages.filter { !selectedMessages.contains(it.id) }
+                            chatViewModel.deleteMessages(context, currentEntry.id.toString(), selectedMessages)
                             selectedMessages = emptySet()
                             showDeleteDialog = false
                         }
@@ -1068,20 +1096,15 @@ fun ChatScreen(
                             onClick = {
                                 if (showSend) {
                                     if (editingMessage != null) {
-                                        messages = messages.map {
-                                            if (it.id == editingMessage!!.id) {
-                                                it.copy(text = inputText.trim(), isEdited = true)
-                                            } else it
-                                        }
+                                        chatViewModel.editMessage(context, currentEntry.id.toString(), editingMessage!!.id, inputText.trim())
                                         editingMessage = null
                                     } else {
-                                        messages = messages + ChatMessage(
-                                            id = System.currentTimeMillis().toString(), 
-                                            text = inputText.trim(), 
-                                            senderName = "Me", 
-                                            isSentByMe = true, 
-                                            attachments = attachedFiles.map { it.toString() },
-                                            attachmentDurations = pendingDurations,
+                                        chatViewModel.sendMessage(
+                                            context = context,
+                                            groupId = currentEntry.id.toString(),
+                                            text = inputText.trim(),
+                                            attachmentUris = attachedFiles,
+                                            durationsMap = pendingDurations,
                                             replyingTo = replyingTo,
                                             replyingToAttachmentUri = replyingToAttachmentUriState
                                         )

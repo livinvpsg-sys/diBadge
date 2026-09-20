@@ -57,4 +57,19 @@ interface ReminderDao {
 
     @Delete
     suspend fun deleteHomeEntry(entry: HomeEntryEntity)
+
+    @Query("SELECT * FROM chat_messages WHERE groupId = :groupId ORDER BY timestampMs ASC")
+    fun getChatMessagesForGroup(groupId: String): Flow<List<ChatMessageEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertChatMessage(message: ChatMessageEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertChatMessages(messages: List<ChatMessageEntity>)
+
+    @Query("DELETE FROM chat_messages WHERE id IN (:ids)")
+    suspend fun deleteChatMessages(ids: List<String>)
+
+    @Query("DELETE FROM chat_messages WHERE groupId = :groupId")
+    suspend fun clearChatMessagesForGroup(groupId: String)
 }
