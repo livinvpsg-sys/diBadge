@@ -332,28 +332,6 @@ fun CalendarScreen(
                 topBar = {
                     TopAppBar(
                         title = { },
-                        actions = {
-                            // Left side "Logbook" with Book Icon
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .padding(end = DiBadgeTheme.spacing.medium)
-                                    .clickable { showLogbook = true }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.MenuBook,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.onBackground
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Logbook",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onBackground
-                                )
-                            }
-                        },
                         colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.background
                         )
@@ -365,13 +343,11 @@ fun CalendarScreen(
                         tonalElevation = NavigationBarDefaults.Elevation
                     ) {
                         HomeTab.entries.forEach { tab ->
-                            val isSelected = tab == HomeTab.Calendar
+                            val isSelected = false
                             NavigationBarItem(
                                 selected = isSelected,
                                 onClick = {
-                                    if (!isSelected) {
-                                        onTabClick(tab)
-                                    }
+                                    onTabClick(tab)
                                 },
                                 colors = NavigationBarItemDefaults.colors(
                                     selectedIconColor = MaterialTheme.colorScheme.onSurface,
@@ -390,48 +366,37 @@ fun CalendarScreen(
                                     )
                                 },
                                 icon = {
-                                    val iconTint = if (tab == HomeTab.Home) {
-                                        if (isSelected) TealGreen else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-                                    } else {
-                                        if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-                                    }
+                                    val iconTint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
 
-                                    if (tab == HomeTab.Calendar) {
-                                        Box(contentAlignment = Alignment.Center) {
+                                    when (tab) {
+                                        HomeTab.Home -> {
                                             Icon(
-                                                imageVector = Icons.Default.CalendarToday,
+                                                painter = painterResource(id = tab.iconRes),
                                                 contentDescription = tab.label,
                                                 tint = iconTint
                                             )
-                                            Text(
-                                                text = LocalDate.now().dayOfMonth.toString(),
-                                                style = MaterialTheme.typography.labelSmall.copy(
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    lineHeight = 9.sp
-                                                ),
-                                                color = iconTint,
-                                                modifier = Modifier.padding(top = 4.dp)
+                                        }
+                                        HomeTab.People -> {
+                                            Icon(
+                                                imageVector = Icons.Default.People,
+                                                contentDescription = tab.label,
+                                                tint = iconTint
                                             )
                                         }
-                                    } else if (tab == HomeTab.Note) {
-                                        Icon(
-                                            imageVector = Icons.Default.Mail,
-                                            contentDescription = tab.label,
-                                            tint = iconTint
-                                        )
-                                    } else if (tab == HomeTab.People) {
-                                        Icon(
-                                            imageVector = Icons.Default.People,
-                                            contentDescription = tab.label,
-                                            tint = iconTint
-                                        )
-                                    } else {
-                                        Icon(
-                                            painter = painterResource(id = tab.iconRes),
-                                            contentDescription = tab.label,
-                                            tint = iconTint
-                                        )
+                                        HomeTab.Logbook -> {
+                                            Icon(
+                                                imageVector = Icons.Default.MenuBook,
+                                                contentDescription = tab.label,
+                                                tint = iconTint
+                                            )
+                                        }
+                                        HomeTab.Note -> {
+                                            Icon(
+                                                imageVector = Icons.Default.Mail,
+                                                contentDescription = tab.label,
+                                                tint = iconTint
+                                            )
+                                        }
                                     }
                                 }
                             )

@@ -74,23 +74,25 @@ class MainActivity : ComponentActivity() {
 
                     // State to manage the currently selected tab
                     var selectedTab by remember { mutableStateOf(HomeTab.Home) }
+                    var showCalendarScreen by remember { mutableStateOf(false) }
                     var initialReminderToEdit by rememberSaveable { mutableStateOf<Int?>(null) }
                     var initialDateForCalendar by remember { mutableStateOf<LocalDate?>(null) }
 
                     LaunchedEffect(reminderIdToOpen) {
                         if (reminderIdToOpen != -1) {
-                            selectedTab = HomeTab.Calendar
+                            showCalendarScreen = true
                             initialReminderToEdit = reminderIdToOpen
                         }
                     }
 
-                    if (selectedTab == HomeTab.Calendar) {
+                    if (showCalendarScreen) {
                         CalendarScreen(
                             onTabClick = { tab ->
+                                showCalendarScreen = false
                                 selectedTab = tab
                             },
                             onBackClick = {
-                                selectedTab = HomeTab.Home
+                                showCalendarScreen = false
                             },
                             viewModel = reminderViewModel,
                             initialReminderId = initialReminderToEdit,
@@ -102,17 +104,15 @@ class MainActivity : ComponentActivity() {
                             selectedTab = selectedTab,
                             onTabSelected = { tab ->
                                 selectedTab = tab
-                                if (tab != HomeTab.Calendar) {
-                                    initialDateForCalendar = null
-                                }
+                                initialDateForCalendar = null
                             },
                             onCalendarTabClick = {
-                                selectedTab = HomeTab.Calendar
+                                showCalendarScreen = true
                                 initialDateForCalendar = null
                             },
                             onReminderClick = {
                                 initialDateForCalendar = LocalDate.now()
-                                selectedTab = HomeTab.Calendar
+                                showCalendarScreen = true
                             },
                             reminderCount = todayRemindersCount,
                             notificationCount = 0,

@@ -59,14 +59,14 @@ fun CalendarGrid(
 
     Column(
         modifier = modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .padding(horizontal = DiBadgeTheme.spacing.medium)
             .pointerInput(Unit) {
                 var totalDrag = 0f
                 detectHorizontalDragGestures(
                     onDragStart = { totalDrag = 0f },
                     onDragEnd = {
-                        if (abs(totalDrag) > 100) { // Increased threshold for stability
+                        if (abs(totalDrag) > 60) {
                             if (totalDrag > 0) {
                                 currentMonth = currentMonth.minusMonths(1)
                             } else {
@@ -81,7 +81,7 @@ fun CalendarGrid(
             },
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(64.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
         // Month and Year Display
         Row(
@@ -99,16 +99,6 @@ fun CalendarGrid(
                     style = MaterialTheme.typography.headlineMedium,
                     modifier = Modifier.clickable { showYearPicker = true }
                 )
-            }
-
-            // Month Navigation Buttons
-            Row {
-                IconButton(onClick = { currentMonth = currentMonth.minusMonths(1) }) {
-                    Text("<", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
-                }
-                IconButton(onClick = { currentMonth = currentMonth.plusMonths(1) }) {
-                    Text(">", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
-                }
             }
         }
 

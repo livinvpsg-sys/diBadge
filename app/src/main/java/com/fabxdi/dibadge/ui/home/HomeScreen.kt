@@ -10,8 +10,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Mail
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.R
 import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
+import com.fabxdi.dibadge.ui.calendar.logbook.LogbookScreen
 import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
 import com.fabxdi.dibadge.ui.calendar.reminder.ReminderFormScreen
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatScreen
@@ -46,8 +47,8 @@ enum class HomeTab(
     @DrawableRes val iconRes: Int
 ) {
     Home("Home", R.drawable.ic_home),
-    Calendar("Calendar", R.drawable.ic_calendar),
     People("People", R.drawable.ic_people),
+    Logbook("Logbook", R.drawable.ic_calendar),
     Note("Inbox", R.drawable.ic_note)
 }
 
@@ -172,6 +173,7 @@ fun MainDashboard(
                                 onSearchQueryChange = { homeSearchQuery = it },
                                 onReminderClick = onReminderClick,
                                 onMenuClick = { scope.launch { drawerState.open() } },
+                                onCalendarClick = onCalendarTabClick,
                                 onQrClick = { showQrScanner = true },
                                 selectedCount = selectedEntries.size,
                                 onDeleteClick = { showDeleteEntryDialog = true },
@@ -189,9 +191,6 @@ fun MainDashboard(
                                     selected = selectedTab == tab,
                                     onClick = {
                                         onTabSelected(tab)
-                                        if (tab == HomeTab.Calendar) {
-                                            onCalendarTabClick()
-                                        }
                                     },
                                     colors = NavigationBarItemDefaults.colors(
                                         selectedIconColor = MaterialTheme.colorScheme.onSurface,
@@ -216,42 +215,35 @@ fun MainDashboard(
                                             if (selectedTab == tab) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
                                         }
 
-                                        if (tab == HomeTab.Calendar) {
-                                            Box(contentAlignment = Alignment.Center) {
+                                        when (tab) {
+                                            HomeTab.Home -> {
                                                 Icon(
-                                                    imageVector = Icons.Default.CalendarToday,
+                                                    painter = painterResource(id = tab.iconRes),
                                                     contentDescription = tab.label,
                                                     tint = iconTint
                                                 )
-                                                Text(
-                                                    text = LocalDate.now().dayOfMonth.toString(),
-                                                    style = MaterialTheme.typography.labelSmall.copy(
-                                                        fontSize = 9.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        lineHeight = 9.sp
-                                                    ),
-                                                    color = iconTint,
-                                                    modifier = Modifier.padding(top = 4.dp)
+                                            }
+                                            HomeTab.People -> {
+                                                Icon(
+                                                    imageVector = Icons.Default.People,
+                                                    contentDescription = tab.label,
+                                                    tint = iconTint
                                                 )
                                             }
-                                        } else if (tab == HomeTab.Note) {
-                                            Icon(
-                                                imageVector = Icons.Default.Mail,
-                                                contentDescription = tab.label,
-                                                tint = iconTint
-                                            )
-                                        } else if (tab == HomeTab.People) {
-                                            Icon(
-                                                imageVector = Icons.Default.People,
-                                                contentDescription = tab.label,
-                                                tint = iconTint
-                                            )
-                                        } else {
-                                            Icon(
-                                                painter = painterResource(id = tab.iconRes),
-                                                contentDescription = tab.label,
-                                                tint = iconTint
-                                            )
+                                            HomeTab.Logbook -> {
+                                                Icon(
+                                                    imageVector = Icons.Default.MenuBook,
+                                                    contentDescription = tab.label,
+                                                    tint = iconTint
+                                                )
+                                            }
+                                            HomeTab.Note -> {
+                                                Icon(
+                                                    imageVector = Icons.Default.Mail,
+                                                    contentDescription = tab.label,
+                                                    tint = iconTint
+                                                )
+                                            }
                                         }
                                     }
                                 )
@@ -345,8 +337,16 @@ fun MainDashboard(
                                     }
                                 }
                             }
-                            HomeTab.Calendar -> Text("Calendar View", style = MaterialTheme.typography.titleLarge)
                             HomeTab.People -> Text("People View", style = MaterialTheme.typography.titleLarge)
+                            HomeTab.Logbook -> {
+                                val allLeaves by viewModel.allLeaves.collectAsState(initial = emptyList())
+                                val allOvertime by viewModel.allOvertime.collectAsState(initial = emptyList())
+                                LogbookScreen(
+                                    leaves = allLeaves,
+                                    overtimes = allOvertime,
+                                    onBack = { onTabSelected(HomeTab.Home) }
+                                )
+                            }
                             HomeTab.Note -> Text("Inbox View", style = MaterialTheme.typography.titleLarge)
                         }
                     }
