@@ -2,6 +2,7 @@ package com.fabxdi.dibadge.ui.calendar
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,6 +21,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import java.time.LocalDate
+import java.time.Month
 import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
@@ -35,6 +37,7 @@ fun CalendarGrid(
 ) {
     var currentMonth by remember { mutableStateOf(YearMonth.now()) }
     var showYearPicker by remember { mutableStateOf(false) }
+    var showMonthPicker by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
 
     // Get today's date for highlighting
@@ -81,7 +84,7 @@ fun CalendarGrid(
             },
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(56.dp))
 
         // Month and Year Display
         Row(
@@ -92,7 +95,8 @@ fun CalendarGrid(
             Column {
                 Text(
                     text = monthName,
-                    style = MaterialTheme.typography.displayLarge
+                    style = MaterialTheme.typography.displayLarge,
+                    modifier = Modifier.clickable { showMonthPicker = true }
                 )
                 Text(
                     text = year.toString(),
@@ -144,40 +148,40 @@ fun CalendarGrid(
                                 Surface(
                                     modifier = Modifier
                                         .size(48.dp)
-                                        .clickable { 
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null
+                                        ) { 
                                             selectedDate = date
                                             onDateClick(date)
                                         },
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(12.dp),
                                     color = when {
                                         isSelected -> Color.White
-                                        isToday -> MaterialTheme.colorScheme.surfaceVariant
                                         else -> Color.Transparent
                                     },
-                                    border = if (isToday && !isSelected) {
-                                        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                                    } else {
-                                        null
+                                    border = when {
+                                        isSelected -> null
+                                        isHighlighted -> BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f))
+                                        else -> null
                                     }
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            Text(
-                                                text = day.toString(),
-                                                style = MaterialTheme.typography.titleLarge.copy(
-                                                    fontStyle = if (isHighlighted) FontStyle.Normal else FontStyle.Italic,
-                                                    fontWeight = if (isHighlighted) FontWeight.ExtraBold else FontWeight.Normal
-                                                ),
-                                                color = when {
-                                                    isSelected -> Color.Black
-                                                    leaveStatusMap[date] == "Pending" -> Color(0xFF2196F3) // Blue
-                                                    leaveStatusMap[date] == "Approved" -> Color(0xFF4CAF50) // Green
-                                                    isToday -> MaterialTheme.colorScheme.onSurfaceVariant
-                                                    else -> MaterialTheme.colorScheme.onBackground
-                                                },
-                                                textAlign = TextAlign.Center
-                                            )
-                                        }
+                                        Text(
+                                            text = day.toString(),
+                                            style = MaterialTheme.typography.titleLarge.copy(
+                                                fontStyle = FontStyle.Normal,
+                                                fontWeight = if (isSelected || isHighlighted || isToday) FontWeight.Bold else FontWeight.Medium
+                                            ),
+                                            color = when {
+                                                isSelected -> Color.Black
+                                                leaveStatusMap[date] == "Pending" -> Color(0xFF2196F3) // Blue
+                                                leaveStatusMap[date] == "Approved" -> Color(0xFF4CAF50) // Green
+                                                isHighlighted -> MaterialTheme.colorScheme.primary
+                                                else -> MaterialTheme.colorScheme.onBackground
+                                            },
+                                            textAlign = TextAlign.Center
+                                        )
                                     }
                                 }
                             }
@@ -185,6 +189,24 @@ fun CalendarGrid(
                     }
                 }
             }
+        }
+    }
+
+    // Month Picker
+    if (showMonthPicker) {
+        ModalBottomSheet(
+            onDismissRequest = { showMonthPicker = false },
+            sheetState = sheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface
+        ) {
+            MonthPickerList(
+                currentMonthValue = currentMonth.monthValue,
+                onMonthSelected = { selectedMonthValue ->
+                    currentMonth = currentMonth.withMonth(selectedMonthValue)
+                    showMonthPicker = false
+                }
+            )
         }
     }
 
@@ -203,6 +225,47 @@ fun CalendarGrid(
                     showYearPicker = false
                 }
             )
+        }
+    }
+}
+
+@Composable
+fun MonthPickerList(currentMonthValue: Int, onMonthSelected: (Int) -> Unit) {
+    val months = remember { (1..12).toList() }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = (currentMonthValue - 1).coerceAtLeast(0))
+
+    LazyColumn(
+        state = listState,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(320.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        contentPadding = PaddingValues(vertical = DiBadgeTheme.spacing.medium)
+    ) {
+        items(months) { monthVal ->
+            val monthName = Month.of(monthVal).getDisplayName(TextStyle.FULL, Locale.getDefault())
+            val isSelected = monthVal == currentMonthValue
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onMonthSelected(monthVal) }
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = monthName,
+                    textAlign = TextAlign.Center,
+                    style = if (isSelected)
+                        MaterialTheme.typography.headlineMedium
+                    else
+                        MaterialTheme.typography.titleMedium,
+                    color = if (isSelected)
+                        MaterialTheme.colorScheme.onSurface
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                )
+            }
         }
     }
 }

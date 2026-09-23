@@ -34,14 +34,11 @@ fun HomeBanner(
     onSearchQueryChange: (String) -> Unit,
     onReminderClick: () -> Unit,
     onMenuClick: () -> Unit,
-    onCalendarClick: () -> Unit = {},
     onQrClick: () -> Unit,
     selectedCount: Int = 0,
     onDeleteClick: () -> Unit = {},
     onClearSelection: () -> Unit = {}
 ) {
-    var showHeaderMenu by remember { mutableStateOf(false) }
-
     val greetingMessage = remember {
         val now = LocalTime.now()
         when (now.hour) {
@@ -103,57 +100,15 @@ fun HomeBanner(
                     color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.weight(1f)
                 )
-                Box {
-                    IconButton(
-                        onClick = { showHeaderMenu = true },
-                        modifier = Modifier.offset(x = 12.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Menu",
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-
-                    DropdownMenu(
-                        expanded = showHeaderMenu,
-                        onDismissRequest = { showHeaderMenu = false },
-                        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-                    ) {
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = "Calendar",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            onClick = {
-                                showHeaderMenu = false
-                                onCalendarClick()
-                            },
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
-                            modifier = Modifier.height(38.dp)
-                        )
-
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = "Menu",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            },
-                            onClick = {
-                                showHeaderMenu = false
-                                onMenuClick()
-                            },
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
-                            modifier = Modifier.height(38.dp)
-                        )
-                    }
+                IconButton(
+                    onClick = onMenuClick,
+                    modifier = Modifier.offset(x = 12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Menu",
+                        tint = MaterialTheme.colorScheme.onBackground
+                    )
                 }
             }
         }

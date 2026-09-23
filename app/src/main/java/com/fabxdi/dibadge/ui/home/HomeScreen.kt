@@ -147,6 +147,88 @@ fun MainDashboard(
         return
     }
 
+    val bottomNavBar: @Composable () -> Unit = {
+        NavigationBar(
+            containerColor = MaterialTheme.colorScheme.surface,
+            tonalElevation = NavigationBarDefaults.Elevation
+        ) {
+            HomeTab.entries.forEach { tab ->
+                NavigationBarItem(
+                    selected = selectedTab == tab,
+                    onClick = {
+                        onTabSelected(tab)
+                    },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.onSurface,
+                        selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                        indicatorColor = Color.Transparent,
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                    ),
+                    alwaysShowLabel = true,
+                    label = {
+                        Text(
+                            text = tab.label,
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
+                            )
+                        )
+                    },
+                    icon = {
+                        val iconTint = if (tab == HomeTab.Home) {
+                            if (selectedTab == tab) TealGreen else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                        } else {
+                            if (selectedTab == tab) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                        }
+
+                        when (tab) {
+                            HomeTab.Home -> {
+                                Icon(
+                                    painter = painterResource(id = tab.iconRes),
+                                    contentDescription = tab.label,
+                                    tint = iconTint
+                                )
+                            }
+                            HomeTab.People -> {
+                                Icon(
+                                    imageVector = Icons.Default.People,
+                                    contentDescription = tab.label,
+                                    tint = iconTint
+                                )
+                            }
+                            HomeTab.Logbook -> {
+                                Icon(
+                                    imageVector = Icons.Default.MenuBook,
+                                    contentDescription = tab.label,
+                                    tint = iconTint
+                                )
+                            }
+                            HomeTab.Note -> {
+                                Icon(
+                                    imageVector = Icons.Default.Mail,
+                                    contentDescription = tab.label,
+                                    tint = iconTint
+                                )
+                            }
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    if (selectedTab == HomeTab.Logbook) {
+        val allLeaves by viewModel.allLeaves.collectAsState(initial = emptyList())
+        val allOvertime by viewModel.allOvertime.collectAsState(initial = emptyList())
+        LogbookScreen(
+            leaves = allLeaves,
+            overtimes = allOvertime,
+            onBack = { onTabSelected(HomeTab.Home) },
+            bottomBar = bottomNavBar
+        )
+        return
+    }
+
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         ModalNavigationDrawer(
             drawerState = drawerState,
@@ -155,6 +237,7 @@ fun MainDashboard(
                     HomeMenu(
                         firstName = firstName,
                         onCloseDrawer = { scope.launch { drawerState.close() } },
+                        onCalendarClick = onCalendarTabClick,
                         onSettingsClick = onSettingsClick,
                         onSignOut = onSignOut
                     )
@@ -173,7 +256,6 @@ fun MainDashboard(
                                 onSearchQueryChange = { homeSearchQuery = it },
                                 onReminderClick = onReminderClick,
                                 onMenuClick = { scope.launch { drawerState.open() } },
-                                onCalendarClick = onCalendarTabClick,
                                 onQrClick = { showQrScanner = true },
                                 selectedCount = selectedEntries.size,
                                 onDeleteClick = { showDeleteEntryDialog = true },

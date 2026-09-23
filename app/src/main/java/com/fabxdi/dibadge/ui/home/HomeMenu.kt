@@ -15,6 +15,7 @@ import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 fun HomeMenu(
     firstName: String,
     onCloseDrawer: () -> Unit,
+    onCalendarClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
     onSignOut: () -> Unit = {}
 ) {
@@ -57,7 +58,7 @@ fun HomeMenu(
             Spacer(modifier = Modifier.height(32.dp))
 
             // Menu Items
-            val menuItems = listOf("Settings", "Certificates", "Claims", "Balance", "Sign Out")
+            val menuItems = listOf("Calendar", "Settings", "Certificates", "Claims", "Balance", "Sign Out")
             menuItems.forEach { item ->
                 NavigationDrawerItem(
                     label = { 
@@ -75,6 +76,7 @@ fun HomeMenu(
                     onClick = {
                         onCloseDrawer()
                         when (item) {
+                            "Calendar" -> onCalendarClick()
                             "Settings" -> onSettingsClick()
                             "Sign Out" -> onSignOut()
                         }
