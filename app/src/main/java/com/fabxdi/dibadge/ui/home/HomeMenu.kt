@@ -16,6 +16,7 @@ fun HomeMenu(
     firstName: String,
     onCloseDrawer: () -> Unit,
     onCalendarClick: () -> Unit = {},
+    onReminderClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
     onSignOut: () -> Unit = {}
 ) {
@@ -58,7 +59,7 @@ fun HomeMenu(
             Spacer(modifier = Modifier.height(32.dp))
 
             // Menu Items
-            val menuItems = listOf("Calendar", "Settings", "Certificates", "Claims", "Balance", "Sign Out")
+            val menuItems = listOf("Calendar", "Reminder", "Settings", "Certificates", "Claims", "Balance", "Sign Out")
             menuItems.forEach { item ->
                 NavigationDrawerItem(
                     label = { 
@@ -77,6 +78,7 @@ fun HomeMenu(
                         onCloseDrawer()
                         when (item) {
                             "Calendar" -> onCalendarClick()
+                            "Reminder" -> onReminderClick()
                             "Settings" -> onSettingsClick()
                             "Sign Out" -> onSignOut()
                         }

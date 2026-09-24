@@ -1,4 +1,4 @@
-package com.fabxdi.dibadge.ui.calendar.logbook
+package com.fabxdi.dibadge.ui.my_activity
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -35,7 +35,7 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LogbookScreen(
+fun MyActivityScreen(
     leaves: List<LeaveEntity>,
     overtimes: List<OvertimeEntity>,
     onBack: () -> Unit,
@@ -133,7 +133,7 @@ fun LogbookScreen(
                 }
 
                 IconButton(onClick = { 
-                    PdfSharingUtils.shareLogbookAsPdf(
+                    PdfSharingUtils.shareMyActivityAsPdf(
                         context = context, 
                         logs = filteredLogs, 
                         startDate = dateRangeLimits.first, 
@@ -181,37 +181,41 @@ fun LogbookScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 LazyRow(
-                    modifier = Modifier.weight(1f),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
                 ) {
                     items(filters) { filter ->
                         val isSelected = selectedFilter == filter
                         FilterChip(
                             selected = isSelected,
                             onClick = {
-                                selectedFilter = filter
                                 if (filter == "Custom") {
                                     showDateRangePicker = true
+                                } else {
+                                    selectedFilter = filter
+                                    customStartDate = null
+                                    customEndDate = null
                                 }
                             },
                             label = {
                                 if (filter == "Custom" && customStartDate != null && customEndDate != null) {
-                                    Text("${customStartDate?.format(dateFormatter)} - ${customEndDate?.format(dateFormatter)}")
+                                    Text("${customStartDate!!.format(DateTimeFormatter.ofPattern("dd/MM"))} - ${customEndDate!!.format(DateTimeFormatter.ofPattern("dd/MM"))}")
                                 } else {
                                     Text(filter)
                                 }
                             },
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                                selectedLabelColor = MaterialTheme.colorScheme.primary,
-                                selectedTrailingIconColor = MaterialTheme.colorScheme.primary
+                                selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                selectedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                labelColor = MaterialTheme.colorScheme.onSurface
                             ),
                             border = FilterChipDefaults.filterChipBorder(
                                 enabled = true,
                                 selected = isSelected,
-                                borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                                selectedBorderColor = MaterialTheme.colorScheme.primary
+                                borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                selectedBorderColor = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         )
                     }
@@ -221,8 +225,8 @@ fun LogbookScreen(
                     IconButton(onClick = { isFilterMenuExpanded = true }) {
                         Icon(
                             imageVector = Icons.Default.FilterList,
-                            contentDescription = "Filter",
-                            tint = MaterialTheme.colorScheme.primary
+                            contentDescription = "Filter Types",
+                            tint = MaterialTheme.colorScheme.onBackground
                         )
                     }
 
@@ -231,64 +235,59 @@ fun LogbookScreen(
                         onDismissRequest = { isFilterMenuExpanded = false }
                     ) {
                         DropdownMenuItem(
-                            text = { 
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Leave", modifier = Modifier.weight(1f))
-                                    Switch(
-                                        checked = showLeave,
-                                        onCheckedChange = { showLeave = it },
-                                        modifier = Modifier.scale(0.7f)
-                                    )
-                                }
-                            },
-                            onClick = { }
+                            text = { Text("Leave") },
+                            trailingIcon = { Checkbox(checked = showLeave, onCheckedChange = null) },
+                            onClick = { showLeave = !showLeave }
                         )
                         DropdownMenuItem(
-                            text = { 
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Overtime", modifier = Modifier.weight(1f))
-                                    Switch(
-                                        checked = showOvertime,
-                                        onCheckedChange = { showOvertime = it },
-                                        modifier = Modifier.scale(0.7f)
-                                    )
-                                }
-                            },
-                            onClick = { }
+                            text = { Text("Overtime") },
+                            trailingIcon = { Checkbox(checked = showOvertime, onCheckedChange = null) },
+                            onClick = { showOvertime = !showOvertime }
                         )
                     }
                 }
             }
 
-            // Content Area (List of logs)
-            if (filteredLogs.isEmpty()) {
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Logs List
+            if (groupedLogs.isEmpty()) {
                 Box(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = "No logs found for the selected period",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )
                 }
             } else {
                 LazyColumn(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    contentPadding = PaddingValues(horizontal = DiBadgeTheme.spacing.medium, vertical = 8.dp)
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(1f),
+                    contentPadding = PaddingValues(horizontal = DiBadgeTheme.spacing.medium, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     groupedLogs.forEach { (date, logs) ->
                         item {
                             Text(
                                 text = date.format(dateFormatter),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(vertical = 4.dp)
                             )
                         }
+
                         items(logs) { log ->
-                            LogItemCard(log, dateFormatter, timeFormatter)
-                            Spacer(modifier = Modifier.height(12.dp))
+                            when (log) {
+                                is LeaveEntity -> LeaveLogCard(leave = log, dateFormatter = dateFormatter)
+                                is OvertimeEntity -> OvertimeLogCard(overtime = log, dateFormatter = dateFormatter, timeFormatter = timeFormatter)
+                            }
                         }
                     }
                 }
@@ -302,147 +301,136 @@ fun LogbookScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        dateRangePickerState.selectedStartDateMillis?.let { start ->
-                            customStartDate = Instant.ofEpochMilli(start).atZone(ZoneId.of("UTC")).toLocalDate()
-                        }
-                        dateRangePickerState.selectedEndDateMillis?.let { end ->
-                            customEndDate = Instant.ofEpochMilli(end).atZone(ZoneId.of("UTC")).toLocalDate()
+                        val startMillis = dateRangePickerState.selectedStartDateMillis
+                        val endMillis = dateRangePickerState.selectedEndDateMillis
+                        if (startMillis != null && endMillis != null) {
+                            customStartDate = Instant.ofEpochMilli(startMillis).atZone(ZoneId.systemDefault()).toLocalDate()
+                            customEndDate = Instant.ofEpochMilli(endMillis).atZone(ZoneId.systemDefault()).toLocalDate()
+                            selectedFilter = "Custom"
                         }
                         showDateRangePicker = false
-                    },
-                    enabled = dateRangePickerState.selectedEndDateMillis != null
-                ) { Text("OK") }
+                    }
+                ) {
+                    Text("OK")
+                }
             },
             dismissButton = {
-                TextButton(onClick = { showDateRangePicker = false }) { Text("Cancel") }
+                TextButton(onClick = { showDateRangePicker = false }) {
+                    Text("Cancel")
+                }
             }
         ) {
             DateRangePicker(
                 state = dateRangePickerState,
-                title = { Text(text = "Select Range", modifier = Modifier.padding(start = 16.dp, top = 16.dp), style = MaterialTheme.typography.labelMedium) },
-                headline = {
-                    val startText = dateRangePickerState.selectedStartDateMillis?.let { 
-                        Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate().format(dateFormatter) 
-                    } ?: "Start Date"
-                    val endText = dateRangePickerState.selectedEndDateMillis?.let { 
-                        Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate().format(dateFormatter) 
-                    } ?: "End Date"
-                    Text(
-                        text = "$startText - $endText",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(start = 16.dp, bottom = 12.dp),
-                        maxLines = 1
-                    )
-                },
-                showModeToggle = false,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.height(400.dp)
             )
         }
     }
 }
 
 @Composable
-fun LogItemCard(
-    log: Any,
-    dateFormatter: DateTimeFormatter,
-    timeFormatter: DateTimeFormatter
-) {
-    val appTimeFormatter = remember { DateTimeFormatter.ofPattern("hh:mm a", Locale.getDefault()) }
-
-    val status = when (log) {
-        is LeaveEntity -> log.status
-        is OvertimeEntity -> log.status
-        else -> ""
+fun LeaveLogCard(leave: LeaveEntity, dateFormatter: DateTimeFormatter) {
+    val dateText = if (leave.endDate != null && leave.endDate != leave.startDate) {
+        "${leave.startDate.format(dateFormatter)} - ${leave.endDate.format(dateFormatter)}"
+    } else {
+        leave.startDate.format(dateFormatter)
     }
 
-    val appliedDate = when (log) {
-        is LeaveEntity -> log.appliedDate
-        is OvertimeEntity -> log.appliedDate
-        else -> LocalDate.MIN
+    val statusColor = when (leave.status) {
+        "Approved" -> MaterialTheme.colorScheme.primary
+        "Pending" -> MaterialTheme.colorScheme.secondary
+        else -> MaterialTheme.colorScheme.error
     }
 
-    val appliedDateTime = when (log) {
-        is LeaveEntity -> log.appliedDateTime
-        is OvertimeEntity -> log.appliedDateTime
-        else -> LocalDateTime.now()
-    }
-
-    val approvedDate = when (log) {
-        is LeaveEntity -> log.approvedDate
-        is OvertimeEntity -> log.approvedDate
-        else -> null
-    }
-
-    val title = when (log) {
-        is LeaveEntity -> log.leaveType
-        is OvertimeEntity -> "Overtime ${log.date.format(dateFormatter)}"
-        else -> ""
-    }
-
-    val secondaryText = when (log) {
-        is LeaveEntity -> {
-            if (log.endDate != null) {
-                "${log.startDate.format(dateFormatter)} - ${log.endDate.format(dateFormatter)}"
-            } else {
-                log.startDate.format(dateFormatter)
-            }
-        }
-        is OvertimeEntity -> "${log.startTime.format(timeFormatter)} - ${log.endTime.format(timeFormatter)}"
-        else -> ""
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Left side: Title + Status
+        Column(modifier = Modifier.padding(16.dp)) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Main Heading
                 Text(
-                    text = title,
+                    text = leave.leaveType,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    fontWeight = FontWeight.Bold
                 )
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                // Status Label: Applied or Approved on Date
                 Text(
-                    text = if (status == "Approved" && approvedDate != null) {
-                        "Approved on ${approvedDate.format(dateFormatter)}"
-                    } else {
-                        "applied"
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    text = leave.status,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = statusColor,
+                    fontWeight = FontWeight.Bold
                 )
             }
-
-            // Right side: Time of entry
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = appliedDateTime.format(appTimeFormatter),
-                style = MaterialTheme.typography.labelSmall,
+                text = dateText,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (leave.reason.isNotBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Reason: ${leave.reason}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(2.dp))
+@Composable
+fun OvertimeLogCard(overtime: OvertimeEntity, dateFormatter: DateTimeFormatter, timeFormatter: DateTimeFormatter) {
+    val dateText = overtime.date.format(dateFormatter)
+    val timeText = "${overtime.startTime.format(timeFormatter)} - ${overtime.endTime.format(timeFormatter)}"
 
-        // Date range or Time range
-        Text(
-            text = secondaryText,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+    val statusColor = when (overtime.status) {
+        "Approved" -> MaterialTheme.colorScheme.primary
+        "Pending" -> MaterialTheme.colorScheme.secondary
+        else -> MaterialTheme.colorScheme.error
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Overtime",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = overtime.status,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = statusColor,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "$dateText ($timeText)",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (overtime.description.isNotBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Details: ${overtime.description}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
     }
 }

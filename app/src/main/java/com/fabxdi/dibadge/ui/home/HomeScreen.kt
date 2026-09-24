@@ -10,9 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Mail
-import androidx.compose.material.icons.filled.MenuBook
-import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,11 +23,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.R
 import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
-import com.fabxdi.dibadge.ui.calendar.logbook.LogbookScreen
+import com.fabxdi.dibadge.ui.my_activity.MyActivityScreen
 import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
 import com.fabxdi.dibadge.ui.calendar.reminder.ReminderFormScreen
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatScreen
@@ -38,7 +35,6 @@ import com.fabxdi.dibadge.ui.theme.TealGreen
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
 import com.fabxdi.dibadge.data.HomeEntryEntity
 import kotlinx.coroutines.launch
-import java.time.LocalDate
 import kotlin.collections.minus
 import kotlin.collections.plus
 
@@ -47,8 +43,8 @@ enum class HomeTab(
     @DrawableRes val iconRes: Int
 ) {
     Home("Home", R.drawable.ic_home),
-    People("People", R.drawable.ic_people),
-    Logbook("Logbook", R.drawable.ic_calendar),
+    Connections("Connections", R.drawable.ic_connections),
+    MyActivity("My Activity", R.drawable.ic_my_activity),
     Note("Inbox", R.drawable.ic_note)
 }
 
@@ -189,23 +185,23 @@ fun MainDashboard(
                                     tint = iconTint
                                 )
                             }
-                            HomeTab.People -> {
+                            HomeTab.Connections -> {
                                 Icon(
-                                    imageVector = Icons.Default.People,
+                                    painter = painterResource(id = R.drawable.ic_connections),
                                     contentDescription = tab.label,
                                     tint = iconTint
                                 )
                             }
-                            HomeTab.Logbook -> {
+                            HomeTab.MyActivity -> {
                                 Icon(
-                                    imageVector = Icons.Default.MenuBook,
+                                    painter = painterResource(id = R.drawable.ic_my_activity),
                                     contentDescription = tab.label,
                                     tint = iconTint
                                 )
                             }
                             HomeTab.Note -> {
                                 Icon(
-                                    imageVector = Icons.Default.Mail,
+                                    painter = painterResource(id = R.drawable.ic_inbox),
                                     contentDescription = tab.label,
                                     tint = iconTint
                                 )
@@ -217,10 +213,10 @@ fun MainDashboard(
         }
     }
 
-    if (selectedTab == HomeTab.Logbook) {
+    if (selectedTab == HomeTab.MyActivity) {
         val allLeaves by viewModel.allLeaves.collectAsState(initial = emptyList())
         val allOvertime by viewModel.allOvertime.collectAsState(initial = emptyList())
-        LogbookScreen(
+        MyActivityScreen(
             leaves = allLeaves,
             overtimes = allOvertime,
             onBack = { onTabSelected(HomeTab.Home) },
@@ -238,6 +234,7 @@ fun MainDashboard(
                         firstName = firstName,
                         onCloseDrawer = { scope.launch { drawerState.close() } },
                         onCalendarClick = onCalendarTabClick,
+                        onReminderClick = { showReminderForm = true },
                         onSettingsClick = onSettingsClick,
                         onSignOut = onSignOut
                     )
@@ -305,23 +302,23 @@ fun MainDashboard(
                                                     tint = iconTint
                                                 )
                                             }
-                                            HomeTab.People -> {
+                                            HomeTab.Connections -> {
                                                 Icon(
-                                                    imageVector = Icons.Default.People,
+                                                    painter = painterResource(id = R.drawable.ic_connections),
                                                     contentDescription = tab.label,
                                                     tint = iconTint
                                                 )
                                             }
-                                            HomeTab.Logbook -> {
+                                            HomeTab.MyActivity -> {
                                                 Icon(
-                                                    imageVector = Icons.Default.MenuBook,
+                                                    painter = painterResource(id = R.drawable.ic_my_activity),
                                                     contentDescription = tab.label,
                                                     tint = iconTint
                                                 )
                                             }
                                             HomeTab.Note -> {
                                                 Icon(
-                                                    imageVector = Icons.Default.Mail,
+                                                    painter = painterResource(id = R.drawable.ic_inbox),
                                                     contentDescription = tab.label,
                                                     tint = iconTint
                                                 )
@@ -419,16 +416,8 @@ fun MainDashboard(
                                     }
                                 }
                             }
-                            HomeTab.People -> Text("People View", style = MaterialTheme.typography.titleLarge)
-                            HomeTab.Logbook -> {
-                                val allLeaves by viewModel.allLeaves.collectAsState(initial = emptyList())
-                                val allOvertime by viewModel.allOvertime.collectAsState(initial = emptyList())
-                                LogbookScreen(
-                                    leaves = allLeaves,
-                                    overtimes = allOvertime,
-                                    onBack = { onTabSelected(HomeTab.Home) }
-                                )
-                            }
+                            HomeTab.Connections -> Text("Connections View", style = MaterialTheme.typography.titleLarge)
+                            HomeTab.MyActivity -> { }
                             HomeTab.Note -> Text("Inbox View", style = MaterialTheme.typography.titleLarge)
                         }
                     }

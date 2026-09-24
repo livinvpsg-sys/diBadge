@@ -15,7 +15,7 @@ import java.util.Locale
 
 object PdfSharingUtils {
 
-    fun shareLogbookAsPdf(context: Context, logs: List<Any>, startDate: LocalDate, endDate: LocalDate) {
+    fun shareMyActivityAsPdf(context: Context, logs: List<Any>, startDate: LocalDate, endDate: LocalDate) {
         val pdfDocument = PdfDocument()
         val titlePaint = Paint().apply {
             textSize = 24f
@@ -43,7 +43,7 @@ object PdfSharingUtils {
         val dateFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.getDefault())
         val fileDateFormatter = DateTimeFormatter.ofPattern("dd_MMM_yyyy", Locale.getDefault())
 
-        canvas.drawText("Logbook Report", margin, yPos, titlePaint)
+        canvas.drawText("My Activity Report", margin, yPos, titlePaint)
         yPos += 30f
         canvas.drawText("${startDate.format(dateFormatter)} - ${endDate.format(dateFormatter)}", margin, yPos, textPaint)
         yPos += 40f
@@ -105,7 +105,7 @@ object PdfSharingUtils {
 
         pdfDocument.finishPage(myPage)
 
-        val fileName = "Logbook_${startDate.format(fileDateFormatter)}_${endDate.format(fileDateFormatter)}.pdf"
+        val fileName = "MyActivity_${startDate.format(fileDateFormatter)}_${endDate.format(fileDateFormatter)}.pdf"
         val file = File(context.cacheDir, fileName)
         try {
             pdfDocument.writeTo(FileOutputStream(file))
@@ -121,6 +121,6 @@ object PdfSharingUtils {
             putExtra(Intent.EXTRA_STREAM, contentUri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(shareIntent, "Share Logbook PDF"))
+        context.startActivity(Intent.createChooser(shareIntent, "Share My Activity PDF"))
     }
 }

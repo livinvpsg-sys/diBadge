@@ -72,6 +72,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.fabxdi.dibadge.R
+import androidx.compose.ui.res.painterResource
 import com.fabxdi.dibadge.data.HomeEntryEntity
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatMessage
 import com.fabxdi.dibadge.viewmodel.GroupFolderFile
@@ -492,13 +494,13 @@ fun ChatDetailsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     DetailActionItem(
-                        icon = Icons.Outlined.Person,
+                        painter = painterResource(id = R.drawable.ic_members),
                         label = "Members",
                         isSelected = (selectedActionTab == 1),
                         onClick = { selectedActionTab = if (selectedActionTab == 1) null else 1 }
                     )
                     DetailActionItem(
-                        icon = Icons.Outlined.People,
+                        painter = painterResource(id = R.drawable.ic_groups),
                         label = "Groups",
                         isSelected = (selectedActionTab == 2),
                         onClick = { selectedActionTab = if (selectedActionTab == 2) null else 2 }

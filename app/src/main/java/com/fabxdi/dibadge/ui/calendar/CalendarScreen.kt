@@ -9,7 +9,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,19 +16,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
+import com.fabxdi.dibadge.R
 import com.fabxdi.dibadge.ui.home.HomeTab
 import java.time.LocalDate
-import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.Mail
-import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.outlined.Email
 import com.fabxdi.dibadge.ui.calendar.reminder.ReminderFormScreen
 import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
 import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
-import com.fabxdi.dibadge.ui.calendar.logbook.LogbookScreen
+import com.fabxdi.dibadge.ui.my_activity.MyActivityScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
-import com.fabxdi.dibadge.ui.theme.TealGreen
 import androidx.compose.foundation.shape.CircleShape
 
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -303,7 +299,7 @@ fun CalendarScreen(
             )
         }
         showLogbook -> {
-            LogbookScreen(
+            MyActivityScreen(
                 leaves = allLeaves,
                 overtimes = allOvertime,
                 onBack = { showLogbook = false }
@@ -386,23 +382,23 @@ fun CalendarScreen(
                                                 tint = iconTint
                                             )
                                         }
-                                        HomeTab.People -> {
+                                        HomeTab.Connections -> {
                                             Icon(
-                                                imageVector = Icons.Default.People,
+                                                painter = painterResource(id = R.drawable.ic_connections),
                                                 contentDescription = tab.label,
                                                 tint = iconTint
                                             )
                                         }
-                                        HomeTab.Logbook -> {
+                                        HomeTab.MyActivity -> {
                                             Icon(
-                                                imageVector = Icons.Default.MenuBook,
+                                                painter = painterResource(id = R.drawable.ic_my_activity),
                                                 contentDescription = tab.label,
                                                 tint = iconTint
                                             )
                                         }
                                         HomeTab.Note -> {
                                             Icon(
-                                                imageVector = Icons.Default.Mail,
+                                                painter = painterResource(id = R.drawable.ic_inbox),
                                                 contentDescription = tab.label,
                                                 tint = iconTint
                                             )
@@ -420,14 +416,6 @@ fun CalendarScreen(
                         modifier = Modifier.padding(bottom = 16.dp) // Breathing space from bottom bar
                     ) {
                         if (isFabExpanded) {
-                            // Reminder Pill
-                            CalendarFabPill(
-                                label = "Reminder",
-                                onClick = {
-                                    showReminderForm = true
-                                    isFabExpanded = false
-                                }
-                            )
                             // Overtime Pill
                             CalendarFabPill(
                                 label = "Overtime",

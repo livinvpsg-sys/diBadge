@@ -35,9 +35,12 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+import androidx.compose.ui.graphics.painter.Painter
+
 @Composable
 fun DetailActionItem(
-    icon: ImageVector,
+    painter: Painter? = null,
+    icon: ImageVector? = null,
     label: String,
     isSelected: Boolean,
     onClick: () -> Unit
@@ -58,16 +61,27 @@ fun DetailActionItem(
             color = if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = label,
-                    tint = if (isSelected) {
-                        MaterialTheme.colorScheme.onSurface
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-                    },
-                    modifier = Modifier.size(24.dp)
-                )
+                val iconTint = if (isSelected) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                }
+
+                if (painter != null) {
+                    Icon(
+                        painter = painter,
+                        contentDescription = label,
+                        tint = iconTint,
+                        modifier = Modifier.size(24.dp)
+                    )
+                } else if (icon != null) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = label,
+                        tint = iconTint,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
         }
         Spacer(modifier = Modifier.height(6.dp))
