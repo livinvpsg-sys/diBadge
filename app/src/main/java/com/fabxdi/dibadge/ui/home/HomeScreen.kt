@@ -27,8 +27,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.R
 import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
 import com.fabxdi.dibadge.ui.my_activity.MyActivityScreen
+import com.fabxdi.dibadge.ui.my_tasks.MyTasksScreen
 import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
-import com.fabxdi.dibadge.ui.calendar.reminder.ReminderFormScreen
+import com.fabxdi.dibadge.ui.my_tasks.reminder.ReminderFormScreen
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.ui.theme.TealGreen
@@ -44,7 +45,7 @@ enum class HomeTab(
 ) {
     Home("Home", R.drawable.ic_home),
     Connections("Connections", R.drawable.ic_connections),
-    MyActivity("My Activity", R.drawable.ic_my_activity),
+    MyTasks("My Tasks", R.drawable.ic_my_tasks),
     Note("Inbox", R.drawable.ic_note)
 }
 
@@ -79,10 +80,21 @@ fun MainDashboard(
 
     var isFabExpanded by remember { mutableStateOf(false) }
     var showReminderForm by remember { mutableStateOf(false) }
+    var showMyActivityScreen by remember { mutableStateOf(false) }
     var showOvertimeForm by remember { mutableStateOf(false) }
     var showLeaveForm by remember { mutableStateOf(false) }
 
     val allLeaves by viewModel.allLeaves.collectAsState(initial = emptyList())
+
+    if (showMyActivityScreen) {
+        val allOvertime by viewModel.allOvertime.collectAsState(initial = emptyList())
+        MyActivityScreen(
+            leaves = allLeaves,
+            overtimes = allOvertime,
+            onBack = { showMyActivityScreen = false }
+        )
+        return
+    }
 
     if (showReminderForm) {
         ReminderFormScreen(
@@ -192,9 +204,9 @@ fun MainDashboard(
                                     tint = iconTint
                                 )
                             }
-                            HomeTab.MyActivity -> {
+                            HomeTab.MyTasks -> {
                                 Icon(
-                                    painter = painterResource(id = R.drawable.ic_my_activity),
+                                    painter = painterResource(id = R.drawable.ic_my_tasks),
                                     contentDescription = tab.label,
                                     tint = iconTint
                                 )
@@ -213,12 +225,8 @@ fun MainDashboard(
         }
     }
 
-    if (selectedTab == HomeTab.MyActivity) {
-        val allLeaves by viewModel.allLeaves.collectAsState(initial = emptyList())
-        val allOvertime by viewModel.allOvertime.collectAsState(initial = emptyList())
-        MyActivityScreen(
-            leaves = allLeaves,
-            overtimes = allOvertime,
+    if (selectedTab == HomeTab.MyTasks) {
+        MyTasksScreen(
             onBack = { onTabSelected(HomeTab.Home) },
             bottomBar = bottomNavBar
         )
@@ -235,6 +243,7 @@ fun MainDashboard(
                         onCloseDrawer = { scope.launch { drawerState.close() } },
                         onCalendarClick = onCalendarTabClick,
                         onReminderClick = { showReminderForm = true },
+                        onMyActivityClick = { showMyActivityScreen = true },
                         onSettingsClick = onSettingsClick,
                         onSignOut = onSignOut
                     )
@@ -309,9 +318,9 @@ fun MainDashboard(
                                                     tint = iconTint
                                                 )
                                             }
-                                            HomeTab.MyActivity -> {
+                                            HomeTab.MyTasks -> {
                                                 Icon(
-                                                    painter = painterResource(id = R.drawable.ic_my_activity),
+                                                    painter = painterResource(id = R.drawable.ic_my_tasks),
                                                     contentDescription = tab.label,
                                                     tint = iconTint
                                                 )
@@ -417,7 +426,7 @@ fun MainDashboard(
                                 }
                             }
                             HomeTab.Connections -> Text("Connections View", style = MaterialTheme.typography.titleLarge)
-                            HomeTab.MyActivity -> { }
+                            HomeTab.MyTasks -> Text("My Tasks View", style = MaterialTheme.typography.titleLarge)
                             HomeTab.Note -> Text("Inbox View", style = MaterialTheme.typography.titleLarge)
                         }
                     }

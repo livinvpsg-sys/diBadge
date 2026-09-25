@@ -20,8 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import com.fabxdi.dibadge.R
 import com.fabxdi.dibadge.ui.home.HomeTab
 import java.time.LocalDate
-import androidx.compose.material.icons.outlined.Email
-import com.fabxdi.dibadge.ui.calendar.reminder.ReminderFormScreen
+import com.fabxdi.dibadge.ui.my_tasks.reminder.ReminderFormScreen
 import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
 import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
 import com.fabxdi.dibadge.ui.my_activity.MyActivityScreen
@@ -389,9 +388,9 @@ fun CalendarScreen(
                                                 tint = iconTint
                                             )
                                         }
-                                        HomeTab.MyActivity -> {
+                                        HomeTab.MyTasks -> {
                                             Icon(
-                                                painter = painterResource(id = R.drawable.ic_my_activity),
+                                                painter = painterResource(id = R.drawable.ic_my_tasks),
                                                 contentDescription = tab.label,
                                                 tint = iconTint
                                             )

@@ -1,4 +1,4 @@
-package com.fabxdi.dibadge.ui.calendar.reminder
+package com.fabxdi.dibadge.ui.my_tasks.reminder
 
 import androidx.activity.compose.BackHandler
 import android.content.Intent
@@ -447,7 +447,7 @@ fun ReminderFormScreen(
                 textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Normal)
             )
 
-            Spacer(modifier = Modifier.Companion.height(DiBadgeTheme.spacing.large))
+            Spacer(modifier = Modifier.height(DiBadgeTheme.spacing.large))
 
             AttachmentList(
                 context = context,
