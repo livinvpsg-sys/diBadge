@@ -122,7 +122,7 @@ fun HomeBanner(
                     if (reminderCount > 0) {
                         Box(modifier = Modifier.clickable { onReminderClick() }) {
                             Text(
-                                text = "$reminderCount badge reminder",
+                                text = if (reminderCount == 1) "1 task to do" else "$reminderCount tasks to do",
                                 style = MaterialTheme.typography.titleLarge.copy(
                                     fontWeight = FontWeight.Normal,
                                     fontSize = 18.sp,

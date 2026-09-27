@@ -1,4 +1,4 @@
-package com.fabxdi.dibadge.ui.my_tasks.reminder
+package com.fabxdi.dibadge.ui.my_tasks.to_do
 
 import androidx.activity.compose.BackHandler
 import android.content.Intent
@@ -13,6 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,7 +21,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import kotlinx.coroutines.delay
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.data.ReminderEntity
 import com.fabxdi.dibadge.ui.components.AttachmentList
@@ -40,10 +47,19 @@ fun ReminderFormScreen(
     onCancel: () -> Unit
 ) {
     val context = LocalContext.current
+    val titleFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) {
+        delay(100)
+        titleFocusRequester.requestFocus()
+        keyboardController?.show()
+    }
+
     var title by remember { mutableStateOf(reminderToEdit?.title ?: "") }
     var content by remember { mutableStateOf(reminderToEdit?.content ?: "") }
     var isRepeatMenuExpanded by remember { mutableStateOf(false) }
-    var selectedRepeat by remember { mutableStateOf<String?>(reminderToEdit?.repeatType) }
+    var selectedRepeat by remember { mutableStateOf<String?>(reminderToEdit?.repeatType ?: "once") }
     var pendingRepeatOption by remember { mutableStateOf<String?>(null) }
     val repeatOptions = listOf("once", "weekly", "monthly", "Yearly", "daily", "Custom")
 
@@ -62,7 +78,6 @@ fun ReminderFormScreen(
         initialMinute = initialTime.minute
     )
     var isAlarmEnabled by remember { mutableStateOf(reminderToEdit?.isAlarmEnabled ?: false) }
-    var showAlarmConfirmation by remember { mutableStateOf(false) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var showUnsavedChangesDialog by remember { mutableStateOf(false) }
     var triedToSave by remember { mutableStateOf(false) }
@@ -167,15 +182,39 @@ fun ReminderFormScreen(
             .format(formatter)
     }
 
+    val pillDateFormatter = remember { DateTimeFormatter.ofPattern("dd-MMM-yyyy", Locale.getDefault()) }
+
+    val formattedDateText = remember(
+        selectedRepeat,
+        datePickerState.selectedDateMillis,
+        dateRangePickerState.selectedStartDateMillis,
+        dateRangePickerState.selectedEndDateMillis
+    ) {
+        val start = dateRangePickerState.selectedStartDateMillis?.let {
+            Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate().format(pillDateFormatter)
+        }
+        val end = dateRangePickerState.selectedEndDateMillis?.let {
+            Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate().format(pillDateFormatter)
+        }
+
+        if (start != null && end != null) {
+            "$start - $end"
+        } else if (start != null) {
+            start
+        } else {
+            datePickerState.selectedDateMillis?.let {
+                Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate().format(pillDateFormatter)
+            }
+        }
+    }
+
     fun formatTime(hour: Int, minute: Int): String {
         val formatter = DateTimeFormatter.ofPattern("hh:mm a", Locale.getDefault())
         return LocalTime.of(hour, minute).format(formatter)
     }
 
-    val isDateSelected = selectedRepeat != null && (
-        if (selectedRepeat == "Custom") dateRangePickerState.selectedStartDateMillis != null 
-        else datePickerState.selectedDateMillis != null
-    )
+    val isDateSelected = (selectedRepeat == "Custom" && dateRangePickerState.selectedStartDateMillis != null) ||
+            (selectedRepeat != "Custom")
     val isTimeSelected = selectedTime != null
     val isTextValid = title.trim().isNotEmpty() || content.trim().isNotEmpty()
 
@@ -190,30 +229,11 @@ fun ReminderFormScreen(
     ) {
         TopAppBar(
             title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "Reminder",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(start = 8.dp)
-                    )
-                    
-                    Spacer(modifier = Modifier.width(8.dp))
-                    
-                    IconButton(
-                        onClick = { isAlarmEnabled = !isAlarmEnabled },
-                        enabled = selectedTime != null
-                    ) {
-                        Icon(
-                            imageVector = if (isAlarmEnabled) Icons.Default.NotificationsActive else Icons.Default.NotificationsNone,
-                            contentDescription = "Toggle Alarm",
-                            tint = if (selectedTime != null) {
-                                if (isAlarmEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-                            }
-                        )
-                    }
-                }
+                Text(
+                    text = if (reminderToEdit != null) "Edit task" else "New task",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
             },
             navigationIcon = {
                 IconButton(onClick = handleBack) {
@@ -238,12 +258,22 @@ fun ReminderFormScreen(
                         if (isDateSelected && isTimeSelected && isTextValid) {
                             val date = datePickerState.selectedDateMillis?.let {
                                 Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
+                            } ?: reminderToEdit?.date ?: LocalDate.now()
+
+                            val startDate = if (selectedRepeat == "Custom") {
+                                dateRangePickerState.selectedStartDateMillis?.let {
+                                    Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
+                                } ?: date
+                            } else {
+                                date
                             }
-                            val startDate = dateRangePickerState.selectedStartDateMillis?.let {
-                                Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
-                            }
-                            val endDate = dateRangePickerState.selectedEndDateMillis?.let {
-                                Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
+
+                            val endDate = if (selectedRepeat == "Custom") {
+                                dateRangePickerState.selectedEndDateMillis?.let {
+                                    Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
+                                }
+                            } else {
+                                null
                             }
 
                             onSave(
@@ -278,127 +308,9 @@ fun ReminderFormScreen(
                 .padding(horizontal = DiBadgeTheme.spacing.medium)
                 .verticalScroll(rememberScrollState())
         ) {
-            Spacer(modifier = Modifier.height(64.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Box {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable { isRepeatMenuExpanded = true }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Repeat,
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = iconColor
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = selectedRepeat ?: "Repeat",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = textColor
-                            )
-                        }
-
-                        DropdownMenu(
-                            expanded = isRepeatMenuExpanded,
-                            onDismissRequest = { isRepeatMenuExpanded = false },
-                            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-                        ) {
-                            repeatOptions.forEach { option ->
-                                DropdownMenuItem(
-                                    text = { Text(option) },
-                                    onClick = {
-                                        isRepeatMenuExpanded = false
-                                        pendingRepeatOption = option
-                                        if (option == "Custom") {
-                                            showDateRangePicker = true
-                                        } else {
-                                            showDatePicker = true
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    if (selectedRepeat != null) {
-                        val startDate = if (selectedRepeat == "Custom")
-                            formatMillisToDate(dateRangePickerState.selectedStartDateMillis)
-                        else
-                            formatMillisToDate(datePickerState.selectedDateMillis)
-
-                        val endDate = if (selectedRepeat == "Custom")
-                            formatMillisToDate(dateRangePickerState.selectedEndDateMillis)
-                        else null
-
-                        if (startDate.isNotEmpty()) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(start = 28.dp, top = 4.dp)
-                            ) {
-                                Text(
-                                    text = if (selectedRepeat == "once") "on" else "from",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = startDate,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onBackground
-                                )
-
-                                if (selectedRepeat == "Custom" && endDate != null && endDate.isNotEmpty()) {
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "to",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = endDate,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onBackground
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable { showTimePicker = true }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AccessTime,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = if (triedToSave && !isTimeSelected) errorColor else MaterialTheme.colorScheme.onBackground
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = selectedTime ?: "Time",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (triedToSave && !isTimeSelected)
-                            errorColor
-                        else if (selectedTime == null)
-                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                        else
-                            MaterialTheme.colorScheme.onBackground
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(48.dp))
-
+            // 1. Title Input Field
             TextField(
                 value = title,
                 onValueChange = { title = it },
@@ -408,7 +320,9 @@ fun ReminderFormScreen(
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Normal)
                     ) 
                 },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(titleFocusRequester),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
@@ -426,6 +340,7 @@ fun ReminderFormScreen(
                 color = if (triedToSave && !isTextValid) errorColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
             )
 
+            // 2. Content Input Field
             TextField(
                 value = content,
                 onValueChange = { content = it },
@@ -447,7 +362,238 @@ fun ReminderFormScreen(
                 textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Normal)
             )
 
-            Spacer(modifier = Modifier.height(DiBadgeTheme.spacing.large))
+            Spacer(modifier = Modifier.height(20.dp))
+
+            val DatePill: @Composable () -> Unit = {
+                val isDateSelected = formattedDateText != null
+                FilterChip(
+                    selected = isDateSelected,
+                    onClick = { showDatePicker = true },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.CalendarMonth,
+                            contentDescription = "Date",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    label = {
+                        Text(
+                            text = formattedDateText ?: "Date",
+                            fontSize = 13.sp,
+                            fontWeight = if (isDateSelected) FontWeight.Bold else FontWeight.Medium
+                        )
+                    },
+                    shape = CircleShape,
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color.Transparent,
+                        selectedLabelColor = MaterialTheme.colorScheme.onSurface,
+                        containerColor = Color.Transparent,
+                        labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        selectedLeadingIconColor = MaterialTheme.colorScheme.onSurface,
+                        iconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = isDateSelected,
+                        borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                        selectedBorderColor = MaterialTheme.colorScheme.onSurface,
+                        selectedBorderWidth = 1.5.dp
+                    )
+                )
+            }
+
+            val RepeatPill: @Composable () -> Unit = {
+                Box {
+                    val isRepeatSelected = selectedRepeat != null
+                    FilterChip(
+                        selected = isRepeatSelected,
+                        onClick = { isRepeatMenuExpanded = true },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Repeat,
+                                contentDescription = "Repeat",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        label = {
+                            Text(
+                                text = selectedRepeat ?: "once",
+                                fontSize = 13.sp,
+                                fontWeight = if (isRepeatSelected) FontWeight.Bold else FontWeight.Medium
+                            )
+                        },
+                        shape = CircleShape,
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color.Transparent,
+                            selectedLabelColor = MaterialTheme.colorScheme.onSurface,
+                            containerColor = Color.Transparent,
+                            labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            selectedLeadingIconColor = MaterialTheme.colorScheme.onSurface,
+                            iconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = isRepeatSelected,
+                            borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                            selectedBorderColor = MaterialTheme.colorScheme.onSurface,
+                            selectedBorderWidth = 1.5.dp
+                        )
+                    )
+
+                    DropdownMenu(
+                        expanded = isRepeatMenuExpanded,
+                        onDismissRequest = { isRepeatMenuExpanded = false },
+                        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                    ) {
+                        repeatOptions.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option) },
+                                onClick = {
+                                    isRepeatMenuExpanded = false
+                                    if (option == "Custom") {
+                                        showDateRangePicker = true
+                                    } else {
+                                        selectedRepeat = option
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            val TimePill: @Composable () -> Unit = {
+                val isTimeSelected = selectedTime != null
+                FilterChip(
+                    selected = isTimeSelected,
+                    onClick = { showTimePicker = true },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.AccessTime,
+                            contentDescription = "Time",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    label = {
+                        Text(
+                            text = selectedTime ?: "Time",
+                            fontSize = 13.sp,
+                            fontWeight = if (isTimeSelected) FontWeight.Bold else FontWeight.Medium
+                        )
+                    },
+                    shape = CircleShape,
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color.Transparent,
+                        selectedLabelColor = MaterialTheme.colorScheme.onSurface,
+                        containerColor = Color.Transparent,
+                        labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        selectedLeadingIconColor = MaterialTheme.colorScheme.onSurface,
+                        iconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = isTimeSelected,
+                        borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                        selectedBorderColor = MaterialTheme.colorScheme.onSurface,
+                        selectedBorderWidth = 1.5.dp
+                    )
+                )
+            }
+
+            val AlarmPill: @Composable () -> Unit = {
+                FilterChip(
+                    selected = isAlarmEnabled,
+                    onClick = { isAlarmEnabled = !isAlarmEnabled },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (isAlarmEnabled) Icons.Default.NotificationsActive else Icons.Default.NotificationsNone,
+                            contentDescription = "Alarm",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    label = {
+                        Text(
+                            text = if (isAlarmEnabled) "ON" else "Alarm",
+                            fontSize = 13.sp,
+                            fontWeight = if (isAlarmEnabled) FontWeight.Bold else FontWeight.Medium
+                        )
+                    },
+                    shape = CircleShape,
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color.Transparent,
+                        selectedLabelColor = MaterialTheme.colorScheme.onSurface,
+                        containerColor = Color.Transparent,
+                        labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
+                        iconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = isAlarmEnabled,
+                        borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                        selectedBorderColor = MaterialTheme.colorScheme.onSurface,
+                        selectedBorderWidth = 1.5.dp
+                    )
+                )
+            }
+
+            val isCustomRange = selectedRepeat == "Custom" && formattedDateText != null && formattedDateText.contains("-")
+            val isSingleDateSelected = formattedDateText != null && !isCustomRange
+
+            if (isCustomRange) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        DatePill()
+                        RepeatPill()
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TimePill()
+                        AlarmPill()
+                    }
+                }
+            } else if (isSingleDateSelected) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        DatePill()
+                        RepeatPill()
+                        TimePill()
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AlarmPill()
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    DatePill()
+                    RepeatPill()
+                    TimePill()
+                    AlarmPill()
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             AttachmentList(
                 context = context,
@@ -464,12 +610,12 @@ fun ReminderFormScreen(
         DatePickerDialog(
             onDismissRequest = { 
                 showDatePicker = false
-                selectedRepeat = null 
             },
             confirmButton = {
                 TextButton(
                     onClick = { 
-                        selectedRepeat = pendingRepeatOption
+                        dateRangePickerState.setSelection(null, null)
+                        selectedRepeat = "once"
                         showDatePicker = false 
                     },
                     enabled = datePickerState.selectedDateMillis != null
@@ -478,7 +624,6 @@ fun ReminderFormScreen(
             dismissButton = {
                 TextButton(onClick = { 
                     showDatePicker = false
-                    selectedRepeat = null 
                 }) { Text("Cancel") }
             }
         ) {
@@ -490,12 +635,17 @@ fun ReminderFormScreen(
         DatePickerDialog(
             onDismissRequest = { 
                 showDateRangePicker = false
-                selectedRepeat = null 
+                if (dateRangePickerState.selectedStartDateMillis == null || dateRangePickerState.selectedEndDateMillis == null) {
+                    if (selectedRepeat == "Custom") {
+                        selectedRepeat = "once"
+                    }
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = { 
-                        selectedRepeat = pendingRepeatOption
+                        datePickerState.selectedDateMillis = null
+                        selectedRepeat = "Custom"
                         showDateRangePicker = false 
                     },
                     enabled = dateRangePickerState.selectedStartDateMillis != null && 
@@ -505,7 +655,11 @@ fun ReminderFormScreen(
             dismissButton = {
                 TextButton(onClick = { 
                     showDateRangePicker = false
-                    selectedRepeat = null 
+                    if (dateRangePickerState.selectedStartDateMillis == null || dateRangePickerState.selectedEndDateMillis == null) {
+                        if (selectedRepeat == "Custom") {
+                            selectedRepeat = "once"
+                        }
+                    }
                 }) { Text("Cancel") }
             }
         ) {
@@ -540,6 +694,8 @@ fun ReminderFormScreen(
         }
     }
 
+    var isTimePickerAnalog by remember { mutableStateOf(true) }
+
     if (showTimePicker) {
         val selTime = LocalTime.of(timePickerState.hour, timePickerState.minute)
         val isToday = if (selectedRepeat == "Custom") {
@@ -553,50 +709,50 @@ fun ReminderFormScreen(
         }
         val isValid = !(isToday && selTime.isBefore(LocalTime.now()))
 
-        AlertDialog(
+        DatePickerDialog(
             onDismissRequest = { showTimePicker = false },
             confirmButton = {
                 TextButton(
                     onClick = {
                         selectedTime = formatTime(timePickerState.hour, timePickerState.minute)
                         showTimePicker = false
-                        showAlarmConfirmation = true
                     },
                     enabled = isValid
-                ) { Text("OK") }
+                ) { Text("OK", fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
-                TextButton(onClick = { showTimePicker = false }) { Text("Cancel") }
-            },
-            text = { TimePicker(state = timePickerState) }
-        )
-    }
-
-    if (showAlarmConfirmation) {
-        AlertDialog(
-            onDismissRequest = { showAlarmConfirmation = false },
-            title = { Text("Alarm") },
-            text = { Text("Do you want to set an alarm for this reminder?") },
-            confirmButton = {
-                TextButton(onClick = {
-                    isAlarmEnabled = true
-                    showAlarmConfirmation = false
-                }) { Text("Yes") }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    isAlarmEnabled = false
-                    showAlarmConfirmation = false
-                }) { Text("No") }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { isTimePickerAnalog = !isTimePickerAnalog }) {
+                        Icon(
+                            imageVector = if (isTimePickerAnalog) Icons.Default.Keyboard else Icons.Default.Schedule,
+                            contentDescription = "Toggle Time Picker Mode"
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    TextButton(onClick = { showTimePicker = false }) { Text("Cancel", fontWeight = FontWeight.Bold) }
+                }
             }
-        )
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isTimePickerAnalog) {
+                    TimePicker(state = timePickerState)
+                } else {
+                    TimeInput(state = timePickerState)
+                }
+            }
+        }
     }
 
     if (showDeleteConfirmation) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmation = false },
             title = { Text("Confirm Delete") },
-            text = { Text("Are you sure you want to delete this reminder?") },
+            text = { Text("Are you sure you want to delete this To Do?") },
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteConfirmation = false

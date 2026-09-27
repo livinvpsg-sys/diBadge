@@ -5,7 +5,7 @@ import androidx.room.PrimaryKey
 import java.time.LocalDate
 
 @Entity(tableName = "reminders")
-data class ReminderEntity(
+data class ToDoEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val title: String,
     val content: String,
@@ -15,5 +15,8 @@ data class ReminderEntity(
     val repeatType: String,
     val time: String?,
     val isAlarmEnabled: Boolean,
-    val attachments: List<String> = emptyList()
+    val attachments: List<String> = emptyList(),
+    val isCompleted: Boolean = false
 )
+
+typealias ReminderEntity = ToDoEntity

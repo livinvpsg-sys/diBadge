@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import com.fabxdi.dibadge.data.ReminderEntity
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
@@ -15,16 +16,21 @@ class AlarmScheduler(private val context: Context) {
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
     fun schedule(reminder: ReminderEntity) {
-        if (!reminder.isAlarmEnabled || reminder.time == null) return
+        if (reminder.time.isNullOrBlank()) return
 
         val timeFormatter = DateTimeFormatter.ofPattern("hh:mm a", Locale.getDefault())
-        val localTime = LocalTime.parse(reminder.time, timeFormatter)
-        
-        val scheduledDateTime = when (reminder.repeatType) {
-            "once" -> reminder.date?.atTime(localTime)
-            "Custom" -> reminder.startDate?.atTime(localTime)
-            else -> reminder.date?.atTime(localTime) // Simplified for now
-        } ?: return
+        val localTime = try {
+            LocalTime.parse(reminder.time.trim().uppercase(), timeFormatter)
+        } catch (e1: Exception) {
+            try {
+                LocalTime.parse(reminder.time.trim(), DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault()))
+            } catch (e2: Exception) {
+                return
+            }
+        }
+
+        val targetDate = reminder.date ?: reminder.startDate ?: LocalDate.now()
+        val scheduledDateTime = targetDate.atTime(localTime)
 
         if (scheduledDateTime.isBefore(LocalDateTime.now())) return
 
@@ -32,6 +38,7 @@ class AlarmScheduler(private val context: Context) {
             putExtra("REMINDER_ID", reminder.id)
             putExtra("REMINDER_TITLE", reminder.title)
             putExtra("REMINDER_CONTENT", reminder.content)
+            putExtra("IS_ALARM_ENABLED", reminder.isAlarmEnabled)
         }
 
         val pendingIntent = PendingIntent.getBroadcast(

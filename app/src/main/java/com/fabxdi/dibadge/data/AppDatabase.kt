@@ -10,6 +10,7 @@ import androidx.room.TypeConverters
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun reminderDao(): ReminderDao
+    abstract fun leaveOvertimeDao(): LeaveOvertimeDao
 
     companion object {
         @Volatile

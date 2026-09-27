@@ -1,44 +1,59 @@
 package com.fabxdi.dibadge.ui.my_tasks
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.data.ReminderEntity
-import com.fabxdi.dibadge.ui.my_tasks.reminder.ReminderFormScreen
+import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Locale
+
+fun hasTasksOnDate(allReminders: List<ReminderEntity>, targetDate: LocalDate): Boolean {
+    return allReminders.any { isReminderOnDate(it, targetDate) }
+}
 
 fun isReminderOnDate(reminder: ReminderEntity, targetDate: LocalDate): Boolean {
     val repeat = reminder.repeatType.lowercase()
     return when {
         repeat == "once" || repeat.isBlank() -> {
-            reminder.date == targetDate || reminder.startDate == targetDate
+            (reminder.date ?: reminder.startDate) == targetDate
         }
         repeat == "daily" -> {
             val start = reminder.date ?: reminder.startDate ?: return false
@@ -80,6 +95,11 @@ fun parseReminderTime(timeStr: String?): LocalTime {
     }
 }
 
+data class WeekPageData(
+    val yearMonth: YearMonth,
+    val sundayDate: LocalDate
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyTasksScreen(
@@ -91,7 +111,7 @@ fun MyTasksScreen(
 
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
     var selectedTaskFilter by remember { mutableStateOf("To do") }
-    val taskFilters = listOf("To do", "Assigned")
+    val taskFilters = listOf("To do", "Assigned to me")
     var showDatePicker by remember { mutableStateOf(false) }
     var showReminderForm by remember { mutableStateOf(false) }
 
@@ -113,22 +133,24 @@ fun MyTasksScreen(
     }
 
     // 3. Separate uncompleted (top) and completed (bottom)
-    val uncompletedTasks = remember(sortedReminders, completedTaskIds) {
-        sortedReminders.filter { !completedTaskIds.contains(it.id) }
+    val uncompletedTasks = remember(sortedReminders) {
+        sortedReminders.filter { !it.isCompleted }
     }
-    val completedTasks = remember(sortedReminders, completedTaskIds) {
-        sortedReminders.filter { completedTaskIds.contains(it.id) }
+    val completedTasks = remember(sortedReminders) {
+        sortedReminders.filter { it.isCompleted }
     }
 
     if (showReminderForm) {
         ReminderFormScreen(
             reminderToEdit = editingReminder,
             onSave = { title, content, date, start, end, repeat, time, isAlarm, attachments, id ->
+                val finalDate = date ?: selectedDate
+                val finalStart = start ?: finalDate
                 reminderViewModel.saveReminder(
                     title,
                     content,
-                    date ?: selectedDate,
-                    start ?: selectedDate,
+                    finalDate,
+                    finalStart,
                     end,
                     repeat,
                     time,
@@ -152,50 +174,79 @@ fun MyTasksScreen(
         return
     }
 
-    val datePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = selectedDate.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-    )
+    val mainDateFormatter = remember { DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()) }
+    val fullDateFormatter = remember { DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.getDefault()) }
 
-    val mainDateFormatter = remember { DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.getDefault()) }
-    val dayOfWeekFormatter = remember { DateTimeFormatter.ofPattern("EEEE", Locale.getDefault()) }
+    val weekPagesList = remember {
+        val pages = mutableListOf<WeekPageData>()
+        val startMonth = YearMonth.now().minusYears(2)
+        val endMonth = YearMonth.now().plusYears(3)
+        var currMonth = startMonth
+        while (!currMonth.isAfter(endMonth)) {
+            val firstDay = currMonth.atDay(1)
+            val lastDay = currMonth.atEndOfMonth()
+            var currSunday = firstDay.minusDays(firstDay.dayOfWeek.value.toLong() % 7)
+            while (!currSunday.isAfter(lastDay)) {
+                pages.add(WeekPageData(currMonth, currSunday))
+                currSunday = currSunday.plusWeeks(1)
+            }
+            currMonth = currMonth.plusMonths(1)
+        }
+        pages
+    }
+
+    val initialPageIndex = remember(weekPagesList) {
+        val today = LocalDate.now()
+        val todayMonth = YearMonth.from(today)
+        val todaySunday = today.minusDays(today.dayOfWeek.value.toLong() % 7)
+        val idx = weekPagesList.indexOfFirst { it.yearMonth == todayMonth && it.sundayDate == todaySunday }
+        if (idx >= 0) idx else (weekPagesList.size / 2)
+    }
+
+    val pagerState = rememberPagerState(initialPage = initialPageIndex) { weekPagesList.size }
+
+    val currentWeekPage = remember(pagerState.currentPage, weekPagesList) {
+        val safeIndex = pagerState.currentPage.coerceIn(0, weekPagesList.size - 1)
+        weekPagesList[safeIndex]
+    }
+
+    val activeMonthDate = remember(currentWeekPage) {
+        currentWeekPage.yearMonth.atDay(1)
+    }
+
+    LaunchedEffect(selectedDate) {
+        val targetMonth = YearMonth.from(selectedDate)
+        val targetSunday = selectedDate.minusDays(selectedDate.dayOfWeek.value.toLong() % 7)
+        val targetIndex = weekPagesList.indexOfFirst { it.yearMonth == targetMonth && it.sundayDate == targetSunday }
+        if (targetIndex >= 0 && targetIndex != pagerState.currentPage) {
+            pagerState.animateScrollToPage(targetIndex)
+        }
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Column(
-                        modifier = Modifier
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                showDatePicker = true
-                            }
-                            .padding(vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = selectedDate.format(mainDateFormatter),
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        Text(
-                            text = selectedDate.format(dayOfWeekFormatter),
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
-                            ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Text(
+                        text = activeMonthDate.format(mainDateFormatter),
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 24.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            showDatePicker = true
+                        }
+                    )
                 },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
+                actions = {
+                    IconButton(onClick = { showDatePicker = true }) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
+                            imageVector = Icons.Outlined.CalendarMonth,
+                            contentDescription = "Pick Date",
                             tint = MaterialTheme.colorScheme.onBackground
                         )
                     }
@@ -213,13 +264,25 @@ fun MyTasksScreen(
                         editingReminder = null
                         showReminderForm = true
                     },
-                    containerColor = MaterialTheme.colorScheme.surface,
+                    containerColor = Color.Transparent,
                     contentColor = MaterialTheme.colorScheme.onSurface,
-                    shape = RoundedCornerShape(16.dp)
+                    shape = RoundedCornerShape(16.dp),
+                    elevation = FloatingActionButtonDefaults.elevation(
+                        defaultElevation = 0.dp,
+                        pressedElevation = 0.dp,
+                        focusedElevation = 0.dp,
+                        hoveredElevation = 0.dp
+                    ),
+                    modifier = Modifier.border(
+                        width = 1.5.dp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        shape = RoundedCornerShape(16.dp)
+                    )
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
-                        contentDescription = "Add Reminder"
+                        contentDescription = "Add Reminder",
+                        tint = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -231,6 +294,93 @@ fun MyTasksScreen(
                 .padding(innerPadding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
+            // Week-by-Week Horizontal Pager (Sun - Sat)
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp)
+            ) { pageIndex ->
+                val weekPage = weekPagesList[pageIndex]
+                val pageSunday = weekPage.sundayDate
+                val pageMonth = weekPage.yearMonth
+
+                val daysOfWeekNames = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    (0..6).forEach { dayOffset ->
+                        val date = pageSunday.plusDays(dayOffset.toLong())
+                        val dayName = daysOfWeekNames[dayOffset]
+                        val isCurrentMonth = date.month == pageMonth.month && date.year == pageMonth.year
+                        val isSelected = isCurrentMonth && date == selectedDate
+
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(64.dp)
+                                .then(
+                                    if (isCurrentMonth) {
+                                        Modifier.clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null
+                                        ) {
+                                            selectedDate = date
+                                        }
+                                    } else Modifier
+                                ),
+                            shape = RoundedCornerShape(16.dp),
+                            color = Color.Transparent,
+                            border = if (isSelected) {
+                                BorderStroke(1.5.dp, MaterialTheme.colorScheme.onSurface)
+                            } else null
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(vertical = 8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                Text(
+                                    text = dayName,
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    ),
+                                    color = if (isSelected) {
+                                        MaterialTheme.colorScheme.onSurface
+                                    } else if (isCurrentMonth) {
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f)
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.20f)
+                                    }
+                                )
+
+                                Text(
+                                    text = if (isCurrentMonth) date.dayOfMonth.toString() else "-",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontSize = 18.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    ),
+                                    color = if (isSelected) {
+                                        MaterialTheme.colorScheme.onSurface
+                                    } else if (isCurrentMonth) {
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f)
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.20f)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             // Task Filter Pills ("To do", "Assigned")
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -270,7 +420,13 @@ fun MyTasksScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+            )
 
             // Task Content List View
             Box(
@@ -284,9 +440,16 @@ fun MyTasksScreen(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
                         ) {
+                            val emptyToDoText = if (selectedDate == LocalDate.now()) {
+                                "No to-do tasks for today"
+                            } else {
+                                "No to-do tasks for ${selectedDate.format(fullDateFormatter)}"
+                            }
                             Text(
-                                text = "No to-do tasks for ${selectedDate.format(mainDateFormatter)}",
-                                style = MaterialTheme.typography.bodyLarge,
+                                text = emptyToDoText,
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = FontWeight.Normal
+                                ),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                             )
                         }
@@ -301,8 +464,8 @@ fun MyTasksScreen(
                                 TaskCardItem(
                                     reminder = reminder,
                                     isCompleted = false,
-                                    onCheckedChange = { checked ->
-                                        completedTaskIds = if (checked) completedTaskIds + reminder.id else completedTaskIds - reminder.id
+                                    onCheckedChange = {
+                                        reminderViewModel.toggleTaskCompleted(reminder)
                                     },
                                     onClick = {
                                         editingReminder = reminder
@@ -317,9 +480,9 @@ fun MyTasksScreen(
                                     Spacer(modifier = Modifier.height(12.dp))
                                     Text(
                                         text = "Completed (${completedTasks.size})",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                         modifier = Modifier.padding(vertical = 4.dp)
                                     )
                                 }
@@ -328,8 +491,8 @@ fun MyTasksScreen(
                                     TaskCardItem(
                                         reminder = reminder,
                                         isCompleted = true,
-                                        onCheckedChange = { checked ->
-                                            completedTaskIds = if (checked) completedTaskIds + reminder.id else completedTaskIds - reminder.id
+                                        onCheckedChange = {
+                                            reminderViewModel.toggleTaskCompleted(reminder)
                                         },
                                         onClick = {
                                             editingReminder = reminder
@@ -345,9 +508,16 @@ fun MyTasksScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
+                        val emptyAssignedText = if (selectedDate == LocalDate.now()) {
+                            "No assigned tasks for today"
+                        } else {
+                            "No assigned tasks for ${selectedDate.format(fullDateFormatter)}"
+                        }
                         Text(
-                            text = "No assigned tasks for ${selectedDate.format(mainDateFormatter)}",
-                            style = MaterialTheme.typography.bodyLarge,
+                            text = emptyAssignedText,
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontWeight = FontWeight.Normal
+                            ),
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                         )
                     }
@@ -357,32 +527,229 @@ fun MyTasksScreen(
     }
 
     if (showDatePicker) {
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val selectedMillis = datePickerState.selectedDateMillis
-                        if (selectedMillis != null) {
-                            selectedDate = Instant.ofEpochMilli(selectedMillis)
-                                .atZone(ZoneId.systemDefault())
-                                .toLocalDate()
-                        }
-                        showDatePicker = false
-                    }
-                ) {
-                    Text("OK", fontWeight = FontWeight.Bold)
-                }
+        TaskDatePickerDialog(
+            initialDate = selectedDate,
+            allReminders = allReminders,
+            onDateSelected = { chosenDate ->
+                selectedDate = chosenDate
+                showDatePicker = false
             },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) {
-                    Text("Cancel", fontWeight = FontWeight.Bold)
+            onDismiss = { showDatePicker = false }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TaskDatePickerDialog(
+    initialDate: LocalDate,
+    allReminders: List<ReminderEntity>,
+    onDateSelected: (LocalDate) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var pickerMonth by remember { mutableStateOf(YearMonth.from(initialDate)) }
+    var tempSelectedDate by remember { mutableStateOf(initialDate) }
+    var showYearPicker by remember { mutableStateOf(false) }
+
+    val daysInMonth = remember(pickerMonth) { pickerMonth.lengthOfMonth() }
+    val firstDayOfMonth = remember(pickerMonth) { pickerMonth.atDay(1).dayOfWeek.value % 7 }
+
+    val calendarDays = remember(daysInMonth, firstDayOfMonth) {
+        val days = mutableListOf<LocalDate?>()
+        repeat(firstDayOfMonth) { days.add(null) }
+        for (i in 1..daysInMonth) { days.add(pickerMonth.atDay(i)) }
+        while (days.size % 7 != 0) { days.add(null) }
+        days.chunked(7)
+    }
+
+    val monthYearFormatter = remember { DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()) }
+    val headlineFormatter = remember { DateTimeFormatter.ofPattern("EEE, MMM d", Locale.getDefault()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onDateSelected(tempSelectedDate)
+                }
+            ) {
+                Text("OK", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", fontWeight = FontWeight.Bold)
+            }
+        },
+        title = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Top Headline (e.g. "Sat, Sep 26")
+                Text(
+                    text = tempSelectedDate.format(headlineFormatter),
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Month Year Dropdown & Navigation Bar
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { showYearPicker = !showYearPicker }
+                    ) {
+                        Text(
+                            text = pickerMonth.format(monthYearFormatter),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "Select Year",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    if (!showYearPicker) {
+                        Row {
+                            IconButton(onClick = { pickerMonth = pickerMonth.minusMonths(1) }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Prev Month")
+                            }
+                            IconButton(onClick = { pickerMonth = pickerMonth.plusMonths(1) }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next Month")
+                            }
+                        }
+                    }
                 }
             }
-        ) {
-            DatePicker(state = datePickerState)
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (showYearPicker) {
+                    val currentYear = pickerMonth.year
+                    val years = remember { (currentYear - 30..currentYear + 30).toList() }
+                    val listState = rememberLazyListState(initialFirstVisibleItemIndex = 28)
+
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(260.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
+                        items(years) { yearVal ->
+                            val isSelectedYear = yearVal == currentYear
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        pickerMonth = pickerMonth.withYear(yearVal)
+                                        showYearPicker = false
+                                    }
+                                    .padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = yearVal.toString(),
+                                    style = if (isSelectedYear) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (isSelectedYear) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelectedYear) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    // Day names header
+                    val daysOfWeek = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        daysOfWeek.forEach { day ->
+                            Text(
+                                text = day,
+                                modifier = Modifier.weight(1f),
+                                textAlign = TextAlign.Center,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Date cells grid with task dots
+                    calendarDays.forEach { week ->
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            week.forEach { date ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .aspectRatio(1f)
+                                        .padding(2.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (date != null) {
+                                        val isSelected = date == tempSelectedDate
+                                        val isToday = date == LocalDate.now()
+                                        val hasTask = remember(allReminders, date) {
+                                            hasTasksOnDate(allReminders, date)
+                                        }
+
+                                        Surface(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .clickable { tempSelectedDate = date },
+                                            shape = CircleShape,
+                                            color = when {
+                                                isSelected -> MaterialTheme.colorScheme.primary
+                                                isToday -> MaterialTheme.colorScheme.surfaceVariant
+                                                else -> Color.Transparent
+                                            }
+                                        ) {
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                verticalArrangement = Arrangement.Center
+                                            ) {
+                                                Text(
+                                                    text = date.dayOfMonth.toString(),
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
+                                                    color = when {
+                                                        isSelected -> Color.White
+                                                        isToday -> MaterialTheme.colorScheme.primary
+                                                        else -> MaterialTheme.colorScheme.onSurface
+                                                    }
+                                                )
+
+                                                // Small task indicator dot
+                                                if (hasTask) {
+                                                    Spacer(modifier = Modifier.height(1.dp))
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(4.dp)
+                                                            .background(
+                                                                color = if (isSelected) Color.White else MaterialTheme.colorScheme.primary,
+                                                                shape = CircleShape
+                                                            )
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
-    }
+    )
 }
 
 @Composable
@@ -429,7 +796,7 @@ fun TaskCardItem(
                 onCheckedChange = onCheckedChange,
                 colors = CheckboxDefaults.colors(
                     checkedColor = MaterialTheme.colorScheme.primary,
-                    uncheckedColor = MaterialTheme.colorScheme.outline
+                    uncheckedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                 )
             )
 

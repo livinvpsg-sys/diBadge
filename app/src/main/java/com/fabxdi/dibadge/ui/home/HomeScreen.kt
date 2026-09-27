@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,11 +28,12 @@ import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
 import com.fabxdi.dibadge.ui.my_activity.MyActivityScreen
 import com.fabxdi.dibadge.ui.my_tasks.MyTasksScreen
 import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
-import com.fabxdi.dibadge.ui.my_tasks.reminder.ReminderFormScreen
+import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.ui.theme.TealGreen
-import com.fabxdi.dibadge.viewmodel.ReminderViewModel
+import com.fabxdi.dibadge.viewmodel.ToDoViewModel
+import com.fabxdi.dibadge.viewmodel.LeaveOvertimeViewModel
 import com.fabxdi.dibadge.data.HomeEntryEntity
 import kotlinx.coroutines.launch
 import kotlin.collections.minus
@@ -61,7 +61,8 @@ fun MainDashboard(
     firstName: String = "User",
     onSettingsClick: () -> Unit = {},
     onSignOut: () -> Unit = {},
-    viewModel: ReminderViewModel = viewModel()
+    viewModel: ToDoViewModel = viewModel(),
+    leaveOvertimeViewModel: LeaveOvertimeViewModel = viewModel()
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -84,10 +85,9 @@ fun MainDashboard(
     var showOvertimeForm by remember { mutableStateOf(false) }
     var showLeaveForm by remember { mutableStateOf(false) }
 
-    val allLeaves by viewModel.allLeaves.collectAsState(initial = emptyList())
-
     if (showMyActivityScreen) {
-        val allOvertime by viewModel.allOvertime.collectAsState(initial = emptyList())
+        val allLeaves by leaveOvertimeViewModel.allLeaves.collectAsState(initial = emptyList())
+        val allOvertime by leaveOvertimeViewModel.allOvertime.collectAsState(initial = emptyList())
         MyActivityScreen(
             leaves = allLeaves,
             overtimes = allOvertime,
@@ -120,10 +120,11 @@ fun MainDashboard(
     }
 
     if (showLeaveForm) {
+        val allLeaves by leaveOvertimeViewModel.allLeaves.collectAsState(initial = emptyList())
         LeaveFormScreen(
             existingLeaves = allLeaves,
             onApply = { startDate, endDate, type, reason, attachments, id, action ->
-                viewModel.saveLeave(startDate, endDate, type, reason, attachments, id)
+                leaveOvertimeViewModel.saveLeave(startDate, endDate, type, reason, attachments, id)
                 showLeaveForm = false
             },
             onClose = { showLeaveForm = false }
@@ -132,14 +133,15 @@ fun MainDashboard(
     }
 
     if (showOvertimeForm) {
+        val allLeaves by leaveOvertimeViewModel.allLeaves.collectAsState(initial = emptyList())
         OvertimeFormScreen(
             existingLeaves = allLeaves,
             onApply = { date, start, end, description, id ->
-                viewModel.saveOvertime(date, start, end, description, id)
+                leaveOvertimeViewModel.saveOvertime(date, start, end, description, id)
                 showOvertimeForm = false
             },
             onDelete = { overtime ->
-                viewModel.deleteOvertime(overtime)
+                leaveOvertimeViewModel.deleteOvertime(overtime)
                 showOvertimeForm = false
             },
             onClose = { showOvertimeForm = false }

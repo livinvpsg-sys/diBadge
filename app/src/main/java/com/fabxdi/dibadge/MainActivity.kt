@@ -24,6 +24,7 @@ import com.fabxdi.dibadge.ui.home.MainDashboard
 import com.fabxdi.dibadge.ui.settings.SettingsDialog
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.AuthViewModel
+import com.fabxdi.dibadge.viewmodel.LeaveOvertimeViewModel
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
 import com.fabxdi.dibadge.viewmodel.ThemeViewModel
 import java.time.LocalDate
@@ -70,18 +71,18 @@ class MainActivity : ComponentActivity() {
                         ?: "User"
 
                     val reminderViewModel: ReminderViewModel = viewModel()
+                    val leaveOvertimeViewModel: LeaveOvertimeViewModel = viewModel()
                     val todayRemindersCount by reminderViewModel.todayRemindersCount.collectAsState()
 
                     // State to manage the currently selected tab
                     var selectedTab by remember { mutableStateOf(HomeTab.Home) }
                     var showCalendarScreen by remember { mutableStateOf(false) }
-                    var initialReminderToEdit by rememberSaveable { mutableStateOf<Int?>(null) }
                     var initialDateForCalendar by remember { mutableStateOf<LocalDate?>(null) }
 
                     LaunchedEffect(reminderIdToOpen) {
                         if (reminderIdToOpen != -1) {
-                            showCalendarScreen = true
-                            initialReminderToEdit = reminderIdToOpen
+                            showCalendarScreen = false
+                            selectedTab = HomeTab.MyTasks
                         }
                     }
 
@@ -94,9 +95,7 @@ class MainActivity : ComponentActivity() {
                             onBackClick = {
                                 showCalendarScreen = false
                             },
-                            viewModel = reminderViewModel,
-                            initialReminderId = initialReminderToEdit,
-                            onReminderOpened = { initialReminderToEdit = null },
+                            viewModel = leaveOvertimeViewModel,
                             initialSelectedDate = initialDateForCalendar
                         )
                     } else {

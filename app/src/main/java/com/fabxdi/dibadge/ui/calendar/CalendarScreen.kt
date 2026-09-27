@@ -20,7 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import com.fabxdi.dibadge.R
 import com.fabxdi.dibadge.ui.home.HomeTab
 import java.time.LocalDate
-import com.fabxdi.dibadge.ui.my_tasks.reminder.ReminderFormScreen
+import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
 import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
 import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
 import com.fabxdi.dibadge.ui.my_activity.MyActivityScreen
@@ -28,7 +28,7 @@ import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import androidx.compose.foundation.shape.CircleShape
 
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.fabxdi.dibadge.viewmodel.ReminderViewModel
+import com.fabxdi.dibadge.viewmodel.LeaveOvertimeViewModel
 import com.fabxdi.dibadge.data.ReminderEntity
 import com.fabxdi.dibadge.data.OvertimeEntity
 import com.fabxdi.dibadge.data.LeaveEntity
@@ -40,9 +40,7 @@ import kotlin.collections.forEach
 fun CalendarScreen(
     onTabClick: (HomeTab) -> Unit,
     onBackClick: () -> Unit,
-    viewModel: ReminderViewModel = viewModel(),
-    initialReminderId: Int? = null,
-    onReminderOpened: () -> Unit = {},
+    viewModel: LeaveOvertimeViewModel = viewModel(),
     initialSelectedDate: LocalDate? = null
 ) {
     // Handle device back button
@@ -51,102 +49,21 @@ fun CalendarScreen(
     }
 
     var isFabExpanded by remember { mutableStateOf(false) }
-    var showReminderForm by remember { mutableStateOf(false) }
     var showOvertimeForm by remember { mutableStateOf(false) }
     var showLeaveForm by remember { mutableStateOf(false) }
     var showLogbook by remember { mutableStateOf(false) }
     var showDayScreen by remember { mutableStateOf(initialSelectedDate != null) }
     var selectedDayDate by remember { mutableStateOf(initialSelectedDate ?: LocalDate.now()) }
-    var editingReminder by remember { mutableStateOf<ReminderEntity?>(null) }
     var editingLeave by remember { mutableStateOf<LeaveEntity?>(null) }
     var editingOvertime by remember { mutableStateOf<OvertimeEntity?>(null) }
 
-    val allReminders by viewModel.allReminders.collectAsState(initial = emptyList())
     val allLeaves by viewModel.allLeaves.collectAsState(initial = emptyList())
     val allOvertime by viewModel.allOvertime.collectAsState(initial = emptyList())
-
-    // Handle initial reminder opening from notification
-    LaunchedEffect(initialReminderId, allReminders) {
-        if (initialReminderId != null && allReminders.isNotEmpty()) {
-            val reminder = allReminders.find { it.id == initialReminderId }
-            if (reminder != null) {
-                editingReminder = reminder
-                showReminderForm = true
-                onReminderOpened()
-            }
-        }
-    }
     
-    val calendarData = remember(allReminders, allLeaves, allOvertime) {
+    val calendarData = remember(allLeaves, allOvertime) {
         val itemsMap = mutableMapOf<LocalDate, MutableList<Any>>()
         val highlightSet = mutableSetOf<LocalDate>()
         val combinedStatusMap = mutableMapOf<LocalDate, String>()
-        
-        allReminders.forEach { reminder ->
-            // ... (rest of reminder logic remains same)
-            when (reminder.repeatType) {
-                "once" -> {
-                    reminder.date?.let {
-                        itemsMap.getOrPut(it) { mutableListOf() }.add(reminder)
-                        highlightSet.add(it)
-                    }
-                }
-                "weekly" -> {
-                    reminder.date?.let { start ->
-                        var current = start
-                        val endLimit = start.plusYears(2)
-                        while (current.isBefore(endLimit)) {
-                            itemsMap.getOrPut(current) { mutableListOf() }.add(reminder)
-                            highlightSet.add(current)
-                            current = current.plusWeeks(1)
-                        }
-                    }
-                }
-                "monthly" -> {
-                    reminder.date?.let { start ->
-                        var current = start
-                        val endLimit = start.plusYears(2)
-                        while (current.isBefore(endLimit)) {
-                            itemsMap.getOrPut(current) { mutableListOf() }.add(reminder)
-                            highlightSet.add(current)
-                            current = current.plusMonths(1)
-                        }
-                    }
-                }
-                "Yearly" -> {
-                    reminder.date?.let { start ->
-                        var current = start
-                        val endLimit = start.plusYears(5)
-                        while (current.isBefore(endLimit)) {
-                            itemsMap.getOrPut(current) { mutableListOf() }.add(reminder)
-                            highlightSet.add(current)
-                            current = current.plusYears(1)
-                        }
-                    }
-                }
-                "daily" -> {
-                    reminder.date?.let { start ->
-                        var current = start
-                        val endLimit = start.plusMonths(6)
-                        highlightSet.add(start)
-                        while (current.isBefore(endLimit)) {
-                            itemsMap.getOrPut(current) { mutableListOf() }.add(reminder)
-                            current = current.plusDays(1)
-                        }
-                    }
-                }
-                "Custom" -> {
-                    if (reminder.startDate != null && reminder.endDate != null) {
-                        var current: LocalDate = reminder.startDate
-                        while (!current.isAfter(reminder.endDate)) {
-                            itemsMap.getOrPut(current) { mutableListOf() }.add(reminder)
-                            highlightSet.add(current)
-                            current = current.plusDays(1)
-                        }
-                    }
-                }
-            }
-        }
 
         allLeaves.forEach { leave ->
             var current = leave.startDate
@@ -175,36 +92,6 @@ fun CalendarScreen(
     val statusMap = calendarData.third
 
     when {
-        showReminderForm -> {
-            ReminderFormScreen(
-                reminderToEdit = editingReminder,
-                onSave = { title, content, date, start, end, repeat, time, isAlarm, attachments, id ->
-                    viewModel.saveReminder(
-                        title,
-                        content,
-                        date,
-                        start,
-                        end,
-                        repeat,
-                        time,
-                        isAlarm,
-                        attachments,
-                        id
-                    )
-                    showReminderForm = false
-                    editingReminder = null
-                },
-                onDelete = { reminder ->
-                    viewModel.deleteReminder(reminder)
-                    showReminderForm = false
-                    editingReminder = null
-                },
-                onCancel = {
-                    showReminderForm = false
-                    editingReminder = null
-                }
-            )
-        }
         showLeaveForm -> {
             LeaveFormScreen(
                 existingLeaves = allLeaves,
@@ -309,10 +196,7 @@ fun CalendarScreen(
                 date = selectedDayDate,
                 items = savedItemsMap[selectedDayDate] ?: emptyList(),
                 onItemClick = { item ->
-                    if (item is ReminderEntity) {
-                        editingReminder = item
-                        showReminderForm = true
-                    } else if (item is LeaveEntity) {
+                    if (item is LeaveEntity) {
                         editingLeave = item
                         showLeaveForm = true
                     } else if (item is OvertimeEntity) {
