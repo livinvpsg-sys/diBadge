@@ -320,6 +320,8 @@ fun MyTasksScreen(
                         val isCurrentMonth = date.month == pageMonth.month && date.year == pageMonth.year
                         val isSelected = isCurrentMonth && date == selectedDate
 
+                        val isToday = isCurrentMonth && date == LocalDate.now()
+
                         Surface(
                             modifier = Modifier
                                 .weight(1f)
@@ -336,9 +338,11 @@ fun MyTasksScreen(
                                 ),
                             shape = RoundedCornerShape(16.dp),
                             color = Color.Transparent,
-                            border = if (isSelected) {
-                                BorderStroke(1.5.dp, MaterialTheme.colorScheme.onSurface)
-                            } else null
+                            border = when {
+                                isSelected -> BorderStroke(1.5.dp, MaterialTheme.colorScheme.onSurface)
+                                isToday -> BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f))
+                                else -> null
+                            }
                         ) {
                             Column(
                                 modifier = Modifier
@@ -568,19 +572,39 @@ fun TaskDatePickerDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(
-                onClick = {
-                    onDateSelected(tempSelectedDate)
-                }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("OK", fontWeight = FontWeight.Bold)
+                TextButton(
+                    onClick = {
+                        onDateSelected(LocalDate.now())
+                    }
+                ) {
+                    Text(
+                        text = "Today",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                Row {
+                    TextButton(onClick = onDismiss) {
+                        Text("Cancel", fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    TextButton(
+                        onClick = {
+                            onDateSelected(tempSelectedDate)
+                        }
+                    ) {
+                        Text("OK", fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", fontWeight = FontWeight.Bold)
-            }
-        },
+        dismissButton = null,
         title = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 // Top Headline (e.g. "Sat, Sep 26")
@@ -708,7 +732,7 @@ fun TaskDatePickerDialog(
                                             shape = CircleShape,
                                             color = when {
                                                 isSelected -> MaterialTheme.colorScheme.primary
-                                                isToday -> MaterialTheme.colorScheme.surfaceVariant
+                                                isToday -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
                                                 else -> Color.Transparent
                                             }
                                         ) {
@@ -721,7 +745,7 @@ fun TaskDatePickerDialog(
                                                     style = MaterialTheme.typography.bodyMedium,
                                                     fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
                                                     color = when {
-                                                        isSelected -> Color.White
+                                                        isSelected -> MaterialTheme.colorScheme.onPrimary
                                                         isToday -> MaterialTheme.colorScheme.primary
                                                         else -> MaterialTheme.colorScheme.onSurface
                                                     }
@@ -734,7 +758,7 @@ fun TaskDatePickerDialog(
                                                         modifier = Modifier
                                                             .size(4.dp)
                                                             .background(
-                                                                color = if (isSelected) Color.White else MaterialTheme.colorScheme.primary,
+                                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
                                                                 shape = CircleShape
                                                             )
                                                     )

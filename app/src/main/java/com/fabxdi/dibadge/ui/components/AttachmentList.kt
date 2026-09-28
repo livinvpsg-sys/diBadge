@@ -65,7 +65,7 @@ fun AttachmentList(
                 Text(
                     text = FilePickerUtils.getFileName(context, uri),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.weight(1f),
                     maxLines = 1
                 )

@@ -21,6 +21,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -50,14 +52,26 @@ fun ReminderFormScreen(
     val titleFocusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
+    var isEditMode by remember { mutableStateOf(reminderToEdit == null) }
+
     LaunchedEffect(Unit) {
-        delay(100)
-        titleFocusRequester.requestFocus()
-        keyboardController?.show()
+        if (reminderToEdit == null) {
+            delay(100)
+            titleFocusRequester.requestFocus()
+            keyboardController?.show()
+        }
     }
 
     var title by remember { mutableStateOf(reminderToEdit?.title ?: "") }
-    var content by remember { mutableStateOf(reminderToEdit?.content ?: "") }
+    var contentValue by remember {
+        mutableStateOf(
+            TextFieldValue(
+                text = reminderToEdit?.content ?: "",
+                selection = TextRange(reminderToEdit?.content?.length ?: 0)
+            )
+        )
+    }
+    val content = contentValue.text
     var isRepeatMenuExpanded by remember { mutableStateOf(false) }
     var selectedRepeat by remember { mutableStateOf<String?>(reminderToEdit?.repeatType ?: "once") }
     var pendingRepeatOption by remember { mutableStateOf<String?>(null) }
@@ -126,18 +140,28 @@ fun ReminderFormScreen(
         datePickerState.selectedDateMillis,
         dateRangePickerState.selectedStartDateMillis,
         dateRangePickerState.selectedEndDateMillis,
-        attachedFiles
+        attachedFiles, reminderToEdit
     ) {
-        reminderToEdit == null ||
-        title != reminderToEdit.title ||
-        content != reminderToEdit.content ||
-        selectedRepeat != reminderToEdit.repeatType ||
-        selectedTime != reminderToEdit.time ||
-        isAlarmEnabled != reminderToEdit.isAlarmEnabled ||
-        datePickerState.selectedDateMillis != reminderToEdit.date?.atStartOfDay(ZoneId.of("UTC"))?.toInstant()?.toEpochMilli() ||
-        dateRangePickerState.selectedStartDateMillis != reminderToEdit.startDate?.atStartOfDay(ZoneId.of("UTC"))?.toInstant()?.toEpochMilli() ||
-        dateRangePickerState.selectedEndDateMillis != reminderToEdit.endDate?.atStartOfDay(ZoneId.of("UTC"))?.toInstant()?.toEpochMilli() ||
-        attachedFiles.map { it.toString() } != reminderToEdit.attachments
+        if (reminderToEdit == null) {
+            title.trim().isNotEmpty() ||
+            content.trim().isNotEmpty() ||
+            selectedTime != null ||
+            isAlarmEnabled ||
+            attachedFiles.isNotEmpty() ||
+            datePickerState.selectedDateMillis != null ||
+            dateRangePickerState.selectedStartDateMillis != null ||
+            (selectedRepeat != null && selectedRepeat != "once")
+        } else {
+            title != reminderToEdit.title ||
+            content != reminderToEdit.content ||
+            selectedRepeat != reminderToEdit.repeatType ||
+            selectedTime != reminderToEdit.time ||
+            isAlarmEnabled != reminderToEdit.isAlarmEnabled ||
+            datePickerState.selectedDateMillis != reminderToEdit.date?.atStartOfDay(ZoneId.of("UTC"))?.toInstant()?.toEpochMilli() ||
+            dateRangePickerState.selectedStartDateMillis != reminderToEdit.startDate?.atStartOfDay(ZoneId.of("UTC"))?.toInstant()?.toEpochMilli() ||
+            dateRangePickerState.selectedEndDateMillis != reminderToEdit.endDate?.atStartOfDay(ZoneId.of("UTC"))?.toInstant()?.toEpochMilli() ||
+            attachedFiles.map { it.toString() } != reminderToEdit.attachments
+        }
     }
 
     val handleBack = {
@@ -172,6 +196,89 @@ fun ReminderFormScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     var showDateRangePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
+
+fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldValue): TextFieldValue {
+    val oldText = oldValue.text
+    val newText = newValue.text
+
+    // 1. SPACEBAR PRESSED (User typed e.g. "1." or "-" then Space)
+    if (newText.length == oldText.length + 1 && newText.endsWith(" ")) {
+        val lines = oldText.split("\n")
+        val lastLine = lines.lastOrNull() ?: ""
+
+        val numMatch = Regex("^(\\d+)([.\\)])$").find(lastLine.trim())
+        if (numMatch != null) {
+            val (numStr, delimiter) = numMatch.destructured
+            val base = oldText.dropLast(lastLine.length)
+            val updatedText = "$base$numStr$delimiter "
+            return TextFieldValue(
+                text = updatedText,
+                selection = TextRange(updatedText.length)
+            )
+        }
+
+        val bulletMatch = Regex("^([-*•])$").find(lastLine.trim())
+        if (bulletMatch != null) {
+            val bullet = bulletMatch.groupValues[1]
+            val base = oldText.dropLast(lastLine.length)
+            val updatedText = "$base$bullet "
+            return TextFieldValue(
+                text = updatedText,
+                selection = TextRange(updatedText.length)
+            )
+        }
+    }
+
+    // 2. ENTER PRESSED (User pressed Enter on an existing list line)
+    if (newText.length == oldText.length + 1 && newText.endsWith("\n")) {
+        val lines = oldText.split("\n")
+        val lastLine = lines.lastOrNull() ?: ""
+
+        val numberMatch = Regex("^(\\d+)([.\\)])\\s+(.*)$").find(lastLine)
+        if (numberMatch != null) {
+            val (numStr, delimiter, textAfter) = numberMatch.destructured
+            if (textAfter.isBlank()) {
+                val prefixToRemove = "$numStr$delimiter"
+                val base = oldText.dropLast(lastLine.length)
+                val cleanedLastLine = lastLine.removePrefix(prefixToRemove).trimStart()
+                val updatedText = base + cleanedLastLine
+                return TextFieldValue(
+                    text = updatedText,
+                    selection = TextRange(updatedText.length)
+                )
+            } else {
+                val nextNum = (numStr.toIntOrNull() ?: 1) + 1
+                val updatedText = "$newText$nextNum$delimiter "
+                return TextFieldValue(
+                    text = updatedText,
+                    selection = TextRange(updatedText.length)
+                )
+            }
+        }
+
+        val bulletMatch = Regex("^([-*•])\\s+(.*)$").find(lastLine)
+        if (bulletMatch != null) {
+            val (bullet, textAfter) = bulletMatch.destructured
+            if (textAfter.isBlank()) {
+                val base = oldText.dropLast(lastLine.length)
+                val cleanedLastLine = lastLine.removePrefix(bullet).trimStart()
+                val updatedText = base + cleanedLastLine
+                return TextFieldValue(
+                    text = updatedText,
+                    selection = TextRange(updatedText.length)
+                )
+            } else {
+                val updatedText = "$newText$bullet "
+                return TextFieldValue(
+                    text = updatedText,
+                    selection = TextRange(updatedText.length)
+                )
+            }
+        }
+    }
+
+    return newValue
+}
 
     fun formatMillisToDate(millis: Long?): String {
         if (millis == null) return ""
@@ -230,7 +337,9 @@ fun ReminderFormScreen(
         TopAppBar(
             title = {
                 Text(
-                    text = if (reminderToEdit != null) "Edit task" else "New task",
+                    text = if (reminderToEdit != null) {
+                        if (isEditMode) "Edit task" else "Task Details"
+                    } else "New task",
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(start = 8.dp)
                 )
@@ -244,13 +353,22 @@ fun ReminderFormScreen(
                 }
             },
             actions = {
-                if (reminderToEdit != null && !hasChanges) {
-                    TextButton(onClick = { showDeleteConfirmation = true }) {
-                        Text(
-                            text = "Delete",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = errorColor
-                        )
+                if (reminderToEdit != null && !isEditMode) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { isEditMode = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit Task",
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                        TextButton(onClick = { showDeleteConfirmation = true }) {
+                            Text(
+                                text = "Delete",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = errorColor
+                            )
+                        }
                     }
                 } else {
                     TextButton(onClick = {
@@ -314,6 +432,7 @@ fun ReminderFormScreen(
             TextField(
                 value = title,
                 onValueChange = { title = it },
+                readOnly = !isEditMode,
                 placeholder = { 
                     Text(
                         text = "Title",
@@ -342,8 +461,13 @@ fun ReminderFormScreen(
 
             // 2. Content Input Field
             TextField(
-                value = content,
-                onValueChange = { content = it },
+                value = contentValue,
+                onValueChange = { newValue ->
+                    if (isEditMode) {
+                        contentValue = handleSmartContentValueChange(contentValue, newValue)
+                    }
+                },
+                readOnly = !isEditMode,
                 placeholder = { 
                     Text(
                         text = "Content",
@@ -368,7 +492,7 @@ fun ReminderFormScreen(
                 val isDateSelected = formattedDateText != null
                 FilterChip(
                     selected = isDateSelected,
-                    onClick = { showDatePicker = true },
+                    onClick = { if (isEditMode) showDatePicker = true },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Outlined.CalendarMonth,
@@ -407,7 +531,7 @@ fun ReminderFormScreen(
                     val isRepeatSelected = selectedRepeat != null
                     FilterChip(
                         selected = isRepeatSelected,
-                        onClick = { isRepeatMenuExpanded = true },
+                        onClick = { if (isEditMode) isRepeatMenuExpanded = true },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.Repeat,
@@ -466,7 +590,7 @@ fun ReminderFormScreen(
                 val isTimeSelected = selectedTime != null
                 FilterChip(
                     selected = isTimeSelected,
-                    onClick = { showTimePicker = true },
+                    onClick = { if (isEditMode) showTimePicker = true },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.AccessTime,
@@ -503,7 +627,7 @@ fun ReminderFormScreen(
             val AlarmPill: @Composable () -> Unit = {
                 FilterChip(
                     selected = isAlarmEnabled,
-                    onClick = { isAlarmEnabled = !isAlarmEnabled },
+                    onClick = { if (isEditMode) isAlarmEnabled = !isAlarmEnabled },
                     leadingIcon = {
                         Icon(
                             imageVector = if (isAlarmEnabled) Icons.Default.NotificationsActive else Icons.Default.NotificationsNone,
@@ -601,7 +725,8 @@ fun ReminderFormScreen(
                 onRemove = { index ->
                     attachedFiles = attachedFiles.filterIndexed { i, _ -> i != index }
                 },
-                onAddClick = { attachmentLauncher.launch(arrayOf("*/*")) }
+                onAddClick = { attachmentLauncher.launch(arrayOf("*/*")) },
+                isReadOnly = !isEditMode
             )
         }
     }
