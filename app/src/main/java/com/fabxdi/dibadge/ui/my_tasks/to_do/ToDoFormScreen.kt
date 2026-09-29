@@ -46,7 +46,8 @@ fun ReminderFormScreen(
     reminderToEdit: ReminderEntity? = null,
     onSave: (String, String, LocalDate?, LocalDate?, LocalDate?, String, String?, Boolean, List<String>, Int) -> Unit,
     onDelete: (ReminderEntity) -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    autoOpenTimePicker: Boolean = false
 ) {
     val context = LocalContext.current
     val titleFocusRequester = remember { FocusRequester() }
@@ -195,7 +196,13 @@ fun ReminderFormScreen(
 
     var showDatePicker by remember { mutableStateOf(false) }
     var showDateRangePicker by remember { mutableStateOf(false) }
-    var showTimePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(autoOpenTimePicker) }
+
+    LaunchedEffect(autoOpenTimePicker) {
+        if (autoOpenTimePicker) {
+            isEditMode = true
+        }
+    }
 
 fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldValue): TextFieldValue {
     val oldText = oldValue.text

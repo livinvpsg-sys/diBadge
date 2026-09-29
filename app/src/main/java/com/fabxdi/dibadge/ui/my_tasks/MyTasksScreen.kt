@@ -105,7 +105,9 @@ data class WeekPageData(
 fun MyTasksScreen(
     onBack: () -> Unit,
     bottomBar: @Composable () -> Unit = {},
-    reminderViewModel: ReminderViewModel = viewModel()
+    reminderViewModel: ReminderViewModel = viewModel(),
+    initialReminderIdToEdit: Int? = null,
+    openSnoozeTimePicker: Boolean = false
 ) {
     BackHandler(onBack = onBack)
 
@@ -114,11 +116,22 @@ fun MyTasksScreen(
     val taskFilters = listOf("To do", "Assigned to me")
     var showDatePicker by remember { mutableStateOf(false) }
     var showReminderForm by remember { mutableStateOf(false) }
+    var shouldOpenSnooze by remember { mutableStateOf(openSnoozeTimePicker) }
 
     var editingReminder by remember { mutableStateOf<ReminderEntity?>(null) }
     var completedTaskIds by remember { mutableStateOf(setOf<Int>()) }
 
     val allReminders by reminderViewModel.allReminders.collectAsState(initial = emptyList())
+
+    LaunchedEffect(initialReminderIdToEdit, allReminders) {
+        if (initialReminderIdToEdit != null && initialReminderIdToEdit != -1 && allReminders.isNotEmpty()) {
+            val found = allReminders.find { it.id == initialReminderIdToEdit }
+            if (found != null) {
+                editingReminder = found
+                showReminderForm = true
+            }
+        }
+    }
 
     // 1. Filter reminders for selectedDate according to repeat rules
     val dateReminders = remember(allReminders, selectedDate) {
@@ -133,16 +146,17 @@ fun MyTasksScreen(
     }
 
     // 3. Separate uncompleted (top) and completed (bottom)
-    val uncompletedTasks = remember(sortedReminders) {
-        sortedReminders.filter { !it.isCompleted }
+    val uncompletedTasks = remember(sortedReminders, selectedDate) {
+        sortedReminders.filter { !it.completedDates.contains(selectedDate.toString()) }
     }
-    val completedTasks = remember(sortedReminders) {
-        sortedReminders.filter { it.isCompleted }
+    val completedTasks = remember(sortedReminders, selectedDate) {
+        sortedReminders.filter { it.completedDates.contains(selectedDate.toString()) }
     }
 
     if (showReminderForm) {
         ReminderFormScreen(
             reminderToEdit = editingReminder,
+            autoOpenTimePicker = shouldOpenSnooze,
             onSave = { title, content, date, start, end, repeat, time, isAlarm, attachments, id ->
                 val finalDate = date ?: selectedDate
                 val finalStart = start ?: finalDate
@@ -160,15 +174,18 @@ fun MyTasksScreen(
                 )
                 showReminderForm = false
                 editingReminder = null
+                shouldOpenSnooze = false
             },
             onDelete = { reminder ->
                 reminderViewModel.deleteReminder(reminder)
                 showReminderForm = false
                 editingReminder = null
+                shouldOpenSnooze = false
             },
             onCancel = {
                 showReminderForm = false
                 editingReminder = null
+                shouldOpenSnooze = false
             }
         )
         return
@@ -469,7 +486,7 @@ fun MyTasksScreen(
                                     reminder = reminder,
                                     isCompleted = false,
                                     onCheckedChange = {
-                                        reminderViewModel.toggleTaskCompleted(reminder)
+                                        reminderViewModel.toggleTaskCompletedForDate(reminder, selectedDate)
                                     },
                                     onClick = {
                                         editingReminder = reminder
@@ -496,7 +513,7 @@ fun MyTasksScreen(
                                         reminder = reminder,
                                         isCompleted = true,
                                         onCheckedChange = {
-                                            reminderViewModel.toggleTaskCompleted(reminder)
+                                            reminderViewModel.toggleTaskCompletedForDate(reminder, selectedDate)
                                         },
                                         onClick = {
                                             editingReminder = reminder

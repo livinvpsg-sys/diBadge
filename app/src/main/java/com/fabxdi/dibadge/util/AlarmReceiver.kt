@@ -1,6 +1,5 @@
 package com.fabxdi.dibadge.util
 
-import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -21,27 +20,25 @@ class AlarmReceiver : BroadcastReceiver() {
         val content = intent.getStringExtra("REMINDER_CONTENT") ?: ""
         val id = intent.getIntExtra("REMINDER_ID", 0)
 
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        if (action == "ACTION_DISMISS_TASK") {
+            AlarmSoundManager.stopAlarmSound()
+            notificationManager.cancel(id)
+            return
+        }
+
         if (action == "ACTION_SNOOZE_TASK") {
-            // Dismiss current notification
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            AlarmSoundManager.stopAlarmSound()
             notificationManager.cancel(id)
 
-            // Schedule Snooze alarm in 10 minutes
-            val snoozeIntent = Intent(context, AlarmReceiver::class.java).apply {
-                putExtra("REMINDER_ID", id)
-                putExtra("REMINDER_TITLE", title)
-                putExtra("REMINDER_CONTENT", content)
-                putExtra("IS_ALARM_ENABLED", true)
+            // Open app directly into task screen with TimePicker open
+            val snoozeActivityIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                putExtra("OPEN_REMINDER_ID", id)
+                putExtra("OPEN_SNOOZE_TIME_PICKER", true)
             }
-            val pendingSnooze = PendingIntent.getBroadcast(
-                context,
-                id + 100000,
-                snoozeIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            val triggerAt = System.currentTimeMillis() + 10 * 60 * 1000L // 10 minutes later
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingSnooze)
+            context.startActivity(snoozeActivityIntent)
             return
         }
 
@@ -59,11 +56,10 @@ class AlarmReceiver : BroadcastReceiver() {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val displayTitle = if (title.isNotBlank()) title else "Task"
 
-        // Target activity intent when tapping notification -> opens task screen directly
+        // Target activity intent when tapping notification body -> opens task screen directly
         val mainIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             putExtra("OPEN_REMINDER_ID", id)
-            putExtra("OPEN_MY_TASKS", true)
         }
         val pendingIntent = PendingIntent.getActivity(
             context,
@@ -72,8 +68,36 @@ class AlarmReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        // "Snooze" Action Intent (Pill 1 on Left)
+        val snoozeActionIntent = Intent(context, AlarmReceiver::class.java).apply {
+            action = "ACTION_SNOOZE_TASK"
+            putExtra("REMINDER_ID", id)
+            putExtra("REMINDER_TITLE", displayTitle)
+            putExtra("REMINDER_CONTENT", content)
+        }
+        val snoozePendingIntent = PendingIntent.getBroadcast(
+            context,
+            id + 500000,
+            snoozeActionIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // "OK" Action Intent (Pill 2 on Right)
+        val okActionIntent = Intent(context, AlarmReceiver::class.java).apply {
+            action = "ACTION_DISMISS_TASK"
+            putExtra("REMINDER_ID", id)
+        }
+        val okPendingIntent = PendingIntent.getBroadcast(
+            context,
+            id + 600000,
+            okActionIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         if (isAlarmEnabled) {
-            // ALARM ON: Standard Phone Alarm Tone + Snooze Action Button
+            // Start playing alarm ringtone
+            AlarmSoundManager.playAlarmSound(context)
+
             val channelId = "task_alarm_channel"
             val alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
@@ -96,20 +120,6 @@ class AlarmReceiver : BroadcastReceiver() {
                 notificationManager.createNotificationChannel(channel)
             }
 
-            // Snooze Action Intent (Snooze 10 minutes)
-            val snoozeActionIntent = Intent(context, AlarmReceiver::class.java).apply {
-                action = "ACTION_SNOOZE_TASK"
-                putExtra("REMINDER_ID", id)
-                putExtra("REMINDER_TITLE", displayTitle)
-                putExtra("REMINDER_CONTENT", content)
-            }
-            val snoozePendingIntent = PendingIntent.getBroadcast(
-                context,
-                id + 500000,
-                snoozeActionIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-
             val notification = NotificationCompat.Builder(context, channelId)
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
                 .setContentTitle(displayTitle)
@@ -121,7 +131,8 @@ class AlarmReceiver : BroadcastReceiver() {
                 .setFullScreenIntent(pendingIntent, true)
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent)
-                .addAction(R.drawable.ic_launcher_foreground, "Snooze", snoozePendingIntent)
+                .addAction(0, "Snooze", snoozePendingIntent)
+                .addAction(0, "OK", okPendingIntent)
                 .build()
 
             notificationManager.notify(id, notification)
@@ -150,6 +161,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 .setVibrate(longArrayOf(0L))
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent)
+                .addAction(0, "OK", okPendingIntent)
                 .build()
 
             notificationManager.notify(id, notification)

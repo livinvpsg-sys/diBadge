@@ -61,6 +61,8 @@ fun MainDashboard(
     firstName: String = "User",
     onSettingsClick: () -> Unit = {},
     onSignOut: () -> Unit = {},
+    initialReminderIdToEdit: Int? = null,
+    openSnoozeTimePicker: Boolean = false,
     viewModel: ToDoViewModel = viewModel(),
     leaveOvertimeViewModel: LeaveOvertimeViewModel = viewModel()
 ) {
@@ -230,7 +232,9 @@ fun MainDashboard(
     if (selectedTab == HomeTab.MyTasks) {
         MyTasksScreen(
             onBack = { onTabSelected(HomeTab.Home) },
-            bottomBar = bottomNavBar
+            bottomBar = bottomNavBar,
+            initialReminderIdToEdit = initialReminderIdToEdit,
+            openSnoozeTimePicker = openSnoozeTimePicker
         )
         return
     }

@@ -1,5 +1,6 @@
 package com.fabxdi.dibadge.ui.home
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -120,17 +121,15 @@ fun HomeBanner(
             ) {
                 if (notificationCount > 0 || reminderCount > 0) {
                     if (reminderCount > 0) {
-                        Box(modifier = Modifier.clickable { onReminderClick() }) {
-                            Text(
-                                text = if (reminderCount == 1) "1 task to do" else "$reminderCount tasks to do",
-                                style = MaterialTheme.typography.titleLarge.copy(
-                                    fontWeight = FontWeight.Normal,
-                                    fontSize = 18.sp,
-                                    lineHeight = 20.sp
-                                ),
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-                        }
+                        Text(
+                            text = if (reminderCount == 1) "1 task to do" else "$reminderCount tasks to do",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.Normal,
+                                fontSize = 18.sp,
+                                lineHeight = 20.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
                     }
                     if (notificationCount > 0) {
                         Text(

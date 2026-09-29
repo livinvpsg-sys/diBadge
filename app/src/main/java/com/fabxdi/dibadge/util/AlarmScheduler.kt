@@ -7,7 +7,6 @@ import android.content.Intent
 import android.os.Build
 import com.fabxdi.dibadge.data.ReminderEntity
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -16,19 +15,30 @@ import java.util.Locale
 class AlarmScheduler(private val context: Context) {
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
+    private fun parseFlexibleTime(timeStr: String): LocalTime? {
+        val clean = timeStr.trim().uppercase()
+        val formatters = listOf(
+            DateTimeFormatter.ofPattern("h:mm a", Locale.US),
+            DateTimeFormatter.ofPattern("hh:mm a", Locale.US),
+            DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()),
+            DateTimeFormatter.ofPattern("hh:mm a", Locale.getDefault()),
+            DateTimeFormatter.ofPattern("H:mm", Locale.US),
+            DateTimeFormatter.ofPattern("HH:mm", Locale.US),
+            DateTimeFormatter.ofPattern("H:mm", Locale.getDefault()),
+            DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())
+        )
+        for (fmt in formatters) {
+            try {
+                return LocalTime.parse(clean, fmt)
+            } catch (_: Exception) {}
+        }
+        return null
+    }
+
     fun schedule(reminder: ReminderEntity) {
         if (reminder.time.isNullOrBlank()) return
 
-        val timeFormatter = DateTimeFormatter.ofPattern("hh:mm a", Locale.getDefault())
-        val localTime = try {
-            LocalTime.parse(reminder.time.trim().uppercase(), timeFormatter)
-        } catch (e1: Exception) {
-            try {
-                LocalTime.parse(reminder.time.trim(), DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault()))
-            } catch (e2: Exception) {
-                return
-            }
-        }
+        val localTime = parseFlexibleTime(reminder.time) ?: return
 
         val targetDate = reminder.date ?: reminder.startDate ?: LocalDate.now()
         val scheduledDateTime = targetDate.atTime(localTime)

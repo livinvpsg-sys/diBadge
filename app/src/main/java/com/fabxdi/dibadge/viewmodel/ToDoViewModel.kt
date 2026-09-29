@@ -24,8 +24,9 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
 
     val todayRemindersCount: StateFlow<Int> = allReminders.map { reminders ->
         val today = LocalDate.now()
+        val todayStr = today.toString()
         reminders.count { reminder ->
-            !reminder.isCompleted && isReminderOnDate(reminder, today)
+            !reminder.completedDates.contains(todayStr) && isReminderOnDate(reminder, today)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
@@ -94,9 +95,15 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun toggleTaskCompleted(reminder: ToDoEntity) {
+    fun toggleTaskCompletedForDate(reminder: ToDoEntity, targetDate: LocalDate) {
         viewModelScope.launch {
-            val updated = reminder.copy(isCompleted = !reminder.isCompleted)
+            val dateStr = targetDate.toString()
+            val newCompletedDates = if (reminder.completedDates.contains(dateStr)) {
+                reminder.completedDates - dateStr
+            } else {
+                reminder.completedDates + dateStr
+            }
+            val updated = reminder.copy(completedDates = newCompletedDates)
             reminderDao.updateReminder(updated)
         }
     }

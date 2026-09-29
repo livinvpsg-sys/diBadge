@@ -23,6 +23,7 @@ import com.fabxdi.dibadge.ui.home.HomeTab
 import com.fabxdi.dibadge.ui.home.MainDashboard
 import com.fabxdi.dibadge.ui.settings.SettingsDialog
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import com.fabxdi.dibadge.util.AlarmSoundManager
 import com.fabxdi.dibadge.viewmodel.AuthViewModel
 import com.fabxdi.dibadge.viewmodel.LeaveOvertimeViewModel
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
@@ -40,7 +41,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         checkNotificationPermission()
+        AlarmSoundManager.stopAlarmSound()
+
         val reminderIdToOpen = intent.getIntExtra("OPEN_REMINDER_ID", -1)
+        val openSnoozeTimePicker = intent.getBooleanExtra("OPEN_SNOOZE_TIME_PICKER", false)
 
         setContent {
             val themeViewModel: ThemeViewModel = viewModel()
@@ -117,7 +121,9 @@ class MainActivity : ComponentActivity() {
                             notificationCount = 0,
                             firstName = displayName,
                             onSettingsClick = { showSettingsDialog = true },
-                            onSignOut = { authViewModel.signOut() }
+                            onSignOut = { authViewModel.signOut() },
+                            initialReminderIdToEdit = if (reminderIdToOpen != -1) reminderIdToOpen else null,
+                            openSnoozeTimePicker = openSnoozeTimePicker
                         )
                     }
                 }

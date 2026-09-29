@@ -16,7 +16,7 @@ data class ToDoEntity(
     val time: String?,
     val isAlarmEnabled: Boolean,
     val attachments: List<String> = emptyList(),
-    val isCompleted: Boolean = false
+    val completedDates: List<String> = emptyList()
 )
 
 typealias ReminderEntity = ToDoEntity
