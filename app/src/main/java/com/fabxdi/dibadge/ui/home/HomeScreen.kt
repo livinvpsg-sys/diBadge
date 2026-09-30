@@ -63,6 +63,7 @@ fun MainDashboard(
     onSignOut: () -> Unit = {},
     initialReminderIdToEdit: Int? = null,
     openSnoozeTimePicker: Boolean = false,
+    onSnoozeHandled: () -> Unit = {},
     viewModel: ToDoViewModel = viewModel(),
     leaveOvertimeViewModel: LeaveOvertimeViewModel = viewModel()
 ) {
@@ -177,14 +178,18 @@ fun MainDashboard(
                         unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
                         unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
                     ),
-                    alwaysShowLabel = true,
-                    label = {
-                        Text(
-                            text = tab.label,
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
+                    alwaysShowLabel = tab != HomeTab.Home,
+                    label = if (tab == HomeTab.Home) {
+                        {}
+                    } else {
+                        {
+                            Text(
+                                text = tab.label,
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
+                                )
                             )
-                        )
+                        }
                     },
                     icon = {
                         val iconTint = if (tab == HomeTab.Home) {
@@ -198,7 +203,8 @@ fun MainDashboard(
                                 Icon(
                                     painter = painterResource(id = tab.iconRes),
                                     contentDescription = tab.label,
-                                    tint = iconTint
+                                    tint = iconTint,
+                                    modifier = Modifier.size(32.dp)
                                 )
                             }
                             HomeTab.Connections -> {
@@ -234,7 +240,8 @@ fun MainDashboard(
             onBack = { onTabSelected(HomeTab.Home) },
             bottomBar = bottomNavBar,
             initialReminderIdToEdit = initialReminderIdToEdit,
-            openSnoozeTimePicker = openSnoozeTimePicker
+            openSnoozeTimePicker = openSnoozeTimePicker,
+            onSnoozeHandled = onSnoozeHandled
         )
         return
     }

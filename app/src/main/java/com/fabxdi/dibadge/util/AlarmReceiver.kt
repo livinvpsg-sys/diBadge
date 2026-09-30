@@ -132,7 +132,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent)
                 .addAction(0, "Snooze", snoozePendingIntent)
-                .addAction(0, "OK", okPendingIntent)
+                .addAction(0, "Close", okPendingIntent)
                 .build()
 
             notificationManager.notify(id, notification)
@@ -161,7 +161,7 @@ class AlarmReceiver : BroadcastReceiver() {
                 .setVibrate(longArrayOf(0L))
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent)
-                .addAction(0, "OK", okPendingIntent)
+                .addAction(0, "Close", okPendingIntent)
                 .build()
 
             notificationManager.notify(id, notification)

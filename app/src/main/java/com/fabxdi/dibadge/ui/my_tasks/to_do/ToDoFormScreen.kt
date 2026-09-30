@@ -74,7 +74,7 @@ fun ReminderFormScreen(
     }
     val content = contentValue.text
     var isRepeatMenuExpanded by remember { mutableStateOf(false) }
-    var selectedRepeat by remember { mutableStateOf<String?>(reminderToEdit?.repeatType ?: "once") }
+    var selectedRepeat by remember { mutableStateOf<String?>(reminderToEdit?.repeatType) }
     var pendingRepeatOption by remember { mutableStateOf<String?>(null) }
     val repeatOptions = listOf("once", "weekly", "monthly", "Yearly", "daily", "Custom")
 
@@ -407,7 +407,7 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                                 date,
                                 startDate,
                                 endDate,
-                                selectedRepeat!!,
+                                selectedRepeat ?: "once",
                                 selectedTime,
                                 isAlarmEnabled,
                                 attachedFiles.map { it.toString() },
@@ -548,7 +548,7 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                         },
                         label = {
                             Text(
-                                text = selectedRepeat ?: "once",
+                                text = selectedRepeat ?: "Repeat",
                                 fontSize = 13.sp,
                                 fontWeight = if (isRepeatSelected) FontWeight.Bold else FontWeight.Medium
                             )
@@ -668,59 +668,63 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                 )
             }
 
-            val isCustomRange = selectedRepeat == "Custom" && formattedDateText != null && formattedDateText.contains("-")
-            val isSingleDateSelected = formattedDateText != null && !isCustomRange
+            if (isEditMode) {
+                Spacer(modifier = Modifier.height(20.dp))
 
-            if (isCustomRange) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val isCustomRange = selectedRepeat == "Custom" && formattedDateText != null && formattedDateText.contains("-")
+                val isSingleDateSelected = formattedDateText != null && !isCustomRange
+
+                if (isCustomRange) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            DatePill()
+                            RepeatPill()
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TimePill()
+                            AlarmPill()
+                        }
+                    }
+                } else if (isSingleDateSelected) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            DatePill()
+                            RepeatPill()
+                            TimePill()
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AlarmPill()
+                        }
+                    }
+                } else {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         DatePill()
                         RepeatPill()
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
                         TimePill()
                         AlarmPill()
                     }
-                }
-            } else if (isSingleDateSelected) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        DatePill()
-                        RepeatPill()
-                        TimePill()
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        AlarmPill()
-                    }
-                }
-            } else {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    DatePill()
-                    RepeatPill()
-                    TimePill()
-                    AlarmPill()
                 }
             }
 

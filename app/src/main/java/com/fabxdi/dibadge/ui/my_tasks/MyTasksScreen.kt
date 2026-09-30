@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -107,7 +108,8 @@ fun MyTasksScreen(
     bottomBar: @Composable () -> Unit = {},
     reminderViewModel: ReminderViewModel = viewModel(),
     initialReminderIdToEdit: Int? = null,
-    openSnoozeTimePicker: Boolean = false
+    openSnoozeTimePicker: Boolean = false,
+    onSnoozeHandled: () -> Unit = {}
 ) {
     BackHandler(onBack = onBack)
 
@@ -175,17 +177,20 @@ fun MyTasksScreen(
                 showReminderForm = false
                 editingReminder = null
                 shouldOpenSnooze = false
+                onSnoozeHandled()
             },
             onDelete = { reminder ->
                 reminderViewModel.deleteReminder(reminder)
                 showReminderForm = false
                 editingReminder = null
                 shouldOpenSnooze = false
+                onSnoozeHandled()
             },
             onCancel = {
                 showReminderForm = false
                 editingReminder = null
                 shouldOpenSnooze = false
+                onSnoozeHandled()
             }
         )
         return
@@ -831,15 +836,37 @@ fun TaskCardItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // LEFT SIDE: CHECKBOX
-            Checkbox(
-                checked = isCompleted,
-                onCheckedChange = onCheckedChange,
-                colors = CheckboxDefaults.colors(
-                    checkedColor = MaterialTheme.colorScheme.primary,
-                    uncheckedColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
-                )
-            )
+            // LEFT SIDE: CIRCULAR CHECK BUTTON
+            IconButton(
+                onClick = { onCheckedChange(!isCompleted) },
+                modifier = Modifier.size(36.dp)
+            ) {
+                if (isCompleted) {
+                    Surface(
+                        modifier = Modifier.size(22.dp),
+                        shape = CircleShape,
+                        color = Color(0xFF00A884)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Completed",
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                } else {
+                    Surface(
+                        modifier = Modifier.size(22.dp),
+                        shape = CircleShape,
+                        color = Color.Transparent,
+                        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+                    ) {
+                        // Empty uncompleted circle
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.width(8.dp))
 
