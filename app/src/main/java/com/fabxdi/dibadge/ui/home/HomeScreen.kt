@@ -43,7 +43,7 @@ enum class HomeTab(
     val label: String,
     @DrawableRes val iconRes: Int
 ) {
-    Home("Home", R.drawable.ic_home),
+    Home("diBadge", R.drawable.ic_home),
     Connections("Connections", R.drawable.ic_connections),
     MyTasks("My Tasks", R.drawable.ic_my_tasks),
     Note("Inbox", R.drawable.ic_note)
@@ -178,18 +178,14 @@ fun MainDashboard(
                         unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
                         unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
                     ),
-                    alwaysShowLabel = tab != HomeTab.Home,
-                    label = if (tab == HomeTab.Home) {
-                        {}
-                    } else {
-                        {
-                            Text(
-                                text = tab.label,
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
-                                )
+                    alwaysShowLabel = true,
+                    label = {
+                        Text(
+                            text = tab.label,
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
                             )
-                        }
+                        )
                     },
                     icon = {
                         val iconTint = if (tab == HomeTab.Home) {
@@ -203,8 +199,7 @@ fun MainDashboard(
                                 Icon(
                                     painter = painterResource(id = tab.iconRes),
                                     contentDescription = tab.label,
-                                    tint = iconTint,
-                                    modifier = Modifier.size(32.dp)
+                                    tint = iconTint
                                 )
                             }
                             HomeTab.Connections -> {

@@ -28,6 +28,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.animation.*
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -196,72 +199,20 @@ fun MyTasksScreen(
         return
     }
 
-    val mainDateFormatter = remember { DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()) }
+    val fullDateDisplayFormatter = remember { DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.getDefault()) }
     val fullDateFormatter = remember { DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.getDefault()) }
-
-    val weekPagesList = remember {
-        val pages = mutableListOf<WeekPageData>()
-        val startMonth = YearMonth.now().minusYears(2)
-        val endMonth = YearMonth.now().plusYears(3)
-        var currMonth = startMonth
-        while (!currMonth.isAfter(endMonth)) {
-            val firstDay = currMonth.atDay(1)
-            val lastDay = currMonth.atEndOfMonth()
-            var currSunday = firstDay.minusDays(firstDay.dayOfWeek.value.toLong() % 7)
-            while (!currSunday.isAfter(lastDay)) {
-                pages.add(WeekPageData(currMonth, currSunday))
-                currSunday = currSunday.plusWeeks(1)
-            }
-            currMonth = currMonth.plusMonths(1)
-        }
-        pages
-    }
-
-    val initialPageIndex = remember(weekPagesList) {
-        val today = LocalDate.now()
-        val todayMonth = YearMonth.from(today)
-        val todaySunday = today.minusDays(today.dayOfWeek.value.toLong() % 7)
-        val idx = weekPagesList.indexOfFirst { it.yearMonth == todayMonth && it.sundayDate == todaySunday }
-        if (idx >= 0) idx else (weekPagesList.size / 2)
-    }
-
-    val pagerState = rememberPagerState(initialPage = initialPageIndex) { weekPagesList.size }
-
-    val currentWeekPage = remember(pagerState.currentPage, weekPagesList) {
-        val safeIndex = pagerState.currentPage.coerceIn(0, weekPagesList.size - 1)
-        weekPagesList[safeIndex]
-    }
-
-    val activeMonthDate = remember(currentWeekPage) {
-        currentWeekPage.yearMonth.atDay(1)
-    }
-
-    LaunchedEffect(selectedDate) {
-        val targetMonth = YearMonth.from(selectedDate)
-        val targetSunday = selectedDate.minusDays(selectedDate.dayOfWeek.value.toLong() % 7)
-        val targetIndex = weekPagesList.indexOfFirst { it.yearMonth == targetMonth && it.sundayDate == targetSunday }
-        if (targetIndex >= 0 && targetIndex != pagerState.currentPage) {
-            pagerState.animateScrollToPage(targetIndex)
-        }
-    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        text = activeMonthDate.format(mainDateFormatter),
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 24.sp
+                        text = "My Task",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 20.sp
                         ),
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            showDatePicker = true
-                        }
+                        color = MaterialTheme.colorScheme.onBackground
                     )
                 },
                 actions = {
@@ -316,97 +267,18 @@ fun MyTasksScreen(
                 .padding(innerPadding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            // Week-by-Week Horizontal Pager (Sun - Sat)
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 6.dp)
-            ) { pageIndex ->
-                val weekPage = weekPagesList[pageIndex]
-                val pageSunday = weekPage.sundayDate
-                val pageMonth = weekPage.yearMonth
+            // Single Line Date Display ("dd MMMM yyyy") - Bigger & Non-clickable
+            Text(
+                text = selectedDate.format(fullDateDisplayFormatter),
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 26.sp
+                ),
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.padding(horizontal = DiBadgeTheme.spacing.medium, vertical = 6.dp)
+            )
 
-                val daysOfWeekNames = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    (0..6).forEach { dayOffset ->
-                        val date = pageSunday.plusDays(dayOffset.toLong())
-                        val dayName = daysOfWeekNames[dayOffset]
-                        val isCurrentMonth = date.month == pageMonth.month && date.year == pageMonth.year
-                        val isSelected = isCurrentMonth && date == selectedDate
-
-                        val isToday = isCurrentMonth && date == LocalDate.now()
-
-                        Surface(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(64.dp)
-                                .then(
-                                    if (isCurrentMonth) {
-                                        Modifier.clickable(
-                                            interactionSource = remember { MutableInteractionSource() },
-                                            indication = null
-                                        ) {
-                                            selectedDate = date
-                                        }
-                                    } else Modifier
-                                ),
-                            shape = RoundedCornerShape(16.dp),
-                            color = Color.Transparent,
-                            border = when {
-                                isSelected -> BorderStroke(1.5.dp, MaterialTheme.colorScheme.onSurface)
-                                isToday -> BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f))
-                                else -> null
-                            }
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(vertical = 8.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.SpaceEvenly
-                            ) {
-                                Text(
-                                    text = dayName,
-                                    style = MaterialTheme.typography.labelMedium.copy(
-                                        fontSize = 12.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                    ),
-                                    color = if (isSelected) {
-                                        MaterialTheme.colorScheme.onSurface
-                                    } else if (isCurrentMonth) {
-                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f)
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.20f)
-                                    }
-                                )
-
-                                Text(
-                                    text = if (isCurrentMonth) date.dayOfMonth.toString() else "-",
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontSize = 18.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                    ),
-                                    color = if (isSelected) {
-                                        MaterialTheme.colorScheme.onSurface
-                                    } else if (isCurrentMonth) {
-                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f)
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.20f)
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
+            // Task Filter Pills ("To do", "Assigned")
             // Task Filter Pills ("To do", "Assigned")
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -591,199 +463,197 @@ fun TaskDatePickerDialog(
     val monthYearFormatter = remember { DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()) }
     val headlineFormatter = remember { DateTimeFormatter.ofPattern("EEE, MMM d", Locale.getDefault()) }
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        confirmButton = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 56.dp)
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { onDismiss() },
+            contentAlignment = Alignment.TopCenter
+        ) {
+            AnimatedVisibility(
+                visible = true,
+                enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
             ) {
-                TextButton(
-                    onClick = {
-                        onDateSelected(LocalDate.now())
-                    }
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .wrapContentHeight()
+                        .clickable(enabled = false) {},
+                    shape = RoundedCornerShape(0.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 8.dp
                 ) {
-                    Text(
-                        text = "Today",
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-
-                Row {
-                    TextButton(onClick = onDismiss) {
-                        Text("Cancel", fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(modifier = Modifier.width(4.dp))
-                    TextButton(
-                        onClick = {
-                            onDateSelected(tempSelectedDate)
-                        }
-                    ) {
-                        Text("OK", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        },
-        dismissButton = null,
-        title = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // Top Headline (e.g. "Sat, Sep 26")
-                Text(
-                    text = tempSelectedDate.format(headlineFormatter),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Month Year Dropdown & Navigation Bar
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { showYearPicker = !showYearPicker }
-                    ) {
-                        Text(
-                            text = pickerMonth.format(monthYearFormatter),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = "Select Year",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-
-                    if (!showYearPicker) {
-                        Row {
-                            IconButton(onClick = { pickerMonth = pickerMonth.minusMonths(1) }) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Prev Month")
-                            }
-                            IconButton(onClick = { pickerMonth = pickerMonth.plusMonths(1) }) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next Month")
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                if (showYearPicker) {
-                    val currentYear = pickerMonth.year
-                    val years = remember { (currentYear - 30..currentYear + 30).toList() }
-                    val listState = rememberLazyListState(initialFirstVisibleItemIndex = 28)
-
-                    LazyColumn(
-                        state = listState,
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(260.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        contentPadding = PaddingValues(vertical = 8.dp)
+                            .padding(14.dp)
                     ) {
-                        items(years) { yearVal ->
-                            val isSelectedYear = yearVal == currentYear
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        pickerMonth = pickerMonth.withYear(yearVal)
-                                        showYearPicker = false
-                                    }
-                                    .padding(vertical = 10.dp),
-                                contentAlignment = Alignment.Center
+                        // Top Headline
+                        Text(
+                            text = tempSelectedDate.format(headlineFormatter),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Month Year Dropdown & Navigation Bar
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.clickable { showYearPicker = !showYearPicker }
                             ) {
                                 Text(
-                                    text = yearVal.toString(),
-                                    style = if (isSelectedYear) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge,
-                                    fontWeight = if (isSelectedYear) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelectedYear) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    text = pickerMonth.format(monthYearFormatter),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = "Select Year",
+                                    modifier = Modifier.size(24.dp)
                                 )
                             }
+
+                            if (!showYearPicker) {
+                                Row {
+                                    IconButton(onClick = { pickerMonth = pickerMonth.minusMonths(1) }) {
+                                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Prev Month")
+                                    }
+                                    IconButton(onClick = { pickerMonth = pickerMonth.plusMonths(1) }) {
+                                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next Month")
+                                    }
+                                }
+                            }
                         }
-                    }
-                } else {
-                    // Day names header
-                    val daysOfWeek = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        daysOfWeek.forEach { day ->
-                            Text(
-                                text = day,
-                                modifier = Modifier.weight(1f),
-                                textAlign = TextAlign.Center,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                    // Date cells grid with task dots
-                    calendarDays.forEach { week ->
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            week.forEach { date ->
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .aspectRatio(1f)
-                                        .padding(2.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (date != null) {
-                                        val isSelected = date == tempSelectedDate
-                                        val isToday = date == LocalDate.now()
-                                        val hasTask = remember(allReminders, date) {
-                                            hasTasksOnDate(allReminders, date)
-                                        }
+                        if (showYearPicker) {
+                            val currentYear = pickerMonth.year
+                            val years = remember { (currentYear - 30..currentYear + 30).toList() }
+                            val listState = rememberLazyListState(initialFirstVisibleItemIndex = 28)
 
-                                        Surface(
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .clickable { tempSelectedDate = date },
-                                            shape = CircleShape,
-                                            color = when {
-                                                isSelected -> MaterialTheme.colorScheme.primary
-                                                isToday -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                                                else -> Color.Transparent
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(180.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                contentPadding = PaddingValues(vertical = 4.dp)
+                            ) {
+                                items(years) { yearVal ->
+                                    val isSelectedYear = yearVal == currentYear
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                pickerMonth = pickerMonth.withYear(yearVal)
+                                                showYearPicker = false
                                             }
-                                        ) {
-                                            Column(
-                                                horizontalAlignment = Alignment.CenterHorizontally,
-                                                verticalArrangement = Arrangement.Center
-                                            ) {
-                                                Text(
-                                                    text = date.dayOfMonth.toString(),
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
-                                                    color = when {
-                                                        isSelected -> MaterialTheme.colorScheme.onPrimary
-                                                        isToday -> MaterialTheme.colorScheme.primary
-                                                        else -> MaterialTheme.colorScheme.onSurface
-                                                    }
-                                                )
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = yearVal.toString(),
+                                            style = if (isSelectedYear) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge,
+                                            fontWeight = if (isSelectedYear) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelectedYear) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            // Day names header
+                            val daysOfWeek = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                daysOfWeek.forEach { day ->
+                                    Text(
+                                        text = day,
+                                        modifier = Modifier.weight(1f),
+                                        textAlign = TextAlign.Center,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
 
-                                                // Small task indicator dot
-                                                if (hasTask) {
-                                                    Spacer(modifier = Modifier.height(1.dp))
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(4.dp)
-                                                            .background(
-                                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
-                                                                shape = CircleShape
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // Date cells grid with task dots
+                            calendarDays.forEach { week ->
+                                Row(modifier = Modifier.fillMaxWidth()) {
+                                    week.forEach { date ->
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(36.dp)
+                                                .padding(1.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (date != null) {
+                                                val isSelected = date == tempSelectedDate
+                                                val isToday = date == LocalDate.now()
+                                                val hasTask = remember(allReminders, date) {
+                                                    hasTasksOnDate(allReminders, date)
+                                                }
+
+                                                Surface(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .clickable { tempSelectedDate = date },
+                                                    shape = CircleShape,
+                                                    color = when {
+                                                        isSelected -> MaterialTheme.colorScheme.primary
+                                                        isToday -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                                        else -> Color.Transparent
+                                                    }
+                                                ) {
+                                                    Column(
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.Center
+                                                    ) {
+                                                        Text(
+                                                            text = date.dayOfMonth.toString(),
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
+                                                            color = when {
+                                                                isSelected -> MaterialTheme.colorScheme.onPrimary
+                                                                isToday -> MaterialTheme.colorScheme.primary
+                                                                else -> MaterialTheme.colorScheme.onSurface
+                                                            }
+                                                        )
+
+                                                        if (hasTask) {
+                                                            Spacer(modifier = Modifier.height(1.dp))
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(3.dp)
+                                                                    .background(
+                                                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                                                                        shape = CircleShape
+                                                                    )
                                                             )
-                                                    )
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -791,11 +661,46 @@ fun TaskDatePickerDialog(
                                 }
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Bottom Action Buttons ("Today", "Cancel", "OK")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    onDateSelected(LocalDate.now())
+                                }
+                            ) {
+                                Text(
+                                    text = "Today",
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+
+                            Row {
+                                TextButton(onClick = onDismiss) {
+                                    Text("Cancel", fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(modifier = Modifier.width(4.dp))
+                                TextButton(
+                                    onClick = {
+                                        onDateSelected(tempSelectedDate)
+                                    }
+                                ) {
+                                    Text("OK", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
-    )
+    }
 }
 
 @Composable
@@ -823,106 +728,115 @@ fun TaskCardItem(
         }
     }
 
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        color = Color.Transparent
-    ) {
-        Row(
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .clickable(onClick = onClick),
+            color = Color.Transparent
         ) {
-            // LEFT SIDE: CIRCULAR CHECK BUTTON
-            IconButton(
-                onClick = { onCheckedChange(!isCompleted) },
-                modifier = Modifier.size(36.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                if (isCompleted) {
-                    Surface(
-                        modifier = Modifier.size(22.dp),
-                        shape = CircleShape,
-                        color = Color(0xFF00A884)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "Completed",
-                                tint = Color.White,
-                                modifier = Modifier.size(14.dp)
-                            )
+                // LEFT SIDE: CIRCULAR CHECK BUTTON
+                IconButton(
+                    onClick = { onCheckedChange(!isCompleted) },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    if (isCompleted) {
+                        Surface(
+                            modifier = Modifier.size(22.dp),
+                            shape = CircleShape,
+                            color = Color(0xFF00A884)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Completed",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        Surface(
+                            modifier = Modifier.size(22.dp),
+                            shape = CircleShape,
+                            color = Color.Transparent,
+                            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+                        ) {
+                            // Empty uncompleted circle
                         }
                     }
-                } else {
-                    Surface(
-                        modifier = Modifier.size(22.dp),
-                        shape = CircleShape,
-                        color = Color.Transparent,
-                        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
-                    ) {
-                        // Empty uncompleted circle
-                    }
                 }
-            }
 
-            Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(12.dp))
 
-            // MIDDLE: TITLE & CONTENT PREVIEW
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.Center
-            ) {
-                // Title
-                Text(
-                    text = displayTitle,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = if (isCompleted) FontWeight.Normal else FontWeight.Medium,
-                        textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
-                    ),
-                    color = if (isCompleted) {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                // 1st Few Words of Content in Small Font
-                if (contentPreview.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(2.dp))
+                // MIDDLE: TITLE & CONTENT PREVIEW
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    // Title
                     Text(
-                        text = contentPreview,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontSize = 12.sp,
+                        text = displayTitle,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = if (isCompleted) FontWeight.Normal else FontWeight.Medium,
                             textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
                         ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        color = if (isCompleted) {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+                        } else {
+                            MaterialTheme.colorScheme.onBackground
+                        },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+
+                    // Subtitle / Content Preview
+                    if (contentPreview.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = contentPreview,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // RIGHT SIDE: DUE TIME
+                if (!reminder.time.isNullOrBlank()) {
+                    Text(
+                        text = reminder.time,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        color = if (isCompleted) {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        }
+                    )
                 }
             }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            // RIGHT SIDE: DUE TIME
-            if (!reminder.time.isNullOrBlank()) {
-                Text(
-                    text = reminder.time,
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        fontWeight = FontWeight.Medium
-                    ),
-                    color = if (isCompleted) {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    }
-                )
-            }
         }
+
+        // Thin Divider Line Between Tasks
+        HorizontalDivider(
+            modifier = Modifier.fillMaxWidth(),
+            thickness = 0.5.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+        )
     }
 }
