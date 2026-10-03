@@ -12,6 +12,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.text.style.TextAlign
+import java.time.YearMonth
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.*
@@ -20,6 +30,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
@@ -38,6 +50,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -194,9 +207,11 @@ fun ReminderFormScreen(
         }
     )
 
-    var showDatePicker by remember { mutableStateOf(false) }
     var showDateRangePicker by remember { mutableStateOf(false) }
-    var showTimePicker by remember { mutableStateOf(autoOpenTimePicker) }
+    var showRemindMePicker by remember { mutableStateOf(autoOpenTimePicker) }
+    var pickerInitialTab by remember { mutableStateOf(0) }
+    var isDateMenuExpanded by remember { mutableStateOf(false) }
+    var selectedDateOption by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(autoOpenTimePicker) {
         if (autoOpenTimePicker) {
@@ -298,27 +313,9 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
 
     val pillDateFormatter = remember { DateTimeFormatter.ofPattern("dd-MMM-yyyy", Locale.getDefault()) }
 
-    val formattedDateText = remember(
-        selectedRepeat,
-        datePickerState.selectedDateMillis,
-        dateRangePickerState.selectedStartDateMillis,
-        dateRangePickerState.selectedEndDateMillis
-    ) {
-        val start = dateRangePickerState.selectedStartDateMillis?.let {
+    val formattedDateText = remember(datePickerState.selectedDateMillis) {
+        datePickerState.selectedDateMillis?.let {
             Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate().format(pillDateFormatter)
-        }
-        val end = dateRangePickerState.selectedEndDateMillis?.let {
-            Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate().format(pillDateFormatter)
-        }
-
-        if (start != null && end != null) {
-            "$start - $end"
-        } else if (start != null) {
-            start
-        } else {
-            datePickerState.selectedDateMillis?.let {
-                Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate().format(pillDateFormatter)
-            }
         }
     }
 
@@ -495,50 +492,136 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
 
             Spacer(modifier = Modifier.height(20.dp))
 
+            val displayDateText = remember(selectedDateOption, formattedDateText) {
+                when {
+                    selectedDateOption == "None" -> "Due date"
+                    selectedDateOption == "Today" -> "Due today"
+                    formattedDateText != null -> formattedDateText
+                    else -> "Due today"
+                }
+            }
+            val hasDateValue = displayDateText != "Due date"
+
+            val isDueDateToday = remember(selectedDateOption, datePickerState.selectedDateMillis) {
+                if (selectedDateOption == "Today") {
+                    true
+                } else if (selectedDateOption == "None") {
+                    false
+                } else {
+                    datePickerState.selectedDateMillis?.let {
+                        Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate() == LocalDate.now()
+                    } ?: true
+                }
+            }
+
+            LaunchedEffect(isDueDateToday) {
+                if (isDueDateToday) {
+                    selectedRepeat = "once"
+                }
+            }
+
+            val dueGapDays = remember(selectedDateOption, datePickerState.selectedDateMillis) {
+                val selectedDate = datePickerState.selectedDateMillis?.let {
+                    Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
+                }
+                if (selectedDate != null) {
+                    ChronoUnit.DAYS.between(LocalDate.now(), selectedDate)
+                } else {
+                    0L
+                }
+            }
+
+            val isLessSevenDaysGap = dueGapDays in 1L..6L
+
+            LaunchedEffect(isLessSevenDaysGap) {
+                if (isLessSevenDaysGap && selectedRepeat != "once" && selectedRepeat != "daily") {
+                    selectedRepeat = "once"
+                }
+            }
+
             val DatePill: @Composable () -> Unit = {
-                val isDateSelected = formattedDateText != null
-                FilterChip(
-                    selected = isDateSelected,
-                    onClick = { if (isEditMode) showDatePicker = true },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Outlined.CalendarMonth,
-                            contentDescription = "Date",
-                            modifier = Modifier.size(18.dp)
+                Box {
+                    FilterChip(
+                        selected = hasDateValue,
+                        onClick = { if (isEditMode) isDateMenuExpanded = true },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.CalendarMonth,
+                                contentDescription = "Date",
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        label = {
+                            Text(
+                                text = displayDateText,
+                                fontSize = 13.sp,
+                                fontWeight = if (hasDateValue) FontWeight.Bold else FontWeight.Medium
+                            )
+                        },
+                        shape = CircleShape,
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color.Transparent,
+                            selectedLabelColor = MaterialTheme.colorScheme.onSurface,
+                            containerColor = Color.Transparent,
+                            labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            selectedLeadingIconColor = MaterialTheme.colorScheme.onSurface,
+                            iconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = hasDateValue,
+                            borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                            selectedBorderColor = MaterialTheme.colorScheme.onSurface,
+                            selectedBorderWidth = 1.5.dp
                         )
-                    },
-                    label = {
-                        Text(
-                            text = formattedDateText ?: "Date",
-                            fontSize = 13.sp,
-                            fontWeight = if (isDateSelected) FontWeight.Bold else FontWeight.Medium
-                        )
-                    },
-                    shape = CircleShape,
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Color.Transparent,
-                        selectedLabelColor = MaterialTheme.colorScheme.onSurface,
-                        containerColor = Color.Transparent,
-                        labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                        selectedLeadingIconColor = MaterialTheme.colorScheme.onSurface,
-                        iconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    ),
-                    border = FilterChipDefaults.filterChipBorder(
-                        enabled = true,
-                        selected = isDateSelected,
-                        borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                        selectedBorderColor = MaterialTheme.colorScheme.onSurface,
-                        selectedBorderWidth = 1.5.dp
                     )
-                )
+
+                    DropdownMenu(
+                        expanded = isDateMenuExpanded,
+                        onDismissRequest = { isDateMenuExpanded = false },
+                        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+                    ) {
+                        val todayDate = LocalDate.now()
+                        val todayFormatted = todayDate.format(pillDateFormatter)
+                        DropdownMenuItem(
+                            text = { Text("Today ($todayFormatted)") },
+                            onClick = {
+                                isDateMenuExpanded = false
+                                val todayMillis = todayDate.atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli()
+                                datePickerState.selectedDateMillis = todayMillis
+                                selectedDateOption = "Today"
+                            }
+                        )
+                        val tomorrow = todayDate.plusDays(1)
+                        val tomorrowFormatted = tomorrow.format(pillDateFormatter)
+                        DropdownMenuItem(
+                            text = { Text("Tomorrow ($tomorrowFormatted)") },
+                            onClick = {
+                                isDateMenuExpanded = false
+                                val tomorrowMillis = tomorrow.atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli()
+                                datePickerState.selectedDateMillis = tomorrowMillis
+                                selectedDateOption = "Tomorrow"
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Pick a date") },
+                            onClick = {
+                                isDateMenuExpanded = false
+                                pickerInitialTab = 0
+                                showRemindMePicker = true
+                            }
+                        )
+                    }
+                }
             }
 
             val RepeatPill: @Composable () -> Unit = {
                 Box {
-                    val isRepeatSelected = selectedRepeat != null
+                    val isRepeatSelected = selectedRepeat != null && selectedRepeat != "once"
                     FilterChip(
                         selected = isRepeatSelected,
-                        onClick = { if (isEditMode) isRepeatMenuExpanded = true },
+                        onClick = { if (isEditMode && !isDueDateToday) isRepeatMenuExpanded = true },
+                        enabled = isEditMode && !isDueDateToday,
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.Repeat,
@@ -553,21 +636,39 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                                 fontWeight = if (isRepeatSelected) FontWeight.Bold else FontWeight.Medium
                             )
                         },
+                        trailingIcon = if (isRepeatSelected && isEditMode && !isDueDateToday) {
+                            {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear Repeat",
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clickable {
+                                            selectedRepeat = "once"
+                                        },
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                        } else null,
                         shape = CircleShape,
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = Color.Transparent,
                             selectedLabelColor = MaterialTheme.colorScheme.onSurface,
                             containerColor = Color.Transparent,
-                            labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                            labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isDueDateToday) 0.3f else 0.5f),
                             selectedLeadingIconColor = MaterialTheme.colorScheme.onSurface,
-                            iconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            iconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isDueDateToday) 0.3f else 0.5f),
+                            disabledContainerColor = Color.Transparent,
+                            disabledLabelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                            disabledLeadingIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
                         ),
                         border = FilterChipDefaults.filterChipBorder(
-                            enabled = true,
+                            enabled = !isDueDateToday,
                             selected = isRepeatSelected,
-                            borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                            borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
                             selectedBorderColor = MaterialTheme.colorScheme.onSurface,
-                            selectedBorderWidth = 1.5.dp
+                            selectedBorderWidth = 1.5.dp,
+                            disabledBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
                         )
                     )
 
@@ -577,14 +678,32 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                         modifier = Modifier.background(MaterialTheme.colorScheme.surface)
                     ) {
                         repeatOptions.forEach { option ->
+                            val isOptionEnabled = if (isLessSevenDaysGap) {
+                                option == "once" || option == "daily"
+                            } else {
+                                true
+                            }
+
                             DropdownMenuItem(
-                                text = { Text(option) },
+                                text = {
+                                    Text(
+                                        text = option,
+                                        color = if (isOptionEnabled) {
+                                            MaterialTheme.colorScheme.onSurface
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                        }
+                                    )
+                                },
+                                enabled = isOptionEnabled,
                                 onClick = {
-                                    isRepeatMenuExpanded = false
-                                    if (option == "Custom") {
-                                        showDateRangePicker = true
-                                    } else {
-                                        selectedRepeat = option
+                                    if (isOptionEnabled) {
+                                        isRepeatMenuExpanded = false
+                                        if (option == "Custom") {
+                                            showDateRangePicker = true
+                                        } else {
+                                            selectedRepeat = option
+                                        }
                                     }
                                 }
                             )
@@ -593,25 +712,43 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                 }
             }
 
-            val TimePill: @Composable () -> Unit = {
+            val RemindMePill: @Composable () -> Unit = {
                 val isTimeSelected = selectedTime != null
                 FilterChip(
                     selected = isTimeSelected,
-                    onClick = { if (isEditMode) showTimePicker = true },
+                    onClick = {
+                        if (isEditMode) {
+                            showRemindMePicker = true
+                        }
+                    },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.AccessTime,
-                            contentDescription = "Time",
+                            contentDescription = "Remind me",
                             modifier = Modifier.size(18.dp)
                         )
                     },
                     label = {
                         Text(
-                            text = selectedTime ?: "Time",
+                            text = if (isTimeSelected) "Reminder at ${selectedTime!!.lowercase()}" else "Remind me",
                             fontSize = 13.sp,
                             fontWeight = if (isTimeSelected) FontWeight.Bold else FontWeight.Medium
                         )
                     },
+                    trailingIcon = if (isTimeSelected && isEditMode) {
+                        {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear Time",
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clickable {
+                                        selectedTime = null
+                                    },
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+                    } else null,
                     shape = CircleShape,
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = Color.Transparent,
@@ -682,14 +819,14 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             DatePill()
-                            RepeatPill()
+                            RemindMePill()
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            TimePill()
+                            RepeatPill()
                             AlarmPill()
                         }
                     }
@@ -701,8 +838,8 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             DatePill()
+                            RemindMePill()
                             RepeatPill()
-                            TimePill()
                         }
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -721,8 +858,8 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         DatePill()
+                        RemindMePill()
                         RepeatPill()
-                        TimePill()
                         AlarmPill()
                     }
                 }
@@ -742,29 +879,19 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
         }
     }
 
-    if (showDatePicker) {
-        DatePickerDialog(
-            onDismissRequest = { 
-                showDatePicker = false
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = { 
-                        dateRangePickerState.setSelection(null, null)
-                        selectedRepeat = "once"
-                        showDatePicker = false 
-                    },
-                    enabled = datePickerState.selectedDateMillis != null
-                ) { Text("OK") }
-            },
-            dismissButton = {
-                TextButton(onClick = { 
-                    showDatePicker = false
-                }) { Text("Cancel") }
-            }
-        ) {
-            DatePicker(state = datePickerState)
+    if (showRemindMePicker) {
+        val selectedDueDate = datePickerState.selectedDateMillis?.let {
+            Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
         }
+        RemindMePickerDialog(
+            dueDate = selectedDueDate,
+            initialTime = selectedTime,
+            onConfirm = { timeStr ->
+                selectedTime = timeStr
+                showRemindMePicker = false
+            },
+            onDismiss = { showRemindMePicker = false }
+        )
     }
 
     if (showDateRangePicker) {
@@ -780,7 +907,6 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
             confirmButton = {
                 TextButton(
                     onClick = { 
-                        datePickerState.selectedDateMillis = null
                         selectedRepeat = "Custom"
                         showDateRangePicker = false 
                     },
@@ -830,60 +956,6 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
         }
     }
 
-    var isTimePickerAnalog by remember { mutableStateOf(true) }
-
-    if (showTimePicker) {
-        val selTime = LocalTime.of(timePickerState.hour, timePickerState.minute)
-        val isToday = if (selectedRepeat == "Custom") {
-            dateRangePickerState.selectedStartDateMillis?.let {
-                Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() == LocalDate.now()
-            } ?: true
-        } else {
-            datePickerState.selectedDateMillis?.let {
-                Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() == LocalDate.now()
-            } ?: true
-        }
-        val isValid = !(isToday && selTime.isBefore(LocalTime.now()))
-
-        DatePickerDialog(
-            onDismissRequest = { showTimePicker = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        selectedTime = formatTime(timePickerState.hour, timePickerState.minute)
-                        showTimePicker = false
-                    },
-                    enabled = isValid
-                ) { Text("OK", fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { isTimePickerAnalog = !isTimePickerAnalog }) {
-                        Icon(
-                            imageVector = if (isTimePickerAnalog) Icons.Default.Keyboard else Icons.Default.Schedule,
-                            contentDescription = "Toggle Time Picker Mode"
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    TextButton(onClick = { showTimePicker = false }) { Text("Cancel", fontWeight = FontWeight.Bold) }
-                }
-            }
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                if (isTimePickerAnalog) {
-                    TimePicker(state = timePickerState)
-                } else {
-                    TimeInput(state = timePickerState)
-                }
-            }
-        }
-    }
-
     if (showDeleteConfirmation) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmation = false },
@@ -925,5 +997,137 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                 }) { Text("Discard") }
             }
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RemindMePickerDialog(
+    dueDate: LocalDate?,
+    initialTime: String?,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val parsedTime = initialTime?.let {
+        try {
+            LocalTime.parse(it, DateTimeFormatter.ofPattern("hh:mm a", Locale.getDefault()))
+        } catch (e: Exception) {
+            LocalTime.now()
+        }
+    } ?: LocalTime.now()
+
+    val timePickerState = rememberTimePickerState(
+        initialHour = parsedTime.hour,
+        initialMinute = parsedTime.minute
+    )
+    var isAnalogTime by remember { mutableStateOf(true) }
+
+    fun formatTime(hour: Int, minute: Int): String {
+        val formatter = DateTimeFormatter.ofPattern("hh:mm a", Locale.getDefault())
+        return LocalTime.of(hour, minute).format(formatter)
+    }
+
+    val selTime = LocalTime.of(timePickerState.hour, timePickerState.minute)
+    val isDueDateToday = dueDate == null || dueDate == LocalDate.now()
+    val isTimeValid = !(isDueDateToday && selTime.isBefore(LocalTime.now()))
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { onDismiss() },
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .wrapContentHeight()
+                    .clickable(enabled = false) {},
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp)
+                ) {
+                    // TIME PICKER VIEW
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CompositionLocalProvider(
+                            LocalDensity provides Density(
+                                density = LocalDensity.current.density,
+                                fontScale = 1.0f
+                            )
+                        ) {
+                            if (isAnalogTime) {
+                                TimePicker(
+                                    state = timePickerState,
+                                    colors = TimePickerDefaults.colors(
+                                        clockDialColor = MaterialTheme.colorScheme.surfaceVariant,
+                                        selectorColor = MaterialTheme.colorScheme.primary,
+                                        clockDialSelectedContentColor = MaterialTheme.colorScheme.onPrimary,
+                                        clockDialUnselectedContentColor = MaterialTheme.colorScheme.onSurface
+                                    )
+                                )
+                            } else {
+                                TimeInput(
+                                    state = timePickerState,
+                                    colors = TimePickerDefaults.colors(
+                                        timeSelectorSelectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        timeSelectorSelectedContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Bottom Action Buttons
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { isAnalogTime = !isAnalogTime }) {
+                            Icon(
+                                imageVector = if (isAnalogTime) Icons.Default.Keyboard else Icons.Default.Schedule,
+                                contentDescription = "Toggle Time Picker Mode"
+                            )
+                        }
+
+                        Row {
+                            TextButton(onClick = onDismiss) {
+                                Text("Cancel", fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            TextButton(
+                                onClick = {
+                                    val timeStr = formatTime(timePickerState.hour, timePickerState.minute)
+                                    onConfirm(timeStr)
+                                },
+                                enabled = isTimeValid
+                            ) {
+                                Text("OK", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
