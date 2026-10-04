@@ -1,5 +1,6 @@
 package com.fabxdi.dibadge.ui.my_tasks.to_do
 
+import com.fabxdi.dibadge.ui.my_tasks.TaskDatePickerDialog
 import androidx.activity.compose.BackHandler
 import android.content.Intent
 import android.net.Uri
@@ -207,11 +208,11 @@ fun ReminderFormScreen(
         }
     )
 
+    var showDatePicker by remember { mutableStateOf(false) }
     var showDateRangePicker by remember { mutableStateOf(false) }
     var showRemindMePicker by remember { mutableStateOf(autoOpenTimePicker) }
-    var pickerInitialTab by remember { mutableStateOf(0) }
     var isDateMenuExpanded by remember { mutableStateOf(false) }
-    var selectedDateOption by remember { mutableStateOf<String?>(null) }
+    var selectedDueDate by remember { mutableStateOf<LocalDate?>(reminderToEdit?.date) }
 
     LaunchedEffect(autoOpenTimePicker) {
         if (autoOpenTimePicker) {
@@ -313,10 +314,8 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
 
     val pillDateFormatter = remember { DateTimeFormatter.ofPattern("dd-MMM-yyyy", Locale.getDefault()) }
 
-    val formattedDateText = remember(datePickerState.selectedDateMillis) {
-        datePickerState.selectedDateMillis?.let {
-            Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate().format(pillDateFormatter)
-        }
+    val formattedDateText = remember(selectedDueDate) {
+        selectedDueDate?.format(pillDateFormatter)
     }
 
     fun formatTime(hour: Int, minute: Int): String {
@@ -377,31 +376,29 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                 } else {
                     TextButton(onClick = {
                         triedToSave = true
-                        if (isDateSelected && isTimeSelected && isTextValid) {
-                            val date = datePickerState.selectedDateMillis?.let {
-                                Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
-                            } ?: reminderToEdit?.date ?: LocalDate.now()
+                        if (isTextValid) {
+                            val dueDate = selectedDueDate
 
                             val startDate = if (selectedRepeat == "Custom") {
                                 dateRangePickerState.selectedStartDateMillis?.let {
                                     Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
-                                } ?: date
+                                } ?: dueDate ?: LocalDate.now()
                             } else {
-                                date
+                                LocalDate.now()
                             }
 
                             val endDate = if (selectedRepeat == "Custom") {
                                 dateRangePickerState.selectedEndDateMillis?.let {
                                     Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
-                                }
+                                } ?: dueDate
                             } else {
-                                null
+                                dueDate
                             }
 
                             onSave(
                                 title,
                                 content,
-                                date,
+                                dueDate,
                                 startDate,
                                 endDate,
                                 selectedRepeat ?: "once",
@@ -492,27 +489,18 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            val displayDateText = remember(selectedDateOption, formattedDateText) {
-                when {
-                    selectedDateOption == "None" -> "Due date"
-                    selectedDateOption == "Today" -> "Due today"
-                    formattedDateText != null -> formattedDateText
-                    else -> "Due today"
-                }
-            }
-            val hasDateValue = displayDateText != "Due date"
-
-            val isDueDateToday = remember(selectedDateOption, datePickerState.selectedDateMillis) {
-                if (selectedDateOption == "Today") {
-                    true
-                } else if (selectedDateOption == "None") {
-                    false
+            val displayDateText = remember(selectedDueDate, pillDateFormatter) {
+                if (selectedDueDate == null) {
+                    "Set due date"
+                } else if (selectedDueDate == LocalDate.now()) {
+                    "Due today"
                 } else {
-                    datePickerState.selectedDateMillis?.let {
-                        Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate() == LocalDate.now()
-                    } ?: true
+                    selectedDueDate!!.format(pillDateFormatter)
                 }
             }
+            val hasDateValue = selectedDueDate != null
+
+            val isDueDateToday = selectedDueDate == LocalDate.now()
 
             LaunchedEffect(isDueDateToday) {
                 if (isDueDateToday) {
@@ -520,21 +508,25 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                 }
             }
 
-            val dueGapDays = remember(selectedDateOption, datePickerState.selectedDateMillis) {
-                val selectedDate = datePickerState.selectedDateMillis?.let {
-                    Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
-                }
-                if (selectedDate != null) {
-                    ChronoUnit.DAYS.between(LocalDate.now(), selectedDate)
+            val dueGapDays = remember(selectedDueDate) {
+                if (selectedDueDate != null) {
+                    ChronoUnit.DAYS.between(LocalDate.now(), selectedDueDate!!)
                 } else {
                     0L
                 }
             }
 
             val isLessSevenDaysGap = dueGapDays in 1L..6L
+            val isNoDueDate = selectedDueDate == null
+
+            LaunchedEffect(isNoDueDate) {
+                if (isNoDueDate && (selectedRepeat == "once" || selectedRepeat == null)) {
+                    selectedRepeat = "daily"
+                }
+            }
 
             LaunchedEffect(isLessSevenDaysGap) {
-                if (isLessSevenDaysGap && selectedRepeat != "once" && selectedRepeat != "daily") {
+                if (isLessSevenDaysGap && selectedRepeat != "once" && selectedRepeat != "daily" && selectedRepeat != "Custom") {
                     selectedRepeat = "once"
                 }
             }
@@ -558,6 +550,20 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                                 fontWeight = if (hasDateValue) FontWeight.Bold else FontWeight.Medium
                             )
                         },
+                        trailingIcon = if (hasDateValue && isEditMode) {
+                            {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear Date",
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clickable {
+                                            selectedDueDate = null
+                                        },
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                        } else null,
                         shape = CircleShape,
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = Color.Transparent,
@@ -587,9 +593,7 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                             text = { Text("Today ($todayFormatted)") },
                             onClick = {
                                 isDateMenuExpanded = false
-                                val todayMillis = todayDate.atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli()
-                                datePickerState.selectedDateMillis = todayMillis
-                                selectedDateOption = "Today"
+                                selectedDueDate = todayDate
                             }
                         )
                         val tomorrow = todayDate.plusDays(1)
@@ -598,17 +602,14 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                             text = { Text("Tomorrow ($tomorrowFormatted)") },
                             onClick = {
                                 isDateMenuExpanded = false
-                                val tomorrowMillis = tomorrow.atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli()
-                                datePickerState.selectedDateMillis = tomorrowMillis
-                                selectedDateOption = "Tomorrow"
+                                selectedDueDate = tomorrow
                             }
                         )
                         DropdownMenuItem(
                             text = { Text("Pick a date") },
                             onClick = {
                                 isDateMenuExpanded = false
-                                pickerInitialTab = 0
-                                showRemindMePicker = true
+                                showDatePicker = true
                             }
                         )
                     }
@@ -678,10 +679,14 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                         modifier = Modifier.background(MaterialTheme.colorScheme.surface)
                     ) {
                         repeatOptions.forEach { option ->
-                            val isOptionEnabled = if (isLessSevenDaysGap) {
-                                option == "once" || option == "daily"
-                            } else {
-                                true
+                            val isOptionEnabled = when {
+                                isNoDueDate -> {
+                                    option != "once"
+                                }
+                                isLessSevenDaysGap -> {
+                                    option == "once" || option == "daily" || option == "Custom"
+                                }
+                                else -> true
                             }
 
                             DropdownMenuItem(
@@ -891,6 +896,20 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                 showRemindMePicker = false
             },
             onDismiss = { showRemindMePicker = false }
+        )
+    }
+
+    if (showDatePicker) {
+        val curDate = selectedDueDate ?: LocalDate.now()
+
+        TaskDatePickerDialog(
+            initialDate = curDate,
+            allReminders = emptyList(),
+            onDateSelected = { chosenDate ->
+                selectedDueDate = chosenDate
+                showDatePicker = false
+            },
+            onDismiss = { showDatePicker = false }
         )
     }
 

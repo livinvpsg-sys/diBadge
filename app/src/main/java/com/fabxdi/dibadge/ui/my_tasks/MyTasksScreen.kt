@@ -59,34 +59,37 @@ fun hasTasksOnDate(allReminders: List<ReminderEntity>, targetDate: LocalDate): B
 
 fun isReminderOnDate(reminder: ReminderEntity, targetDate: LocalDate): Boolean {
     val repeat = reminder.repeatType.lowercase()
+    val baseStart = reminder.startDate ?: reminder.date ?: LocalDate.now()
+    val endDate = reminder.endDate ?: reminder.date
+
+    // 1. Check if targetDate is BEFORE the start date
+    if (targetDate.isBefore(baseStart)) return false
+
+    // 2. Check if targetDate is AFTER the end date (if an end date / due date is set)
+    if (endDate != null && targetDate.isAfter(endDate)) return false
+
+    // 3. Match repeat interval
     return when {
         repeat == "once" || repeat.isBlank() -> {
-            (reminder.date ?: reminder.startDate) == targetDate
+            val dueDate = reminder.date ?: baseStart
+            targetDate == dueDate
         }
         repeat == "daily" -> {
-            val start = reminder.date ?: reminder.startDate ?: return false
-            !targetDate.isBefore(start) && !targetDate.isAfter(start.plusMonths(12))
+            true // Repeats every day from baseStart up to endDate (or indefinitely if endDate == null)
         }
         repeat == "weekly" -> {
-            val start = reminder.date ?: reminder.startDate ?: return false
-            !targetDate.isBefore(start) && targetDate.dayOfWeek == start.dayOfWeek && !targetDate.isAfter(start.plusYears(2))
+            targetDate.dayOfWeek == baseStart.dayOfWeek
         }
         repeat == "monthly" -> {
-            val start = reminder.date ?: reminder.startDate ?: return false
-            !targetDate.isBefore(start) && targetDate.dayOfMonth == start.dayOfMonth && !targetDate.isAfter(start.plusYears(3))
+            targetDate.dayOfMonth == baseStart.dayOfMonth
         }
         repeat == "yearly" -> {
-            val start = reminder.date ?: reminder.startDate ?: return false
-            !targetDate.isBefore(start) && targetDate.dayOfMonth == start.dayOfMonth && targetDate.month == start.month
+            targetDate.dayOfMonth == baseStart.dayOfMonth && targetDate.month == baseStart.month
         }
         repeat == "custom" -> {
-            if (reminder.startDate != null && reminder.endDate != null) {
-                !targetDate.isBefore(reminder.startDate) && !targetDate.isAfter(reminder.endDate)
-            } else {
-                reminder.date == targetDate || reminder.startDate == targetDate
-            }
+            true
         }
-        else -> reminder.date == targetDate || reminder.startDate == targetDate
+        else -> targetDate == (reminder.date ?: baseStart)
     }
 }
 
@@ -166,13 +169,11 @@ fun MyTasksScreen(
             reminderToEdit = editingReminder,
             autoOpenTimePicker = shouldOpenSnooze,
             onSave = { title, content, date, start, end, repeat, time, isAlarm, attachments, id ->
-                val finalDate = date ?: selectedDate
-                val finalStart = start ?: finalDate
                 reminderViewModel.saveReminder(
                     title,
                     content,
-                    finalDate,
-                    finalStart,
+                    date,
+                    start ?: date,
                     end,
                     repeat,
                     time,
