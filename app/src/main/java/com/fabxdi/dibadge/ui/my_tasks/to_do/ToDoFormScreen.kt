@@ -6,11 +6,13 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -46,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.data.ReminderEntity
 import com.fabxdi.dibadge.ui.components.AttachmentList
+import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -132,16 +135,30 @@ fun ReminderFormScreen(
         selectableDates = selectableDates
     )
     
+    var selectedDueDate by remember { mutableStateOf<LocalDate?>(reminderToEdit?.date) }
+
+    val customRangeSelectableDates = remember(selectedDueDate) {
+        object : SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                val date = Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneId.of("UTC")).toLocalDate()
+                val today = LocalDate.now()
+                if (date.isBefore(today)) return false
+                if (selectedDueDate != null && date.isAfter(selectedDueDate)) return false
+                return true
+            }
+
+            override fun isSelectableYear(year: Int): Boolean {
+                val todayYear = LocalDate.now().year
+                val dueYear = selectedDueDate?.year ?: (todayYear + 50)
+                return year in todayYear..dueYear
+            }
+        }
+    }
+
     val dateRangePickerState = rememberDateRangePickerState(
         initialSelectedStartDateMillis = reminderToEdit?.startDate?.atStartOfDay(ZoneId.of("UTC"))?.toInstant()?.toEpochMilli(),
         initialSelectedEndDateMillis = reminderToEdit?.endDate?.atStartOfDay(ZoneId.of("UTC"))?.toInstant()?.toEpochMilli(),
-        selectableDates = object : SelectableDates {
-            override fun isSelectableDate(utcTimeMillis: Long): Boolean {
-                val date = Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneId.of("UTC")).toLocalDate()
-                return !date.isBefore(LocalDate.now())
-            }
-            override fun isSelectableYear(year: Int): Boolean = year >= LocalDate.now().year
-        }
+        selectableDates = customRangeSelectableDates
     )
 
     var attachedFiles by remember { 
@@ -210,9 +227,9 @@ fun ReminderFormScreen(
 
     var showDatePicker by remember { mutableStateOf(false) }
     var showDateRangePicker by remember { mutableStateOf(false) }
+    var showWeeklyDaysPicker by remember { mutableStateOf(false) }
     var showRemindMePicker by remember { mutableStateOf(autoOpenTimePicker) }
     var isDateMenuExpanded by remember { mutableStateOf(false) }
-    var selectedDueDate by remember { mutableStateOf<LocalDate?>(reminderToEdit?.date) }
 
     LaunchedEffect(autoOpenTimePicker) {
         if (autoOpenTimePicker) {
@@ -616,6 +633,35 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                 }
             }
 
+            val customRangeText = remember(dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis) {
+                val start = dateRangePickerState.selectedStartDateMillis?.let {
+                    Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate().format(pillDateFormatter)
+                }
+                val end = dateRangePickerState.selectedEndDateMillis?.let {
+                    Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate().format(pillDateFormatter)
+                }
+                if (start != null && end != null) {
+                    "$start - $end"
+                } else {
+                    start ?: "Custom"
+                }
+            }
+
+            val repeatPillText = remember(selectedRepeat, customRangeText) {
+                when {
+                    selectedRepeat?.startsWith("weekly") == true -> {
+                        val dayPart = if (selectedRepeat!!.contains(":")) {
+                            selectedRepeat!!.substringAfter(":").lowercase().replaceFirstChar { it.uppercase() }.take(3)
+                        } else {
+                            LocalDate.now().dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }.take(3)
+                        }
+                        "Weekly ($dayPart)"
+                    }
+                    selectedRepeat == "Custom" -> customRangeText
+                    else -> selectedRepeat ?: "Repeat"
+                }
+            }
+
             val RepeatPill: @Composable () -> Unit = {
                 Box {
                     val isRepeatSelected = selectedRepeat != null && selectedRepeat != "once"
@@ -632,7 +678,7 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                         },
                         label = {
                             Text(
-                                text = selectedRepeat ?: "Repeat",
+                                text = repeatPillText,
                                 fontSize = 13.sp,
                                 fontWeight = if (isRepeatSelected) FontWeight.Bold else FontWeight.Medium
                             )
@@ -706,6 +752,8 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                                         isRepeatMenuExpanded = false
                                         if (option == "Custom") {
                                             showDateRangePicker = true
+                                        } else if (option == "weekly") {
+                                            showWeeklyDaysPicker = true
                                         } else {
                                             selectedRepeat = option
                                         }
@@ -813,60 +861,18 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
             if (isEditMode) {
                 Spacer(modifier = Modifier.height(20.dp))
 
-                val isCustomRange = selectedRepeat == "Custom" && formattedDateText != null && formattedDateText.contains("-")
-                val isSingleDateSelected = formattedDateText != null && !isCustomRange
-
-                if (isCustomRange) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            DatePill()
-                            RemindMePill()
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RepeatPill()
-                            AlarmPill()
-                        }
-                    }
-                } else if (isSingleDateSelected) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            DatePill()
-                            RemindMePill()
-                            RepeatPill()
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            AlarmPill()
-                        }
-                    }
-                } else {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        DatePill()
-                        RemindMePill()
-                        RepeatPill()
-                        AlarmPill()
-                    }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    DatePill()
+                    RemindMePill()
+                    RepeatPill()
+                    AlarmPill()
                 }
             }
 
@@ -910,6 +916,27 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                 showDatePicker = false
             },
             onDismiss = { showDatePicker = false }
+        )
+    }
+
+    if (showWeeklyDaysPicker) {
+        val initialDay = if (selectedRepeat?.startsWith("weekly:") == true) {
+            try {
+                DayOfWeek.valueOf(selectedRepeat!!.substringAfter(":").uppercase())
+            } catch (e: Exception) {
+                LocalDate.now().dayOfWeek
+            }
+        } else {
+            LocalDate.now().dayOfWeek
+        }
+
+        WeeklyDaysPickerDialog(
+            initialDay = initialDay,
+            onDaySelected = { chosenDay ->
+                selectedRepeat = "weekly:${chosenDay.name}"
+                showWeeklyDaysPicker = false
+            },
+            onDismiss = { showWeeklyDaysPicker = false }
         )
     }
 
@@ -1047,8 +1074,12 @@ fun RemindMePickerDialog(
     }
 
     val selTime = LocalTime.of(timePickerState.hour, timePickerState.minute)
-    val isDueDateToday = dueDate == null || dueDate == LocalDate.now()
-    val isTimeValid = !(isDueDateToday && selTime.isBefore(LocalTime.now()))
+    val isDueDateToday = dueDate == LocalDate.now()
+    val isTimeValid = if (isDueDateToday) {
+        !selTime.isBefore(LocalTime.now())
+    } else {
+        true
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -1143,6 +1174,120 @@ fun RemindMePickerDialog(
                             ) {
                                 Text("OK", fontWeight = FontWeight.Bold)
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun WeeklyDaysPickerDialog(
+    initialDay: DayOfWeek,
+    onDaySelected: (DayOfWeek) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val daysOfWeek = listOf(
+        DayOfWeek.SUNDAY to "Sunday",
+        DayOfWeek.MONDAY to "Monday",
+        DayOfWeek.TUESDAY to "Tuesday",
+        DayOfWeek.WEDNESDAY to "Wednesday",
+        DayOfWeek.THURSDAY to "Thursday",
+        DayOfWeek.FRIDAY to "Friday",
+        DayOfWeek.SATURDAY to "Saturday"
+    )
+    var selectedDay by remember { mutableStateOf(initialDay) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { onDismiss() },
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .wrapContentHeight()
+                    .clickable(enabled = false) {},
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp)
+                ) {
+                    Text(
+                        text = "Repeat Weekly On",
+                        style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp),
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    daysOfWeek.forEach { (dayOfWeek, dayLabel) ->
+                        val isSelected = selectedDay == dayOfWeek
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 3.dp)
+                                .clickable { selectedDay = dayOfWeek },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent,
+                            border = if (isSelected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = dayLabel,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Selected",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = onDismiss) {
+                            Text("Cancel", fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        TextButton(
+                            onClick = {
+                                onDaySelected(selectedDay)
+                            }
+                        ) {
+                            Text("OK", fontWeight = FontWeight.Bold)
                         }
                     }
                 }

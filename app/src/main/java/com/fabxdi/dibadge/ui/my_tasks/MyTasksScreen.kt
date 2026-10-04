@@ -44,6 +44,7 @@ import com.fabxdi.dibadge.data.ReminderEntity
 import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
+import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
@@ -77,8 +78,17 @@ fun isReminderOnDate(reminder: ReminderEntity, targetDate: LocalDate): Boolean {
         repeat == "daily" -> {
             true // Repeats every day from baseStart up to endDate (or indefinitely if endDate == null)
         }
-        repeat == "weekly" -> {
-            targetDate.dayOfWeek == baseStart.dayOfWeek
+        repeat.startsWith("weekly") -> {
+            val targetDayOfWeek = if (reminder.repeatType.contains(":")) {
+                try {
+                    DayOfWeek.valueOf(reminder.repeatType.substringAfter(":").uppercase())
+                } catch (e: Exception) {
+                    baseStart.dayOfWeek
+                }
+            } else {
+                baseStart.dayOfWeek
+            }
+            targetDate.dayOfWeek == targetDayOfWeek
         }
         repeat == "monthly" -> {
             targetDate.dayOfMonth == baseStart.dayOfMonth
