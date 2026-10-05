@@ -1,25 +1,14 @@
 package com.fabxdi.dibadge.ui.my_tasks
 
-import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -27,16 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
-import androidx.compose.ui.platform.LocalView
-import android.view.ViewGroup
-import android.view.Gravity
-import androidx.compose.animation.*
-import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -44,134 +23,51 @@ import com.fabxdi.dibadge.data.ReminderEntity
 import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
-import java.time.DayOfWeek
-import java.time.Instant
 import java.time.LocalDate
-import java.time.YearMonth
-import java.time.LocalTime
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 import java.util.Locale
-
-fun hasTasksOnDate(allReminders: List<ReminderEntity>, targetDate: LocalDate): Boolean {
-    return allReminders.any { isReminderOnDate(it, targetDate) }
-}
-
-fun isReminderOnDate(reminder: ReminderEntity, targetDate: LocalDate): Boolean {
-    val repeat = reminder.repeatType.lowercase()
-    val baseStart = reminder.startDate ?: reminder.date ?: LocalDate.now()
-    val endDate = reminder.endDate ?: reminder.date
-
-    // 1. Check if targetDate is BEFORE the start date
-    if (targetDate.isBefore(baseStart)) return false
-
-    // 2. Check if targetDate is AFTER the end date (if an end date / due date is set)
-    if (endDate != null && targetDate.isAfter(endDate)) return false
-
-    // 3. Match repeat interval
-    return when {
-        repeat == "once" || repeat.isBlank() -> {
-            val dueDate = reminder.date ?: baseStart
-            targetDate == dueDate
-        }
-        repeat == "daily" -> {
-            true // Repeats every day from baseStart up to endDate (or indefinitely if endDate == null)
-        }
-        repeat.startsWith("weekly") -> {
-            val targetDayOfWeek = if (reminder.repeatType.contains(":")) {
-                try {
-                    DayOfWeek.valueOf(reminder.repeatType.substringAfter(":").uppercase())
-                } catch (e: Exception) {
-                    baseStart.dayOfWeek
-                }
-            } else {
-                baseStart.dayOfWeek
-            }
-            targetDate.dayOfWeek == targetDayOfWeek
-        }
-        repeat == "monthly" -> {
-            targetDate.dayOfMonth == baseStart.dayOfMonth
-        }
-        repeat == "yearly" -> {
-            targetDate.dayOfMonth == baseStart.dayOfMonth && targetDate.month == baseStart.month
-        }
-        repeat == "custom" -> {
-            true
-        }
-        else -> targetDate == (reminder.date ?: baseStart)
-    }
-}
-
-fun parseReminderTime(timeStr: String?): LocalTime {
-    if (timeStr.isNullOrBlank()) return LocalTime.MAX
-    return try {
-        LocalTime.parse(timeStr.trim().uppercase(), DateTimeFormatter.ofPattern("hh:mm a", Locale.getDefault()))
-    } catch (e1: Exception) {
-        try {
-            LocalTime.parse(timeStr.trim(), DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault()))
-        } catch (e2: Exception) {
-            LocalTime.MAX
-        }
-    }
-}
-
-data class WeekPageData(
-    val yearMonth: YearMonth,
-    val sundayDate: LocalDate
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyTasksScreen(
-    onBack: () -> Unit,
+    onBack: () -> Unit = {},
     bottomBar: @Composable () -> Unit = {},
-    reminderViewModel: ReminderViewModel = viewModel(),
     initialReminderIdToEdit: Int? = null,
     openSnoozeTimePicker: Boolean = false,
-    onSnoozeHandled: () -> Unit = {}
+    initialSnoozeReminder: ReminderEntity? = null,
+    onSnoozeHandled: () -> Unit = {},
+    reminderViewModel: ReminderViewModel = viewModel()
 ) {
-    BackHandler(onBack = onBack)
-
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
     var selectedTaskFilter by remember { mutableStateOf("To do") }
-    var showDatePicker by remember { mutableStateOf(false) }
-    var showReminderForm by remember { mutableStateOf(false) }
-    var shouldOpenSnooze by remember { mutableStateOf(openSnoozeTimePicker) }
-
-    var editingReminder by remember { mutableStateOf<ReminderEntity?>(null) }
-    var completedTaskIds by remember { mutableStateOf(setOf<Int>()) }
 
     val allReminders by reminderViewModel.allReminders.collectAsState(initial = emptyList())
 
-    LaunchedEffect(initialReminderIdToEdit, allReminders) {
-        if (initialReminderIdToEdit != null && initialReminderIdToEdit != -1 && allReminders.isNotEmpty()) {
-            val found = allReminders.find { it.id == initialReminderIdToEdit }
-            if (found != null) {
-                editingReminder = found
-                showReminderForm = true
-            }
+    var showReminderForm by remember { mutableStateOf(false) }
+    var editingReminder by remember { mutableStateOf<ReminderEntity?>(null) }
+    var shouldOpenSnooze by remember { mutableStateOf(false) }
+
+    LaunchedEffect(initialSnoozeReminder) {
+        if (initialSnoozeReminder != null) {
+            editingReminder = initialSnoozeReminder
+            shouldOpenSnooze = true
+            showReminderForm = true
         }
     }
 
-    // 1. Filter reminders for selectedDate according to repeat rules
-    val dateReminders = remember(allReminders, selectedDate) {
-        allReminders.filter { reminder ->
-            isReminderOnDate(reminder, selectedDate)
-        }
+    val sortedReminders = remember(allReminders, selectedDate) {
+        allReminders.filter { isReminderOnDate(it, selectedDate) }
+            .sortedBy { parseReminderTime(it.time) }
     }
 
-    // 2. Sort chronologically (Morning -> Evening)
-    val sortedReminders = remember(dateReminders) {
-        dateReminders.sortedBy { parseReminderTime(it.time) }
-    }
-
-    // 3. Separate uncompleted (top) and completed (bottom)
     val uncompletedTasks = remember(sortedReminders, selectedDate) {
-        sortedReminders.filter { !it.completedDates.contains(selectedDate.toString()) }
+        val dateStr = selectedDate.toString()
+        sortedReminders.filter { !it.completedDates.contains(dateStr) }
     }
+
     val completedTasks = remember(sortedReminders, selectedDate) {
-        sortedReminders.filter { it.completedDates.contains(selectedDate.toString()) }
+        val dateStr = selectedDate.toString()
+        sortedReminders.filter { it.completedDates.contains(dateStr) }
     }
 
     if (showReminderForm) {
@@ -249,6 +145,8 @@ fun MyTasksScreen(
             "Overdue" to overdueLabel
         )
     }
+
+    var showDatePicker by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -333,7 +231,7 @@ fun MyTasksScreen(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Task Filter Pills ("To do · N", "Assigned to me · N")
+            // Task Filter Pills ("To do", "Assigned to me", "Overdue")
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -411,7 +309,7 @@ fun MyTasksScreen(
                             contentPadding = PaddingValues(horizontal = DiBadgeTheme.spacing.medium, vertical = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            // 1. UNCOMPLETED TASKS (Sorted Morning -> Evening)
+                            // 1. UNCOMPLETED TASKS
                             items(uncompletedTasks, key = { it.id }) { reminder ->
                                 TaskCardItem(
                                     reminder = reminder,
@@ -426,7 +324,7 @@ fun MyTasksScreen(
                                 )
                             }
 
-                            // 2. COMPLETED TASKS (Moved to Bottom)
+                            // 2. COMPLETED TASKS
                             if (completedTasks.isNotEmpty()) {
                                 item {
                                     Spacer(modifier = Modifier.height(12.dp))
@@ -524,403 +422,5 @@ fun MyTasksScreen(
             },
             onDismiss = { showDatePicker = false }
         )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun TaskDatePickerDialog(
-    initialDate: LocalDate,
-    allReminders: List<ReminderEntity>,
-    onDateSelected: (LocalDate) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var pickerMonth by remember { mutableStateOf(YearMonth.from(initialDate)) }
-    var tempSelectedDate by remember { mutableStateOf(initialDate) }
-    var showYearPicker by remember { mutableStateOf(false) }
-
-    val daysInMonth = remember(pickerMonth) { pickerMonth.lengthOfMonth() }
-    val firstDayOfMonth = remember(pickerMonth) { pickerMonth.atDay(1).dayOfWeek.value % 7 }
-
-    val calendarDays = remember(daysInMonth, firstDayOfMonth) {
-        val days = mutableListOf<LocalDate?>()
-        repeat(firstDayOfMonth) { days.add(null) }
-        for (i in 1..daysInMonth) { days.add(pickerMonth.atDay(i)) }
-        while (days.size % 7 != 0) { days.add(null) }
-        days.chunked(7)
-    }
-
-    val monthYearFormatter = remember { DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()) }
-    val headlineFormatter = remember { DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault()) }
-
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false
-        )
-    ) {
-        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
-        SideEffect {
-            dialogWindow?.let { win ->
-                win.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                win.setGravity(Gravity.CENTER)
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.5f))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) { onDismiss() },
-            contentAlignment = Alignment.Center
-        ) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .wrapContentHeight()
-                    .clickable(enabled = false) {},
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                ) {
-                    // Top Headline ("Fri, 2 Oct")
-                    Text(
-                        text = tempSelectedDate.format(headlineFormatter),
-                        style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Month Year Dropdown & Navigation Bar
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable { showYearPicker = !showYearPicker }
-                        ) {
-                            Text(
-                                text = pickerMonth.format(monthYearFormatter),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Icon(
-                                imageVector = Icons.Default.ArrowDropDown,
-                                contentDescription = "Select Year",
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-
-                        if (!showYearPicker) {
-                            Row {
-                                IconButton(onClick = { pickerMonth = pickerMonth.minusMonths(1) }) {
-                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Prev Month")
-                                }
-                                IconButton(onClick = { pickerMonth = pickerMonth.plusMonths(1) }) {
-                                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next Month")
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    if (showYearPicker) {
-                        val currentYear = pickerMonth.year
-                        val years = remember { (currentYear - 30..currentYear + 30).toList() }
-                        val listState = rememberLazyListState(initialFirstVisibleItemIndex = 28)
-
-                        LazyColumn(
-                            state = listState,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(200.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            contentPadding = PaddingValues(vertical = 4.dp)
-                        ) {
-                            items(years) { yearVal ->
-                                val isSelectedYear = yearVal == currentYear
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            pickerMonth = pickerMonth.withYear(yearVal)
-                                            showYearPicker = false
-                                        }
-                                        .padding(vertical = 8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = yearVal.toString(),
-                                        style = if (isSelectedYear) MaterialTheme.typography.titleLarge else MaterialTheme.typography.bodyLarge,
-                                        fontWeight = if (isSelectedYear) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isSelectedYear) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        // Day names header
-                        val daysOfWeek = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            daysOfWeek.forEach { day ->
-                                Text(
-                                    text = day,
-                                    modifier = Modifier.weight(1f),
-                                    textAlign = TextAlign.Center,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Date cells grid with task dots
-                        calendarDays.forEach { week ->
-                            Row(modifier = Modifier.fillMaxWidth()) {
-                                week.forEach { date ->
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .height(38.dp)
-                                            .padding(1.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (date != null) {
-                                            val isSelected = date == tempSelectedDate
-                                            val isToday = date == LocalDate.now()
-                                            val hasTask = remember(allReminders, date) {
-                                                hasTasksOnDate(allReminders, date)
-                                            }
-
-                                            Surface(
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .clickable {
-                                                        tempSelectedDate = date
-                                                        onDateSelected(date)
-                                                    },
-                                                shape = CircleShape,
-                                                color = when {
-                                                    isSelected -> MaterialTheme.colorScheme.primary
-                                                    isToday -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                                                    else -> Color.Transparent
-                                                }
-                                            ) {
-                                                Column(
-                                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                                    verticalArrangement = Arrangement.Center
-                                                ) {
-                                                    Text(
-                                                        text = date.dayOfMonth.toString(),
-                                                        style = MaterialTheme.typography.bodyMedium,
-                                                        fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
-                                                        color = when {
-                                                            isSelected -> MaterialTheme.colorScheme.onPrimary
-                                                            isToday -> MaterialTheme.colorScheme.primary
-                                                            else -> MaterialTheme.colorScheme.onSurface
-                                                        }
-                                                    )
-
-                                                    if (hasTask) {
-                                                        Spacer(modifier = Modifier.height(1.dp))
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .size(4.dp)
-                                                                .background(
-                                                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
-                                                                    shape = CircleShape
-                                                                )
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Bottom Action Buttons ("Today", "Cancel")
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextButton(
-                            onClick = {
-                                onDateSelected(LocalDate.now())
-                            }
-                        ) {
-                            Text(
-                                text = "Today",
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-
-                        TextButton(onClick = onDismiss) {
-                            Text(
-                                text = "Cancel",
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun TaskCardItem(
-    reminder: ReminderEntity,
-    isCompleted: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    onClick: () -> Unit
-) {
-    val displayTitle = remember(reminder.title, reminder.content) {
-        if (reminder.title.isNotBlank()) {
-            reminder.title
-        } else if (reminder.content.isNotBlank()) {
-            reminder.content.take(35).let { if (reminder.content.length > 35) "$it..." else it }
-        } else {
-            "Task"
-        }
-    }
-
-    val contentPreview = remember(reminder.title, reminder.content) {
-        if (reminder.title.isNotBlank() && reminder.content.isNotBlank()) {
-            reminder.content.take(40).let { if (reminder.content.length > 40) "$it..." else it }
-        } else {
-            ""
-        }
-    }
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            // LEFT SIDE: CIRCULAR CHECK BUTTON
-            IconButton(
-                onClick = { onCheckedChange(!isCompleted) },
-                modifier = Modifier.size(32.dp)
-            ) {
-                if (isCompleted) {
-                    Surface(
-                        modifier = Modifier.size(22.dp),
-                        shape = CircleShape,
-                        color = Color(0xFF00A884)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "Completed",
-                                tint = Color.White,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
-                    }
-                } else {
-                    Surface(
-                        modifier = Modifier.size(22.dp),
-                        shape = CircleShape,
-                        color = Color.Transparent,
-                        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
-                    ) {
-                        // Empty uncompleted circle
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            // MIDDLE: TITLE & CONTENT PREVIEW
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.Center
-            ) {
-                // Title
-                Text(
-                    text = displayTitle,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Normal,
-                        fontSize = 15.sp,
-                        textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
-                    ),
-                    color = if (isCompleted) {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                // Subtitle / Content Preview
-                if (contentPreview.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = contentPreview,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontSize = 12.sp,
-                            textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            // RIGHT SIDE: DUE TIME
-            if (!reminder.time.isNullOrBlank()) {
-                Text(
-                    text = reminder.time.lowercase(),
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Normal
-                    ),
-                    color = if (isCompleted) {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                    }
-                )
-            }
-        }
     }
 }
