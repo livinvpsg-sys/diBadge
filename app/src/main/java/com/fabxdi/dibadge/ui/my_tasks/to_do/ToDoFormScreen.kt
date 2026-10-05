@@ -93,7 +93,7 @@ fun ReminderFormScreen(
     var isRepeatMenuExpanded by remember { mutableStateOf(false) }
     var selectedRepeat by remember { mutableStateOf<String?>(reminderToEdit?.repeatType) }
     var pendingRepeatOption by remember { mutableStateOf<String?>(null) }
-    val repeatOptions = listOf("once", "weekly", "monthly", "Yearly", "daily", "Custom")
+    val repeatOptions = listOf("weekly", "monthly", "Yearly", "daily", "Custom")
 
     var selectedTime by remember { mutableStateOf<String?>(reminderToEdit?.time) }
     
@@ -512,7 +512,7 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                 } else if (selectedDueDate == LocalDate.now()) {
                     "Due today"
                 } else {
-                    selectedDueDate!!.format(pillDateFormatter)
+                    "Due on " + selectedDueDate!!.format(pillDateFormatter)
                 }
             }
             val hasDateValue = selectedDueDate != null
@@ -535,12 +535,6 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
 
             val isLessSevenDaysGap = dueGapDays in 1L..6L
             val isNoDueDate = selectedDueDate == null
-
-            LaunchedEffect(isNoDueDate) {
-                if (isNoDueDate && (selectedRepeat == "once" || selectedRepeat == null)) {
-                    selectedRepeat = "daily"
-                }
-            }
 
             LaunchedEffect(isLessSevenDaysGap) {
                 if (isLessSevenDaysGap && selectedRepeat != "once" && selectedRepeat != "daily" && selectedRepeat != "Custom") {
@@ -658,7 +652,8 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
                         "Weekly ($dayPart)"
                     }
                     selectedRepeat == "Custom" -> customRangeText
-                    else -> selectedRepeat ?: "Repeat"
+                    selectedRepeat == null || selectedRepeat == "once" -> "Repeat"
+                    else -> selectedRepeat!!
                 }
             }
 
@@ -891,9 +886,6 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
     }
 
     if (showRemindMePicker) {
-        val selectedDueDate = datePickerState.selectedDateMillis?.let {
-            Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
-        }
         RemindMePickerDialog(
             dueDate = selectedDueDate,
             initialTime = selectedTime,
