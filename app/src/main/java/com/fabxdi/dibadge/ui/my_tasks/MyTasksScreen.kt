@@ -1,5 +1,6 @@
 package com.fabxdi.dibadge.ui.my_tasks
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -40,7 +41,16 @@ fun MyTasksScreen(
     reminderViewModel: ReminderViewModel = viewModel()
 ) {
     var selectedDate by remember { mutableStateOf(LocalDate.now()) }
-    var selectedTaskFilter by remember { mutableStateOf("To do") }
+    var selectedTaskFilter by remember { mutableStateOf("Today") }
+
+    BackHandler(enabled = true) {
+        if (selectedTaskFilter != "Today" || selectedDate != LocalDate.now()) {
+            selectedDate = LocalDate.now()
+            selectedTaskFilter = "Today"
+        } else {
+            onBack()
+        }
+    }
 
     val allReminders by reminderViewModel.allReminders.collectAsState(initial = emptyList())
 
@@ -110,18 +120,8 @@ fun MyTasksScreen(
         return
     }
 
-    val dayOfWeekFormatter = remember { DateTimeFormatter.ofPattern("EEEE", Locale.getDefault()) }
-    val fullDateDisplayFormatter = remember { DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.getDefault()) }
+    val fullDateDisplayFormatter = remember { DateTimeFormatter.ofPattern("d MMMM yyyy, EEEE", Locale.getDefault()) }
     val fullDateFormatter = remember { DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.getDefault()) }
-
-    val topHeaderLabel = remember(selectedDate) {
-        val dayName = selectedDate.format(dayOfWeekFormatter)
-        if (selectedDate == LocalDate.now()) {
-            "Today · $dayName"
-        } else {
-            dayName
-        }
-    }
 
     val todayDate = remember { LocalDate.now() }
     val overdueCount = remember(allReminders, todayDate) {
@@ -155,13 +155,13 @@ fun MyTasksScreen(
     val uncompletedCount = uncompletedTasks.size
     val assignedCount = 0
 
-    val toDoLabel = if (uncompletedCount > 0) "To do $uncompletedCount" else "To do"
+    val todayFilterLabel = if (uncompletedCount > 0 && selectedDate == LocalDate.now()) "Today $uncompletedCount" else "Today"
     val assignedLabel = if (assignedCount > 0) "Assigned to me $assignedCount" else "Assigned to me"
     val overdueLabel = if (overdueCount > 0) "Overdue $overdueCount" else "Overdue"
 
-    val taskFilters = remember(toDoLabel, assignedLabel, overdueLabel) {
+    val taskFilters = remember(todayFilterLabel, assignedLabel, overdueLabel) {
         listOf(
-            "To do" to toDoLabel,
+            "Today" to todayFilterLabel,
             "Assigned to me" to assignedLabel,
             "Overdue" to overdueLabel
         )
@@ -172,9 +172,18 @@ fun MyTasksScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {},
+                title = {
+                    Text(
+                        text = "My Tasks",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Normal,
+                            fontSize = 20.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                },
                 actions = {
-                    if (selectedTaskFilter == "To do") {
+                    if (selectedTaskFilter == "Today") {
                         IconButton(onClick = { showDatePicker = true }) {
                             Icon(
                                 imageVector = Icons.Outlined.CalendarMonth,
@@ -191,7 +200,7 @@ fun MyTasksScreen(
         },
         bottomBar = bottomBar,
         floatingActionButton = {
-            if (selectedTaskFilter == "To do") {
+            if (selectedTaskFilter == "Today") {
                 FloatingActionButton(
                     onClick = {
                         editingReminder = null
@@ -227,34 +236,25 @@ fun MyTasksScreen(
                 .padding(innerPadding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            // Header Section: Day Name ("Today · Friday") and Main Date ("2 October 2026")
+            // Header Section: Main Date ("6 October 2026, Tuesday")
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = DiBadgeTheme.spacing.medium, vertical = 2.dp)
             ) {
                 Text(
-                    text = topHeaderLabel,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium
-                    ),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
                     text = selectedDate.format(fullDateDisplayFormatter),
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontWeight = FontWeight.Normal,
-                        fontSize = 24.sp
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 15.sp
                     ),
-                    color = MaterialTheme.colorScheme.onBackground
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f)
                 )
             }
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Task Filter Pills ("To do", "Assigned to me", "Overdue")
+            // Task Filter Pills ("Today", "Assigned to me", "Overdue")
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -263,10 +263,19 @@ fun MyTasksScreen(
                     .padding(horizontal = DiBadgeTheme.spacing.medium, vertical = 8.dp)
             ) {
                 taskFilters.forEach { (filterKey, filterLabel) ->
-                    val isSelected = selectedTaskFilter == filterKey
+                    val isSelected = if (filterKey == "Today") {
+                        selectedTaskFilter == "Today" && selectedDate == LocalDate.now()
+                    } else {
+                        selectedTaskFilter == filterKey
+                    }
                     FilterChip(
                         selected = isSelected,
-                        onClick = { selectedTaskFilter = filterKey },
+                        onClick = {
+                            selectedTaskFilter = filterKey
+                            if (filterKey == "Today") {
+                                selectedDate = LocalDate.now()
+                            }
+                        },
                         label = {
                             Text(
                                 text = filterLabel,
@@ -307,19 +316,19 @@ fun MyTasksScreen(
                     .fillMaxSize()
                     .weight(1f)
             ) {
-                if (selectedTaskFilter == "To do") {
+                if (selectedTaskFilter == "Today") {
                     if (sortedReminders.isEmpty()) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
                         ) {
-                            val emptyToDoText = if (selectedDate == LocalDate.now()) {
-                                "No to-do tasks for today"
+                            val emptyTodayText = if (selectedDate == LocalDate.now()) {
+                                "No tasks for today"
                             } else {
-                                "No to-do tasks for ${selectedDate.format(fullDateFormatter)}"
+                                "No tasks for ${selectedDate.format(fullDateFormatter)}"
                             }
                             Text(
-                                text = emptyToDoText,
+                                text = emptyTodayText,
                                 style = MaterialTheme.typography.bodyLarge.copy(
                                     fontWeight = FontWeight.Normal
                                 ),

@@ -267,24 +267,12 @@ fun TaskDatePickerDialog(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Bottom Action Buttons ("Today", "Cancel")
+                    // Bottom Action Buttons ("Cancel")
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TextButton(
-                            onClick = {
-                                onDateSelected(LocalDate.now())
-                            }
-                        ) {
-                            Text(
-                                text = "Today",
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-
                         TextButton(onClick = onDismiss) {
                             Text(
                                 text = "Cancel",
