@@ -90,7 +90,10 @@ fun RemindMePickerDialog(
                 ) {
                     // TIME PICKER VIEW
                     Box(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .wrapContentHeight()
+                            .padding(vertical = 8.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         CompositionLocalProvider(

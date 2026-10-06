@@ -28,6 +28,7 @@ import java.util.Locale
 fun TaskCardItem(
     reminder: ReminderEntity,
     isCompleted: Boolean,
+    badgeText: String? = null,
     onCheckedChange: (Boolean) -> Unit,
     onClick: () -> Unit
 ) {
@@ -53,12 +54,8 @@ fun TaskCardItem(
         if (isCompleted || reminder.time.isNullOrBlank()) {
             false
         } else {
-            val parsedTime = try {
-                LocalTime.parse(reminder.time, DateTimeFormatter.ofPattern("hh:mm a", Locale.getDefault()))
-            } catch (e: Exception) {
-                null
-            }
-            if (parsedTime != null) {
+            val parsedTime = parseReminderTime(reminder.time)
+            if (parsedTime != LocalTime.MAX) {
                 val taskDate = reminder.date ?: reminder.startDate ?: LocalDate.now()
                 val today = LocalDate.now()
                 if (taskDate.isBefore(today)) {
@@ -160,6 +157,24 @@ fun TaskCardItem(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                }
+
+                // Badge (e.g. "To Do")
+                if (!badgeText.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                    ) {
+                        Text(
+                            text = badgeText,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                        )
+                    }
                 }
             }
 

@@ -37,8 +37,15 @@ fun YearlyDatePickerDialog(
     var showMonthDropdown by remember { mutableStateOf(false) }
 
     val months = Month.entries.toList()
-    val daysInMonth = selectedMonth.length(Year.now().isLeap)
-    val dayNumbers = remember(selectedMonth) { (1..daysInMonth).toList() }
+    val daysInMonth = remember(selectedMonth) { selectedMonth.length(true) }
+    val dayNumbers = remember(daysInMonth) { (1..daysInMonth).toList() }
+
+    LaunchedEffect(selectedMonth) {
+        val maxDays = selectedMonth.length(true)
+        if (selectedDayNum > maxDays) {
+            selectedDayNum = maxDays
+        }
+    }
 
     Dialog(
         onDismissRequest = onDismiss,

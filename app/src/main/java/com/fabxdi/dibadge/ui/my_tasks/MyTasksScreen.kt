@@ -24,6 +24,7 @@ import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -123,13 +124,33 @@ fun MyTasksScreen(
     }
 
     val todayDate = remember { LocalDate.now() }
-    val overdueTasks = remember(allReminders, todayDate) {
-        allReminders.filter { reminder ->
-            val taskDate = reminder.date ?: reminder.startDate
-            taskDate != null && taskDate.isBefore(todayDate) && !reminder.completedDates.contains(taskDate.toString())
-        }.sortedBy { parseReminderTime(it.time) }
+    val overdueCount = remember(allReminders, todayDate) {
+        val nowTime = LocalTime.now()
+        allReminders.sumOf { reminder ->
+            var count = 0
+            val baseStart = reminder.startDate ?: reminder.date ?: todayDate
+            val searchStart = if (baseStart.isAfter(todayDate.minusDays(60))) baseStart else todayDate.minusDays(60)
+
+            var currDate = searchStart
+            while (!currDate.isAfter(todayDate)) {
+                val currDateStr = currDate.toString()
+                val isCompleted = reminder.completedDates.contains(currDateStr)
+
+                if (!isCompleted && isReminderOnDate(reminder, currDate)) {
+                    if (currDate.isBefore(todayDate)) {
+                        count++
+                    } else if (currDate == todayDate && !reminder.time.isNullOrBlank()) {
+                        val parsedTime = parseReminderTime(reminder.time)
+                        if (parsedTime != LocalTime.MAX && parsedTime.isBefore(nowTime)) {
+                            count++
+                        }
+                    }
+                }
+                currDate = currDate.plusDays(1)
+            }
+            count
+        }
     }
-    val overdueCount = overdueTasks.size
 
     val uncompletedCount = uncompletedTasks.size
     val assignedCount = 0
@@ -153,12 +174,14 @@ fun MyTasksScreen(
             TopAppBar(
                 title = {},
                 actions = {
-                    IconButton(onClick = { showDatePicker = true }) {
-                        Icon(
-                            imageVector = Icons.Outlined.CalendarMonth,
-                            contentDescription = "Pick Date",
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
+                    if (selectedTaskFilter == "To do") {
+                        IconButton(onClick = { showDatePicker = true }) {
+                            Icon(
+                                imageVector = Icons.Outlined.CalendarMonth,
+                                contentDescription = "Pick Date",
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -354,41 +377,16 @@ fun MyTasksScreen(
                         }
                     }
                 } else if (selectedTaskFilter == "Overdue") {
-                    if (overdueTasks.isEmpty()) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "No overdue tasks",
-                                style = MaterialTheme.typography.bodyLarge.copy(
-                                    fontWeight = FontWeight.Normal
-                                ),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            )
+                    OverdueTasksView(
+                        allReminders = allReminders,
+                        onToggleCompleted = { reminder, targetDate ->
+                            reminderViewModel.toggleTaskCompletedForDate(reminder, targetDate)
+                        },
+                        onTaskClick = { reminder ->
+                            editingReminder = reminder
+                            showReminderForm = true
                         }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(horizontal = DiBadgeTheme.spacing.medium, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            items(overdueTasks, key = { it.id }) { reminder ->
-                                val taskDate = reminder.date ?: reminder.startDate ?: todayDate
-                                TaskCardItem(
-                                    reminder = reminder,
-                                    isCompleted = false,
-                                    onCheckedChange = {
-                                        reminderViewModel.toggleTaskCompletedForDate(reminder, taskDate)
-                                    },
-                                    onClick = {
-                                        editingReminder = reminder
-                                        showReminderForm = true
-                                    }
-                                )
-                            }
-                        }
-                    }
+                    )
                 } else {
                     Box(
                         modifier = Modifier.fillMaxSize(),

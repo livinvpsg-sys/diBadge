@@ -22,8 +22,8 @@ import java.time.DayOfWeek
 
 @Composable
 fun WeeklyDaysPickerDialog(
-    initialDay: DayOfWeek,
-    onDaySelected: (DayOfWeek) -> Unit,
+    initialDays: Set<DayOfWeek>,
+    onDaysSelected: (Set<DayOfWeek>) -> Unit,
     onDismiss: () -> Unit
 ) {
     val daysOfWeek = listOf(
@@ -35,7 +35,7 @@ fun WeeklyDaysPickerDialog(
         DayOfWeek.FRIDAY to "Friday",
         DayOfWeek.SATURDAY to "Saturday"
     )
-    var selectedDay by remember { mutableStateOf(initialDay) }
+    val selectedDays = remember { mutableStateListOf<DayOfWeek>().apply { addAll(initialDays) } }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -76,12 +76,20 @@ fun WeeklyDaysPickerDialog(
                     Spacer(modifier = Modifier.height(14.dp))
 
                     daysOfWeek.forEach { (dayOfWeek, dayLabel) ->
-                        val isSelected = selectedDay == dayOfWeek
+                        val isSelected = selectedDays.contains(dayOfWeek)
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 3.dp)
-                                .clickable { selectedDay = dayOfWeek },
+                                .clickable {
+                                    if (isSelected) {
+                                        if (selectedDays.size > 1) {
+                                            selectedDays.remove(dayOfWeek)
+                                        }
+                                    } else {
+                                        selectedDays.add(dayOfWeek)
+                                    }
+                                },
                             shape = RoundedCornerShape(12.dp),
                             color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.Transparent,
                             border = if (isSelected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary) else null
@@ -122,8 +130,9 @@ fun WeeklyDaysPickerDialog(
                         Spacer(modifier = Modifier.width(8.dp))
                         TextButton(
                             onClick = {
-                                onDaySelected(selectedDay)
-                            }
+                                onDaysSelected(selectedDays.toSet())
+                            },
+                            enabled = selectedDays.isNotEmpty()
                         ) {
                             Text("OK", fontWeight = FontWeight.Bold)
                         }

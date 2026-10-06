@@ -33,24 +33,28 @@ fun isReminderOnDate(reminder: ReminderEntity, targetDate: LocalDate): Boolean {
             true // Repeats every day from baseStart up to endDate (or indefinitely if endDate == null)
         }
         repeat.startsWith("weekly") -> {
-            val targetDayOfWeek = if (reminder.repeatType.contains(":")) {
-                try {
-                    DayOfWeek.valueOf(reminder.repeatType.substringAfter(":").uppercase())
-                } catch (e: Exception) {
-                    baseStart.dayOfWeek
-                }
+            val selectedDays = if (reminder.repeatType.contains(":")) {
+                reminder.repeatType.substringAfter(":").split(",")
+                    .mapNotNull {
+                        try { DayOfWeek.valueOf(it.trim().uppercase()) } catch (e: Exception) { null }
+                    }.toSet()
             } else {
-                baseStart.dayOfWeek
+                setOf(baseStart.dayOfWeek)
             }
-            targetDate.dayOfWeek == targetDayOfWeek
+            val targetDays = if (selectedDays.isEmpty()) setOf(baseStart.dayOfWeek) else selectedDays
+            targetDate.dayOfWeek in targetDays
         }
         repeat.startsWith("monthly") -> {
-            val targetDayOfMonth = if (reminder.repeatType.contains(":")) {
-                reminder.repeatType.substringAfter(":").toIntOrNull() ?: baseStart.dayOfMonth
+            val selectedDayNums = if (reminder.repeatType.contains(":")) {
+                reminder.repeatType.substringAfter(":").split(",")
+                    .mapNotNull { it.trim().toIntOrNull() }
+                    .toSet()
             } else {
-                baseStart.dayOfMonth
+                setOf(baseStart.dayOfMonth)
             }
-            targetDate.dayOfMonth == targetDayOfMonth
+            val targetDayNums = if (selectedDayNums.isEmpty()) setOf(baseStart.dayOfMonth) else selectedDayNums
+            val actualDays = targetDayNums.map { it.coerceAtMost(targetDate.lengthOfMonth()) }.toSet()
+            targetDate.dayOfMonth in actualDays
         }
         repeat.startsWith("yearly") -> {
             val (targetMonth, targetDayOfMonth) = if (reminder.repeatType.contains(":")) {

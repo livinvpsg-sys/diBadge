@@ -23,11 +23,11 @@ import androidx.compose.ui.window.DialogProperties
 
 @Composable
 fun MonthlyDayPickerDialog(
-    initialDayNumber: Int,
-    onDaySelected: (Int) -> Unit,
+    initialDayNumbers: Set<Int>,
+    onDaysSelected: (Set<Int>) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var selectedDayNum by remember { mutableIntStateOf(initialDayNumber) }
+    val selectedDayNums = remember { mutableStateListOf<Int>().apply { addAll(initialDayNumbers) } }
     val dayNumbers = remember { (1..31).toList() }
 
     Dialog(
@@ -60,7 +60,7 @@ fun MonthlyDayPickerDialog(
                         .padding(20.dp)
                 ) {
                     Text(
-                        text = "Repeat Monthly On Day",
+                        text = "Repeat Monthly On Days",
                         style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp),
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -77,11 +77,19 @@ fun MonthlyDayPickerDialog(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(dayNumbers) { dayNum ->
-                            val isSelected = selectedDayNum == dayNum
+                            val isSelected = selectedDayNums.contains(dayNum)
                             Surface(
                                 modifier = Modifier
                                     .size(38.dp)
-                                    .clickable { selectedDayNum = dayNum },
+                                    .clickable {
+                                        if (isSelected) {
+                                            if (selectedDayNums.size > 1) {
+                                                selectedDayNums.remove(dayNum)
+                                            }
+                                        } else {
+                                            selectedDayNums.add(dayNum)
+                                        }
+                                    },
                                 shape = CircleShape,
                                 color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
                                 border = if (isSelected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
@@ -110,8 +118,9 @@ fun MonthlyDayPickerDialog(
                         Spacer(modifier = Modifier.width(8.dp))
                         TextButton(
                             onClick = {
-                                onDaySelected(selectedDayNum)
-                            }
+                                onDaysSelected(selectedDayNums.toSet())
+                            },
+                            enabled = selectedDayNums.isNotEmpty()
                         ) {
                             Text("OK", fontWeight = FontWeight.Bold)
                         }
