@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -17,6 +18,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -169,6 +174,42 @@ fun MyTasksScreen(
 
     var showDatePicker by remember { mutableStateOf(false) }
 
+    val taskListState = rememberLazyListState()
+    var lastDayTransitionTime by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(selectedDate) {
+        taskListState.scrollToItem(0)
+    }
+
+    val dayNestedScrollConnection = remember(selectedDate, selectedTaskFilter) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (source == NestedScrollSource.UserInput && selectedTaskFilter == "Today") {
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - lastDayTransitionTime > 400L) {
+                        // Dragging UP at bottom of list -> Next Day
+                        if (available.y < -20f && !taskListState.canScrollForward) {
+                            lastDayTransitionTime = currentTime
+                            selectedDate = selectedDate.plusDays(1)
+                            return available
+                        }
+                        // Dragging DOWN at top of list -> Previous Day
+                        if (available.y > 20f && !taskListState.canScrollBackward) {
+                            lastDayTransitionTime = currentTime
+                            selectedDate = selectedDate.minusDays(1)
+                            return available
+                        }
+                    }
+                }
+                return Offset.Zero
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -236,31 +277,13 @@ fun MyTasksScreen(
                 .padding(innerPadding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            // Header Section: Main Date ("6 October 2026, Tuesday")
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = DiBadgeTheme.spacing.medium, vertical = 2.dp)
-            ) {
-                Text(
-                    text = selectedDate.format(fullDateDisplayFormatter),
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 15.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // Task Filter Pills ("Today", "Assigned to me", "Overdue")
+            // 1. Task Filter Pills ("Today", "Assigned to me", "Overdue")
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = DiBadgeTheme.spacing.medium, vertical = 8.dp)
+                    .padding(horizontal = DiBadgeTheme.spacing.medium, vertical = 6.dp)
             ) {
                 taskFilters.forEach { (filterKey, filterLabel) ->
                     val isSelected = if (filterKey == "Today") {
@@ -303,12 +326,31 @@ fun MyTasksScreen(
             }
 
             HorizontalDivider(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
+                modifier = Modifier.fillMaxWidth(),
                 thickness = 0.5.dp,
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
             )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // 2. Main Date Header ("6 October 2026, Tuesday") - Shown below pills
+            if (selectedTaskFilter == "Today") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = DiBadgeTheme.spacing.medium, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = selectedDate.format(fullDateDisplayFormatter),
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 15.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f)
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+            }
 
             // Task Content List View
             Box(
@@ -317,35 +359,43 @@ fun MyTasksScreen(
                     .weight(1f)
             ) {
                 if (selectedTaskFilter == "Today") {
-                    if (sortedReminders.isEmpty()) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            val emptyTodayText = if (selectedDate == LocalDate.now()) {
-                                "No tasks for today"
-                            } else {
-                                "No tasks for ${selectedDate.format(fullDateFormatter)}"
+                    LazyColumn(
+                        state = taskListState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .nestedScroll(dayNestedScrollConnection),
+                        contentPadding = PaddingValues(horizontal = DiBadgeTheme.spacing.medium, vertical = 8.dp),
+                        verticalArrangement = if (sortedReminders.isEmpty()) Arrangement.Center else Arrangement.spacedBy(10.dp)
+                    ) {
+                        if (sortedReminders.isEmpty()) {
+                            item(key = "empty_state") {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .fillParentMaxHeight(0.7f),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    val emptyTodayText = if (selectedDate == LocalDate.now()) {
+                                        "No tasks for today"
+                                    } else {
+                                        "No tasks for ${selectedDate.format(fullDateFormatter)}"
+                                    }
+                                    Text(
+                                        text = emptyTodayText,
+                                        style = MaterialTheme.typography.bodyLarge.copy(
+                                            fontWeight = FontWeight.Normal
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                    )
+                                }
                             }
-                            Text(
-                                text = emptyTodayText,
-                                style = MaterialTheme.typography.bodyLarge.copy(
-                                    fontWeight = FontWeight.Normal
-                                ),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            )
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(horizontal = DiBadgeTheme.spacing.medium, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
+                        } else {
                             // 1. UNCOMPLETED TASKS
                             items(uncompletedTasks, key = { it.id }) { reminder ->
                                 TaskCardItem(
                                     reminder = reminder,
                                     isCompleted = false,
+                                    viewDate = selectedDate,
                                     onCheckedChange = {
                                         reminderViewModel.toggleTaskCompletedForDate(reminder, selectedDate)
                                     },
@@ -373,6 +423,7 @@ fun MyTasksScreen(
                                     TaskCardItem(
                                         reminder = reminder,
                                         isCompleted = true,
+                                        viewDate = selectedDate,
                                         onCheckedChange = {
                                             reminderViewModel.toggleTaskCompletedForDate(reminder, selectedDate)
                                         },

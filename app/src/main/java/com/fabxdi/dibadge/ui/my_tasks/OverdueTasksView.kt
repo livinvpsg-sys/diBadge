@@ -115,6 +115,7 @@ fun OverdueTasksView(
                     TaskCardItem(
                         reminder = reminder,
                         isCompleted = false,
+                        viewDate = group.date,
                         badgeText = "To Do",
                         onCheckedChange = {
                             onToggleCompleted(reminder, group.date)

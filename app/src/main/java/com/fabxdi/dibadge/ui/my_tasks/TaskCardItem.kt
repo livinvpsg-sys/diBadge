@@ -28,6 +28,7 @@ import java.util.Locale
 fun TaskCardItem(
     reminder: ReminderEntity,
     isCompleted: Boolean,
+    viewDate: LocalDate? = null,
     badgeText: String? = null,
     onCheckedChange: (Boolean) -> Unit,
     onClick: () -> Unit
@@ -50,17 +51,20 @@ fun TaskCardItem(
         }
     }
 
-    val isOverdueTime = remember(reminder.time, isCompleted, reminder.date, reminder.startDate) {
-        if (isCompleted || reminder.time.isNullOrBlank()) {
+    val isOverdueTime = remember(reminder.time, isCompleted, reminder.date, reminder.startDate, viewDate) {
+        val today = LocalDate.now()
+        val currentViewDate = viewDate ?: reminder.date ?: reminder.startDate ?: today
+
+        if (currentViewDate.isAfter(today)) {
+            false
+        } else if (isCompleted || reminder.time.isNullOrBlank()) {
             false
         } else {
             val parsedTime = parseReminderTime(reminder.time)
             if (parsedTime != LocalTime.MAX) {
-                val taskDate = reminder.date ?: reminder.startDate ?: LocalDate.now()
-                val today = LocalDate.now()
-                if (taskDate.isBefore(today)) {
+                if (currentViewDate.isBefore(today)) {
                     true
-                } else if (taskDate == today) {
+                } else if (currentViewDate == today) {
                     parsedTime.isBefore(LocalTime.now())
                 } else {
                     false
