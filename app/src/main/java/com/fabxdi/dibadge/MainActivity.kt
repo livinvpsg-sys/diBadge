@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -11,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -31,10 +33,23 @@ import com.fabxdi.dibadge.viewmodel.ThemeViewModel
 import java.time.LocalDate
 
 class MainActivity : ComponentActivity() {
+    private var reminderIdToOpenState by mutableIntStateOf(-1)
+    private var openSnoozeTimePickerState by mutableStateOf(false)
+
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         // Handle permission result
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val newId = intent.getIntExtra("OPEN_REMINDER_ID", -1)
+        if (newId != -1) {
+            reminderIdToOpenState = newId
+            openSnoozeTimePickerState = intent.getBooleanExtra("OPEN_SNOOZE_TIME_PICKER", false)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,8 +58,11 @@ class MainActivity : ComponentActivity() {
         checkNotificationPermission()
         AlarmSoundManager.stopAlarmSound()
 
-        val reminderIdToOpen = intent.getIntExtra("OPEN_REMINDER_ID", -1)
-        val openSnoozeTimePicker = intent.getBooleanExtra("OPEN_SNOOZE_TIME_PICKER", false)
+        val initialId = intent.getIntExtra("OPEN_REMINDER_ID", -1)
+        if (initialId != -1) {
+            reminderIdToOpenState = initialId
+            openSnoozeTimePickerState = intent.getBooleanExtra("OPEN_SNOOZE_TIME_PICKER", false)
+        }
 
         setContent {
             val themeViewModel: ThemeViewModel = viewModel()
@@ -83,8 +101,8 @@ class MainActivity : ComponentActivity() {
                     var showCalendarScreen by remember { mutableStateOf(false) }
                     var initialDateForCalendar by remember { mutableStateOf<LocalDate?>(null) }
 
-                    LaunchedEffect(reminderIdToOpen) {
-                        if (reminderIdToOpen != -1) {
+                    LaunchedEffect(reminderIdToOpenState) {
+                        if (reminderIdToOpenState != -1) {
                             showCalendarScreen = false
                             selectedTab = HomeTab.MyTasks
                         }
@@ -122,8 +140,14 @@ class MainActivity : ComponentActivity() {
                             firstName = displayName,
                             onSettingsClick = { showSettingsDialog = true },
                             onSignOut = { authViewModel.signOut() },
-                            initialReminderIdToEdit = if (reminderIdToOpen != -1) reminderIdToOpen else null,
-                            openSnoozeTimePicker = openSnoozeTimePicker
+                            initialReminderIdToEdit = if (reminderIdToOpenState != -1) reminderIdToOpenState else null,
+                            openSnoozeTimePicker = openSnoozeTimePickerState,
+                            onSnoozeHandled = {
+                                reminderIdToOpenState = -1
+                                openSnoozeTimePickerState = false
+                                intent.removeExtra("OPEN_REMINDER_ID")
+                                intent.removeExtra("OPEN_SNOOZE_TIME_PICKER")
+                            }
                         )
                     }
                 }

@@ -62,6 +62,20 @@ fun MyTasksScreen(
     var showReminderForm by remember { mutableStateOf(false) }
     var editingReminder by remember { mutableStateOf<ReminderEntity?>(null) }
     var shouldOpenSnooze by remember { mutableStateOf(false) }
+    var handledReminderId by remember { mutableStateOf<Int?>(null) }
+
+    LaunchedEffect(initialReminderIdToEdit, allReminders) {
+        if (initialReminderIdToEdit != null && initialReminderIdToEdit != -1 && handledReminderId != initialReminderIdToEdit) {
+            val targetReminder = allReminders.find { it.id == initialReminderIdToEdit }
+            if (targetReminder != null) {
+                handledReminderId = initialReminderIdToEdit
+                editingReminder = targetReminder
+                shouldOpenSnooze = openSnoozeTimePicker
+                showReminderForm = true
+                onSnoozeHandled()
+            }
+        }
+    }
 
     LaunchedEffect(initialSnoozeReminder) {
         if (initialSnoozeReminder != null) {
@@ -325,16 +339,9 @@ fun MyTasksScreen(
                 }
             }
 
-            HorizontalDivider(
-                modifier = Modifier.fillMaxWidth(),
-                thickness = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-            )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
             // 2. Main Date Header ("6 October 2026, Tuesday") - Shown below pills
             if (selectedTaskFilter == "Today") {
+                Spacer(modifier = Modifier.height(4.dp))
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -343,14 +350,21 @@ fun MyTasksScreen(
                     Text(
                         text = selectedDate.format(fullDateDisplayFormatter),
                         style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 15.sp
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 17.sp
                         ),
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f)
+                        color = MaterialTheme.colorScheme.onBackground
                     )
                 }
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
             }
+
+            // Divider Line After Date Header
+            HorizontalDivider(
+                modifier = Modifier.fillMaxWidth(),
+                thickness = 0.5.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+            )
 
             // Task Content List View
             Box(

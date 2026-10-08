@@ -133,14 +133,14 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
             val finalId = if (id == 0) {
                 val newId = reminderDao.insertReminder(reminder).toInt()
                 reminder = reminder.copy(id = newId)
-                if (isAlarmEnabled) {
+                if (!reminder.time.isNullOrBlank()) {
                     alarmScheduler.schedule(reminder)
                 }
                 newId
             } else {
                 reminderDao.updateReminder(reminder)
                 alarmScheduler.cancel(id)
-                if (isAlarmEnabled) {
+                if (!reminder.time.isNullOrBlank()) {
                     alarmScheduler.schedule(reminder)
                 }
                 id

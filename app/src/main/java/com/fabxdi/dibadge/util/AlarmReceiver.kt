@@ -28,17 +28,9 @@ class AlarmReceiver : BroadcastReceiver() {
             return
         }
 
-        if (action == "ACTION_SNOOZE_TASK") {
+        if (action == "ACTION_SILENT_TASK") {
             AlarmSoundManager.stopAlarmSound()
-            notificationManager.cancel(id)
-
-            // Open app directly into task screen with TimePicker open
-            val snoozeActivityIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                putExtra("OPEN_REMINDER_ID", id)
-                putExtra("OPEN_SNOOZE_TIME_PICKER", true)
-            }
-            context.startActivity(snoozeActivityIntent)
+            showSilentNotificationWithoutButtons(context, id, title, content)
             return
         }
 
@@ -68,29 +60,29 @@ class AlarmReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // "Snooze" Action Intent (Pill 1 on Left)
-        val snoozeActionIntent = Intent(context, AlarmReceiver::class.java).apply {
-            action = "ACTION_SNOOZE_TASK"
+        // "Silent" Action Intent
+        val silentActionIntent = Intent(context, AlarmReceiver::class.java).apply {
+            action = "ACTION_SILENT_TASK"
             putExtra("REMINDER_ID", id)
             putExtra("REMINDER_TITLE", displayTitle)
             putExtra("REMINDER_CONTENT", content)
         }
-        val snoozePendingIntent = PendingIntent.getBroadcast(
+        val silentPendingIntent = PendingIntent.getBroadcast(
             context,
             id + 500000,
-            snoozeActionIntent,
+            silentActionIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // "OK" Action Intent (Pill 2 on Right)
-        val okActionIntent = Intent(context, AlarmReceiver::class.java).apply {
+        // "Close" Action Intent
+        val closeActionIntent = Intent(context, AlarmReceiver::class.java).apply {
             action = "ACTION_DISMISS_TASK"
             putExtra("REMINDER_ID", id)
         }
-        val okPendingIntent = PendingIntent.getBroadcast(
+        val closePendingIntent = PendingIntent.getBroadcast(
             context,
             id + 600000,
-            okActionIntent,
+            closeActionIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -131,40 +123,62 @@ class AlarmReceiver : BroadcastReceiver() {
                 .setFullScreenIntent(pendingIntent, true)
                 .setAutoCancel(true)
                 .setContentIntent(pendingIntent)
-                .addAction(0, "Snooze", snoozePendingIntent)
-                .addAction(0, "Close", okPendingIntent)
+                .addAction(0, "Silent", silentPendingIntent)
+                .addAction(0, "Close", closePendingIntent)
                 .build()
 
             notificationManager.notify(id, notification)
         } else {
-            // ALARM OFF: Silent Notification (No Sound, No Vibration)
-            val channelId = "task_silent_channel"
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val channel = NotificationChannel(
-                    channelId,
-                    "Task Notifications",
-                    NotificationManager.IMPORTANCE_DEFAULT
-                ).apply {
-                    setSound(null, null)
-                    enableVibration(false)
-                }
-                notificationManager.createNotificationChannel(channel)
-            }
-
-            val notification = NotificationCompat.Builder(context, channelId)
-                .setSmallIcon(R.drawable.ic_launcher_foreground)
-                .setContentTitle(displayTitle)
-                .setContentText(content)
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setSound(null)
-                .setVibrate(longArrayOf(0L))
-                .setAutoCancel(true)
-                .setContentIntent(pendingIntent)
-                .addAction(0, "Close", okPendingIntent)
-                .build()
-
-            notificationManager.notify(id, notification)
+            // ALARM OFF: Show Silent Notification (No alarm sound, no action buttons)
+            showSilentNotificationWithoutButtons(context, id, displayTitle, content)
         }
+    }
+
+    private fun showSilentNotificationWithoutButtons(
+        context: Context,
+        id: Int,
+        title: String,
+        content: String
+    ) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val displayTitle = if (title.isNotBlank()) title else "Task"
+
+        val mainIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            putExtra("OPEN_REMINDER_ID", id)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            id,
+            mainIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val channelId = "task_silent_channel"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "Task Notifications",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                setSound(null, null)
+                enableVibration(false)
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notification = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(displayTitle)
+            .setContentText(content)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setSound(null)
+            .setVibrate(longArrayOf(0L))
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+
+        notificationManager.notify(id, notification)
     }
 }
