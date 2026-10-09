@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -184,9 +185,20 @@ fun TaskCardItem(
 
             Spacer(modifier = Modifier.width(10.dp))
 
-            // RIGHT SIDE: DUE TIME & OVERDUE LABEL
+            // RIGHT SIDE: DUE TIME, ALARM ICON & OVERDUE LABEL
             if (!reminder.time.isNullOrBlank()) {
                 Column(horizontalAlignment = Alignment.End) {
+                    // Show Alarm Icon ABOVE time if Alarm is ON, task is not completed, and task is not overdue
+                    if (reminder.isAlarmEnabled && !isCompleted && !isOverdueTime) {
+                        Icon(
+                            imageVector = Icons.Default.NotificationsActive,
+                            contentDescription = "Alarm Enabled",
+                            modifier = Modifier.size(13.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                    }
+
                     Text(
                         text = reminder.time.lowercase(),
                         style = MaterialTheme.typography.bodySmall.copy(
