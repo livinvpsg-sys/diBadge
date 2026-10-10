@@ -116,10 +116,6 @@ class AuthViewModel : ViewModel() {
             }
     }
 
-    fun googleSignInError(message: String) {
-        _uiState.value = AuthUiState.Error(message)
-    }
-
     fun sendPasswordResetEmail(email: String, onResult: (Boolean, String) -> Unit) {
         if (email.isBlank()) {
             onResult(false, "Please enter your email address")

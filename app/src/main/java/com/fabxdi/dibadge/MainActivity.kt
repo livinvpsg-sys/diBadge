@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.ui.auth.AuthScreen
+import com.fabxdi.dibadge.ui.auth.WelcomeScreen
 import com.fabxdi.dibadge.ui.calendar.CalendarScreen
 import com.fabxdi.dibadge.ui.home.HomeTab
 import com.fabxdi.dibadge.ui.home.MainDashboard

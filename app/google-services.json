@@ -12,7 +12,20 @@
           "package_name": "com.fabxdi.dibadge"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "390433769514-1tl5v1l1e0830h5776pho71elj92jti5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.fabxdi.dibadge",
+            "certificate_hash": "f47c5ed57ec31a3fadd82f66d8a2ac4463813435"
+          }
+        },
+        {
+          "client_id": "390433769514-upbvdbac943d86u5o39b9uon2l2nbdle.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAgpnFVQuapi2cX7ob9yI58xBCer0c-myg"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "390433769514-upbvdbac943d86u5o39b9uon2l2nbdle.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
