@@ -43,6 +43,12 @@ interface ToDoDao {
 
     @Query("DELETE FROM chat_messages WHERE groupId = :groupId")
     suspend fun clearChatMessagesForGroup(groupId: String)
+
+    @Query("DELETE FROM reminders WHERE (date IS NOT NULL AND date > :cutoffDateStr) OR (startDate IS NOT NULL AND startDate > :cutoffDateStr)")
+    suspend fun deleteTemporaryRemindersAfterDate(cutoffDateStr: String)
+
+    @Query("DELETE FROM chat_messages WHERE timestampMs > :cutoffTimestampMs")
+    suspend fun deleteTemporaryChatMessagesAfterTimestamp(cutoffTimestampMs: Long)
 }
 
 typealias ReminderDao = ToDoDao

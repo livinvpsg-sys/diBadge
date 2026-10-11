@@ -146,7 +146,7 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
                 id
             }
 
-            // Sync to Firestore under current user's tasks
+            // Sync to Firestore under current user's tasks permanently
             val userId = auth.currentUser?.uid
             if (userId != null) {
                 try {

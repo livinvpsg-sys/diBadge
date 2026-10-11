@@ -339,32 +339,31 @@ fun MyTasksScreen(
                 }
             }
 
-            // 2. Main Date Header ("6 October 2026, Tuesday") - Shown below pills
+            // 2. Date Rectangle Header ("11 October 2026, Sunday") - Small rectangle wrapping text
             if (selectedTaskFilter == "Today") {
-                Spacer(modifier = Modifier.height(4.dp))
-                Column(
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = DiBadgeTheme.spacing.medium, vertical = 2.dp)
+                        .padding(horizontal = 16.dp)
                 ) {
-                    Text(
-                        text = selectedDate.format(fullDateDisplayFormatter),
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 17.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                    ) {
+                        Text(
+                            text = selectedDate.format(fullDateDisplayFormatter),
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(4.dp))
             }
-
-            // Divider Line After Date Header
-            HorizontalDivider(
-                modifier = Modifier.fillMaxWidth(),
-                thickness = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-            )
 
             // Task Content List View
             Box(
@@ -378,8 +377,8 @@ fun MyTasksScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .nestedScroll(dayNestedScrollConnection),
-                        contentPadding = PaddingValues(horizontal = DiBadgeTheme.spacing.medium, vertical = 8.dp),
-                        verticalArrangement = if (sortedReminders.isEmpty()) Arrangement.Center else Arrangement.spacedBy(10.dp)
+                        contentPadding = PaddingValues(vertical = 4.dp),
+                        verticalArrangement = if (sortedReminders.isEmpty()) Arrangement.Center else Arrangement.Top
                     ) {
                         if (sortedReminders.isEmpty()) {
                             item(key = "empty_state") {

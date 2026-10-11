@@ -18,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.ui.auth.AuthScreen
 import com.fabxdi.dibadge.ui.auth.WelcomeScreen
@@ -56,6 +57,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
+        val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+        insetsController.isAppearanceLightStatusBars = false
+        insetsController.isAppearanceLightNavigationBars = false
+
         checkNotificationPermission()
         AlarmSoundManager.stopAlarmSound()
 
@@ -139,6 +148,8 @@ class MainActivity : ComponentActivity() {
                             reminderCount = todayRemindersCount,
                             notificationCount = 0,
                             firstName = displayName,
+                            fullName = user?.displayName ?: displayName,
+                            email = user?.email ?: "",
                             onSettingsClick = { showSettingsDialog = true },
                             onSignOut = { authViewModel.signOut() },
                             initialReminderIdToEdit = if (reminderIdToOpenState != -1) reminderIdToOpenState else null,

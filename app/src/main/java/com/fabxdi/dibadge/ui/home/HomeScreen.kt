@@ -59,6 +59,8 @@ fun MainDashboard(
     reminderCount: Int = 0,
     notificationCount: Int = 0,
     firstName: String = "User",
+    fullName: String = firstName,
+    email: String = "",
     onSettingsClick: () -> Unit = {},
     onSignOut: () -> Unit = {},
     initialReminderIdToEdit: Int? = null,
@@ -248,9 +250,11 @@ fun MainDashboard(
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                     HomeMenu(
                         firstName = firstName,
+                        fullName = fullName,
+                        email = email,
                         onCloseDrawer = { scope.launch { drawerState.close() } },
+                        onProfileClick = onSettingsClick,
                         onCalendarClick = onCalendarTabClick,
-                        onReminderClick = { showReminderForm = true },
                         onMyActivityClick = { showMyActivityScreen = true },
                         onSettingsClick = onSettingsClick,
                         onSignOut = onSignOut

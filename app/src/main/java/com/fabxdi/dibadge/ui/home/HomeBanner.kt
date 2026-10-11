@@ -19,6 +19,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -116,22 +118,16 @@ fun HomeBanner(
 
         if (selectedCount == 0) {
             Column(
-                verticalArrangement = Arrangement.spacedBy(0.dp),
-                modifier = Modifier.padding(top = 0.dp)
+                modifier = Modifier.padding(top = 2.dp)
             ) {
                 if (notificationCount > 0 || reminderCount > 0) {
                     if (reminderCount > 0) {
-                        Text(
-                            text = if (reminderCount == 1) "1 task to do" else "$reminderCount tasks to do",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 18.sp,
-                                lineHeight = 20.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
+                        TaskCountRow(reminderCount = reminderCount)
                     }
                     if (notificationCount > 0) {
+                        if (reminderCount > 0) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                        }
                         Text(
                             text = "$notificationCount badge notification",
                             style = MaterialTheme.typography.titleLarge.copy(
@@ -208,6 +204,63 @@ fun BadgeInfo(label: String, count: Int) {
         Text(
             text = label,
             style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+    }
+}
+
+@Composable
+fun TaskCountRow(
+    reminderCount: Int,
+    modifier: Modifier = Modifier
+) {
+    val countText = remember(reminderCount) {
+        if (reminderCount >= 100) "99+" else reminderCount.toString()
+    }
+    val labelText = remember(reminderCount) {
+        if (reminderCount == 1) "task to do" else "tasks to do"
+    }
+    val accessibilityDescription = "$reminderCount $labelText"
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.semantics(mergeDescendants = true) {
+            contentDescription = accessibilityDescription
+        }
+    ) {
+        // Outlined Circle/Pill (No fill, outline only: dark in light theme, light in dark theme)
+        Surface(
+            shape = CircleShape,
+            color = Color.Transparent,
+            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onBackground),
+            modifier = Modifier
+                .height(28.dp)
+                .widthIn(min = 28.dp)
+        ) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            ) {
+                Text(
+                    text = countText,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(10.dp))
+
+        // Text
+        Text(
+            text = labelText,
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Normal
+            ),
             color = MaterialTheme.colorScheme.onBackground
         )
     }

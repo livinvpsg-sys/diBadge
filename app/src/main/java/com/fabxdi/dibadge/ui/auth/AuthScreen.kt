@@ -3,12 +3,13 @@ package com.fabxdi.dibadge.ui.auth
 import android.content.Intent
 import android.net.Uri
 import android.util.Patterns
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -24,12 +25,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -38,6 +44,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
@@ -51,15 +58,12 @@ import kotlinx.coroutines.launch
 
 // Color Tokens
 val AuthBackgroundColor = Color(0xFF262624)
-val AuthHeadingColor = Color(0xFFFAF9F5)
-val AuthPrimaryTeal = Color(0xFF14B8A6)
-val AuthOnPrimary = Color(0xFF00201D)
-val AuthUnderlineUnfocused = Color(0xFF5A5955)
-val AuthUnderlineFocused = Color(0xFF14B8A6)
 val AuthTextColor = Color(0xFFFAF9F5)
-val AuthPlaceholderColor = Color(0xFFA8A69E)
-val AuthDividerColor = Color(0xFF3A3A37)
-val AuthForgotPasswordColor = Color(0xFFD6D4CC)
+val AuthHintColor = Color(0xFFA8A69E)
+val AuthFieldLineColor = Color(0xFF5A5955)
+val AuthDividerLineColor = Color(0xFF3A3A37)
+val AuthForgotLinkColor = Color(0xFFD6D4CC)
+val AuthAccentTeal = Color(0xFF14B8A6)
 val AuthErrorColor = Color(0xFFFF8A80)
 
 // TODO: Replace with the actual Terms of Use URL
@@ -81,6 +85,16 @@ fun AuthScreen(
     val coroutineScope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     val credentialManager = remember { CredentialManager.create(context) }
+
+    // System Bar Configuration (Light icons, dark background)
+    val window = (context as? ComponentActivity)?.window
+    SideEffect {
+        window?.let { win ->
+            val insetsController = WindowCompat.getInsetsController(win, win.decorView)
+            insetsController.isAppearanceLightStatusBars = false
+            insetsController.isAppearanceLightNavigationBars = false
+        }
+    }
 
     val uiState by viewModel.uiState.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
@@ -151,31 +165,47 @@ fun AuthScreen(
             .background(AuthBackgroundColor)
             .windowInsetsPadding(WindowInsets.systemBars)
     ) {
-        // 1. Top Logo (Shown on both Login and Sign Up screens)
+        // 1. Top Brand Row: Icon Mark + "diBadge" side-by-side, 72dp from top below status bar inset
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 48.dp),
+                .padding(top = 72.dp),
             contentAlignment = Alignment.TopCenter
         ) {
-            Image(
-                painter = painterResource(id = R.drawable.ic_dibadge_logo),
-                contentDescription = "diBadge logo",
-                modifier = Modifier.size(width = 96.dp, height = 116.dp)
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.semantics(mergeDescendants = true) {}
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.ic_dibadge_mark),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(width = 27.dp, height = 36.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "diBadge",
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.6).sp,
+                    color = AuthTextColor
+                )
+            }
         }
 
-        // 2. Form Block: Centered vertically, margins 24dp, max width 420dp
+        // 2. Form Block: Vertically centered in the free space between logo and bottom row
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 110.dp, bottom = 70.dp),
+                .padding(top = 115.dp, bottom = 75.dp),
             contentAlignment = Alignment.Center
         ) {
             Column(
                 modifier = Modifier
                     .widthIn(max = 420.dp)
                     .fillMaxWidth()
+                    .imePadding()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -191,6 +221,7 @@ fun AuthScreen(
                         },
                         hint = "Email address",
                         errorMessage = emailError,
+                        enabled = !isLoading,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Email,
                             imeAction = ImeAction.Next
@@ -211,6 +242,7 @@ fun AuthScreen(
                         },
                         hint = "Password",
                         errorMessage = passwordError,
+                        enabled = !isLoading,
                         isPassword = true,
                         passwordVisible = passwordVisible,
                         onPasswordToggle = { passwordVisible = !passwordVisible },
@@ -234,6 +266,7 @@ fun AuthScreen(
                         },
                         hint = "Confirm password",
                         errorMessage = confirmPasswordError,
+                        enabled = !isLoading,
                         isPassword = true,
                         passwordVisible = confirmPasswordVisible,
                         onPasswordToggle = { confirmPasswordVisible = !confirmPasswordVisible },
@@ -244,7 +277,7 @@ fun AuthScreen(
                         keyboardActions = KeyboardActions(
                             onDone = {
                                 focusManager.clearFocus()
-                                val isEmailValid = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches().also { if (!it) emailError = "Enter a valid email" }
+                                val isEmailValid = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches().also { if (!it) emailError = "Enter a valid email address" }
                                 val isPassValid = (password.length >= 8).also { if (!it) passwordError = "Password must be at least 8 characters" }
                                 val isMatch = (confirmPassword == password).also { if (!it) confirmPasswordError = "Passwords do not match" }
                                 if (isEmailValid && isPassValid && isMatch) {
@@ -256,11 +289,11 @@ fun AuthScreen(
 
                     Spacer(modifier = Modifier.height(32.dp))
 
-                    // "Sign up" Outlined Pill Button (Not filled with color, only outline)
+                    // "Sign up" Outlined Pill Button
                     OutlinedButton(
                         onClick = {
                             focusManager.clearFocus()
-                            val isEmailValid = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches().also { if (!it) emailError = "Enter a valid email" }
+                            val isEmailValid = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches().also { if (!it) emailError = "Enter a valid email address" }
                             val isPassValid = (password.length >= 8).also { if (!it) passwordError = "Password must be at least 8 characters" }
                             val isMatch = (confirmPassword == password).also { if (!it) confirmPasswordError = "Passwords do not match" }
                             if (isEmailValid && isPassValid && isMatch) {
@@ -269,28 +302,28 @@ fun AuthScreen(
                         },
                         enabled = !isLoading,
                         shape = CircleShape,
-                        border = BorderStroke(1.5.dp, AuthPrimaryTeal),
+                        border = BorderStroke(1.5.dp, if (isLoading) AuthAccentTeal.copy(alpha = 0.38f) else AuthAccentTeal),
                         colors = ButtonDefaults.outlinedButtonColors(
                             containerColor = Color.Transparent,
-                            contentColor = AuthPrimaryTeal,
+                            contentColor = AuthAccentTeal,
                             disabledContainerColor = Color.Transparent,
-                            disabledContentColor = AuthPrimaryTeal.copy(alpha = 0.5f)
+                            disabledContentColor = AuthAccentTeal.copy(alpha = 0.38f)
                         ),
-                        contentPadding = PaddingValues(horizontal = 32.dp),
+                        contentPadding = PaddingValues(horizontal = 28.dp),
                         modifier = Modifier.height(48.dp)
                     ) {
                         if (isLoading) {
                             CircularProgressIndicator(
-                                color = AuthPrimaryTeal,
+                                color = AuthAccentTeal,
                                 strokeWidth = 2.dp,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                         } else {
                             Text(
                                 text = "Sign up",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = AuthPrimaryTeal
+                                color = AuthAccentTeal
                             )
                         }
                     }
@@ -305,6 +338,7 @@ fun AuthScreen(
                         },
                         hint = "Email address",
                         errorMessage = emailError,
+                        enabled = !isLoading,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Email,
                             imeAction = ImeAction.Next
@@ -325,6 +359,7 @@ fun AuthScreen(
                         },
                         hint = "Password",
                         errorMessage = passwordError,
+                        enabled = !isLoading,
                         isPassword = true,
                         passwordVisible = passwordVisible,
                         onPasswordToggle = { passwordVisible = !passwordVisible },
@@ -335,7 +370,7 @@ fun AuthScreen(
                         keyboardActions = KeyboardActions(
                             onDone = {
                                 focusManager.clearFocus()
-                                val isEmailValid = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches().also { if (!it) emailError = "Enter a valid email" }
+                                val isEmailValid = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches().also { if (!it) emailError = "Enter a valid email address" }
                                 val isPassValid = (password.length >= 8).also { if (!it) passwordError = "Password must be at least 8 characters" }
                                 if (isEmailValid && isPassValid) {
                                     viewModel.login(email, password)
@@ -344,7 +379,7 @@ fun AuthScreen(
                         )
                     )
 
-                    // "Forgot password?" Link (right-aligned, below password field)
+                    // "Forgot password?" Link (Medium 14sp #D6D4CC, right-aligned)
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -354,19 +389,21 @@ fun AuthScreen(
                         Text(
                             text = "Forgot password?",
                             fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = AuthForgotPasswordColor,
-                            modifier = Modifier.clickable { showForgotPasswordDialog = true }
+                            fontWeight = FontWeight.Medium,
+                            color = AuthForgotLinkColor,
+                            modifier = Modifier
+                                .alpha(if (isLoading) 0.38f else 1.0f)
+                                .clickable(enabled = !isLoading) { showForgotPasswordDialog = true }
                         )
                     }
 
                     Spacer(modifier = Modifier.height(28.dp))
 
-                    // "Login" Outlined Pill Button (Not filled with color, only outline)
+                    // "Login" Outlined Pill Button
                     OutlinedButton(
                         onClick = {
                             focusManager.clearFocus()
-                            val isEmailValid = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches().also { if (!it) emailError = "Enter a valid email" }
+                            val isEmailValid = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches().also { if (!it) emailError = "Enter a valid email address" }
                             val isPassValid = (password.length >= 8).also { if (!it) passwordError = "Password must be at least 8 characters" }
                             if (isEmailValid && isPassValid) {
                                 viewModel.login(email, password)
@@ -374,28 +411,28 @@ fun AuthScreen(
                         },
                         enabled = !isLoading,
                         shape = CircleShape,
-                        border = BorderStroke(1.5.dp, AuthPrimaryTeal),
+                        border = BorderStroke(1.5.dp, if (isLoading) AuthAccentTeal.copy(alpha = 0.38f) else AuthAccentTeal),
                         colors = ButtonDefaults.outlinedButtonColors(
                             containerColor = Color.Transparent,
-                            contentColor = AuthPrimaryTeal,
+                            contentColor = AuthAccentTeal,
                             disabledContainerColor = Color.Transparent,
-                            disabledContentColor = AuthPrimaryTeal.copy(alpha = 0.5f)
+                            disabledContentColor = AuthAccentTeal.copy(alpha = 0.38f)
                         ),
-                        contentPadding = PaddingValues(horizontal = 32.dp),
+                        contentPadding = PaddingValues(horizontal = 28.dp),
                         modifier = Modifier.height(48.dp)
                     ) {
                         if (isLoading) {
                             CircularProgressIndicator(
-                                color = AuthPrimaryTeal,
+                                color = AuthAccentTeal,
                                 strokeWidth = 2.dp,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                         } else {
                             Text(
                                 text = "Login",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = AuthPrimaryTeal
+                                color = AuthAccentTeal
                             )
                         }
                     }
@@ -406,7 +443,8 @@ fun AuthScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = (uiState as AuthUiState.Error).message,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Normal,
                         color = AuthErrorColor
                     )
                 }
@@ -421,27 +459,29 @@ fun AuthScreen(
                     HorizontalDivider(
                         modifier = Modifier.weight(1f),
                         thickness = 1.dp,
-                        color = AuthDividerColor
+                        color = AuthDividerLineColor
                     )
                     Text(
                         text = "Or Continue With",
                         fontSize = 13.sp,
-                        color = AuthPlaceholderColor,
+                        fontWeight = FontWeight.Normal,
+                        color = AuthHintColor,
                         modifier = Modifier.padding(horizontal = 12.dp)
                     )
                     HorizontalDivider(
                         modifier = Modifier.weight(1f),
                         thickness = 1.dp,
-                        color = AuthDividerColor
+                        color = AuthDividerLineColor
                     )
                 }
 
                 Spacer(modifier = Modifier.height(28.dp))
 
-                // Google Sign-In Button (Official Logo + Label "Google", no background, 48dp high)
+                // Google Sign-In Button (Official Logo + Label "Google", Medium 16sp #FAF9F5, 48dp high)
                 Box(
                     modifier = Modifier
                         .height(48.dp)
+                        .alpha(if (isLoading) 0.38f else 1.0f)
                         .clickable(enabled = !isLoading) { triggerGoogleSignIn() },
                     contentAlignment = Alignment.Center
                 ) {
@@ -459,7 +499,7 @@ fun AuthScreen(
                             text = "Google",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Medium,
-                            color = AuthHeadingColor
+                            color = AuthTextColor
                         )
                     }
                 }
@@ -481,34 +521,61 @@ fun AuthScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left Link ("Sign up" or "Login")
-                Text(
-                    text = if (isSignUpMode) "Login" else "Sign up",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = AuthPrimaryTeal,
-                    modifier = Modifier.clickable {
-                        isSignUpMode = !isSignUpMode
-                        emailError = null
-                        passwordError = null
-                        confirmPasswordError = null
-                        viewModel.clearError()
+                // Two-Tone Bottom Link ("New here? Sign up" or "Have an account? Login")
+                Box(
+                    modifier = Modifier
+                        .height(48.dp)
+                        .alpha(if (isLoading) 0.38f else 1.0f)
+                        .clickable(enabled = !isLoading) {
+                            isSignUpMode = !isSignUpMode
+                            emailError = null
+                            passwordError = null
+                            confirmPasswordError = null
+                            viewModel.clearError()
+                        },
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.semantics(mergeDescendants = true) {}
+                    ) {
+                        Text(
+                            text = if (isSignUpMode) "Have an account?" else "New here?",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = AuthHintColor
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isSignUpMode) "Login" else "Sign up",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AuthAccentTeal
+                        )
                     }
-                )
+                }
 
-                // Right Link ("Terms of Use")
-                Text(
-                    text = "Terms of Use",
-                    fontSize = 13.sp,
-                    textDecoration = TextDecoration.Underline,
-                    color = AuthPlaceholderColor,
-                    modifier = Modifier.clickable {
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(TERMS_URL))
-                            context.startActivity(intent)
-                        } catch (e: Exception) {}
-                    }
-                )
+                // Right Link ("Terms of Use", Regular 13sp, underlined #A8A69E)
+                Box(
+                    modifier = Modifier
+                        .height(48.dp)
+                        .alpha(if (isLoading) 0.38f else 1.0f)
+                        .clickable(enabled = !isLoading) {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(TERMS_URL))
+                                context.startActivity(intent)
+                            } catch (e: Exception) {}
+                        },
+                    contentAlignment = Alignment.CenterEnd
+                ) {
+                    Text(
+                        text = "Terms of Use",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Normal,
+                        textDecoration = TextDecoration.Underline,
+                        color = AuthHintColor
+                    )
+                }
             }
         }
     }
@@ -548,7 +615,7 @@ fun AuthScreen(
                         Text(
                             text = resetMessage!!,
                             fontSize = 12.sp,
-                            color = if (isResetSuccess) AuthPrimaryTeal else AuthErrorColor
+                            color = if (isResetSuccess) AuthAccentTeal else AuthErrorColor
                         )
                     }
                 }
@@ -559,9 +626,6 @@ fun AuthScreen(
                         viewModel.sendPasswordResetEmail(resetEmail) { success, msg ->
                             isResetSuccess = success
                             resetMessage = msg
-                            if (success) {
-                                // Auto-dismiss after 2 seconds on success
-                            }
                         }
                     }
                 ) {
@@ -583,6 +647,7 @@ fun UnderlineTextField(
     onValueChange: (String) -> Unit,
     hint: String,
     errorMessage: String? = null,
+    enabled: Boolean = true,
     isPassword: Boolean = false,
     passwordVisible: Boolean = false,
     onPasswordToggle: () -> Unit = {},
@@ -590,8 +655,13 @@ fun UnderlineTextField(
     keyboardActions: KeyboardActions = KeyboardActions.Default
 ) {
     var isFocused by remember { mutableStateOf(false) }
+    var hasBeenEdited by remember { mutableStateOf(false) }
 
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(if (enabled) 1.0f else 0.38f)
+    ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -600,19 +670,26 @@ fun UnderlineTextField(
         ) {
             BasicTextField(
                 value = value,
-                onValueChange = onValueChange,
+                onValueChange = {
+                    hasBeenEdited = true
+                    onValueChange(it)
+                },
+                enabled = enabled,
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
                     fontSize = 16.sp,
+                    fontWeight = FontWeight.Normal,
                     color = AuthTextColor
                 ),
-                cursorBrush = SolidColor(AuthPrimaryTeal),
+                cursorBrush = SolidColor(AuthAccentTeal),
                 visualTransformation = if (isPassword && !passwordVisible) PasswordVisualTransformation() else VisualTransformation.None,
                 keyboardOptions = keyboardOptions,
                 keyboardActions = keyboardActions,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .onFocusChanged { isFocused = it.isFocused },
+                    .onFocusChanged { focusState ->
+                        isFocused = focusState.isFocused
+                    },
                 decorationBox = { innerTextField ->
                     Box(
                         modifier = Modifier.fillMaxWidth(),
@@ -623,7 +700,7 @@ fun UnderlineTextField(
                                 text = hint,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Normal,
-                                color = AuthPlaceholderColor
+                                color = AuthHintColor
                             )
                         }
                         innerTextField()
@@ -637,37 +714,41 @@ fun UnderlineTextField(
                     modifier = Modifier
                         .size(width = 44.dp, height = 52.dp)
                         .align(Alignment.CenterEnd)
-                        .clickable { onPasswordToggle() },
+                        .clickable(enabled = enabled) { onPasswordToggle() },
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                         contentDescription = if (passwordVisible) "Hide password" else "Show password",
-                        tint = AuthPlaceholderColor,
+                        tint = AuthHintColor,
                         modifier = Modifier.size(20.dp)
                     )
                 }
             }
         }
 
-        // 1dp Underline (5A5955 -> 14B8A6 when focused or error color when error)
+        // Underline Indicator (1dp #5A5955 -> 2dp #14B8A6 when focused -> 2dp #FF8A80 when error)
         HorizontalDivider(
             modifier = Modifier.fillMaxWidth(),
-            thickness = 1.dp,
+            thickness = if (errorMessage != null || isFocused) 2.dp else 1.dp,
             color = when {
                 errorMessage != null -> AuthErrorColor
-                isFocused -> AuthUnderlineFocused
-                else -> AuthUnderlineUnfocused
+                isFocused -> AuthAccentTeal
+                else -> AuthFieldLineColor
             }
         )
 
-        // Inline Error
+        // Inline Error Message (Regular 12sp #FF8A80, with TalkBack error semantics)
         if (errorMessage != null) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = errorMessage,
                 fontSize = 12.sp,
-                color = AuthErrorColor
+                fontWeight = FontWeight.Normal,
+                color = AuthErrorColor,
+                modifier = Modifier.semantics {
+                    error(errorMessage)
+                }
             )
         }
     }

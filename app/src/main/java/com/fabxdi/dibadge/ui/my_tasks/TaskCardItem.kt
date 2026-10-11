@@ -78,18 +78,19 @@ fun TaskCardItem(
 
     val softRedColor = Color(0xFFEF5350)
 
-    Surface(
+Column(
+    modifier = Modifier.fillMaxWidth()
+) {
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+            .heightIn(min = 56.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        contentAlignment = Alignment.CenterStart
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -227,4 +228,16 @@ fun TaskCardItem(
             }
         }
     }
+
+    // 1dp Divider under uncompleted rows only
+    if (!isCompleted) {
+        HorizontalDivider(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            thickness = 1.dp,
+            color = Color(0xFF2A2A2C)
+        )
+    }
+}
 }
