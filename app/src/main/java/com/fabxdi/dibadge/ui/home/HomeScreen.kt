@@ -27,6 +27,7 @@ import com.fabxdi.dibadge.R
 import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
 import com.fabxdi.dibadge.ui.my_activity.MyActivityScreen
 import com.fabxdi.dibadge.ui.my_tasks.MyTasksScreen
+import com.fabxdi.dibadge.ui.profile.ProfileScreen
 import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
 import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatScreen
@@ -43,7 +44,7 @@ enum class HomeTab(
     val label: String,
     @DrawableRes val iconRes: Int
 ) {
-    Home("diBadge", R.drawable.ic_home),
+    Home("diBadge", R.drawable.ic_dibadge_mark),
     Connections("Connections", R.drawable.ic_connections),
     MyTasks("My Tasks", R.drawable.ic_my_tasks),
     Note("Inbox", R.drawable.ic_note)
@@ -87,8 +88,16 @@ fun MainDashboard(
     var isFabExpanded by remember { mutableStateOf(false) }
     var showReminderForm by remember { mutableStateOf(false) }
     var showMyActivityScreen by remember { mutableStateOf(false) }
+    var showProfileScreen by remember { mutableStateOf(false) }
     var showOvertimeForm by remember { mutableStateOf(false) }
     var showLeaveForm by remember { mutableStateOf(false) }
+
+    if (showProfileScreen) {
+        ProfileScreen(
+            onBackClick = { showProfileScreen = false }
+        )
+        return
+    }
 
     if (showMyActivityScreen) {
         val allLeaves by leaveOvertimeViewModel.allLeaves.collectAsState(initial = emptyList())
@@ -253,7 +262,7 @@ fun MainDashboard(
                         fullName = fullName,
                         email = email,
                         onCloseDrawer = { scope.launch { drawerState.close() } },
-                        onProfileClick = onSettingsClick,
+                        onProfileClick = { showProfileScreen = true },
                         onCalendarClick = onCalendarTabClick,
                         onMyActivityClick = { showMyActivityScreen = true },
                         onSettingsClick = onSettingsClick,
@@ -268,6 +277,7 @@ fun MainDashboard(
                         if (selectedTab == HomeTab.Home) {
                             HomeBanner(
                                 firstName = firstName,
+                                nickname = "",
                                 notificationCount = notificationCount,
                                 reminderCount = reminderCount,
                                 searchQuery = homeSearchQuery,
@@ -309,19 +319,26 @@ fun MainDashboard(
                                         )
                                     },
                                     icon = {
-                                        val iconTint = if (tab == HomeTab.Home) {
-                                            if (selectedTab == tab) TealGreen else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-                                        } else {
-                                            if (selectedTab == tab) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-                                        }
+                                        val isSelected = selectedTab == tab
+                                        val iconTint = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
 
                                         when (tab) {
                                             HomeTab.Home -> {
-                                                Icon(
-                                                    painter = painterResource(id = tab.iconRes),
-                                                    contentDescription = tab.label,
-                                                    tint = iconTint
-                                                )
+                                                if (isSelected) {
+                                                    Icon(
+                                                        painter = painterResource(id = R.drawable.ic_dibadge_mark),
+                                                        contentDescription = tab.label,
+                                                        tint = Color.Unspecified,
+                                                        modifier = Modifier.size(24.dp)
+                                                    )
+                                                } else {
+                                                    Icon(
+                                                        painter = painterResource(id = R.drawable.ic_dibadge_mark),
+                                                        contentDescription = tab.label,
+                                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                                                        modifier = Modifier.size(24.dp)
+                                                    )
+                                                }
                                             }
                                             HomeTab.Connections -> {
                                                 Icon(

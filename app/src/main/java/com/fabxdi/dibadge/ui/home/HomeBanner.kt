@@ -18,6 +18,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -26,11 +27,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.ui.components.DiBadgeSearchBar
 import com.fabxdi.dibadge.ui.theme.BadgeRed
+import com.fabxdi.dibadge.util.getGreetingName
 import java.time.LocalTime
 
 @Composable
 fun HomeBanner(
     firstName: String,
+    nickname: String = "",
     notificationCount: Int,
     reminderCount: Int,
     searchQuery: String,
@@ -89,8 +92,9 @@ fun HomeBanner(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                val greetingName = remember(firstName, nickname) { getGreetingName(firstName, nickname) }
                 Text(
-                    text = if (notificationCount > 0 || reminderCount > 0) "Hi $firstName you have" else "Hi $firstName,",
+                    text = if (notificationCount > 0 || reminderCount > 0) "Hi $greetingName you have" else "Hi $greetingName,",
                     style = if (notificationCount > 0 || reminderCount > 0) {
                         MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Normal)
                     } else {
@@ -222,34 +226,35 @@ fun TaskCountRow(
     }
     val accessibilityDescription = "$reminderCount $labelText"
 
+    val tealGradient = remember {
+        Brush.linearGradient(
+            colors = listOf(Color(0xFF5CC9C0), Color(0xFF17645E))
+        )
+    }
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier.semantics(mergeDescendants = true) {
             contentDescription = accessibilityDescription
         }
     ) {
-        // Outlined Circle/Pill (No fill, outline only: dark in light theme, light in dark theme)
-        Surface(
-            shape = CircleShape,
-            color = Color.Transparent,
-            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onBackground),
+        // Teal Gradient Filled Circle/Pill
+        Box(
+            contentAlignment = Alignment.Center,
             modifier = Modifier
                 .height(28.dp)
                 .widthIn(min = 28.dp)
+                .background(brush = tealGradient, shape = CircleShape)
+                .padding(horizontal = 8.dp)
         ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.padding(horizontal = 8.dp)
-            ) {
-                Text(
-                    text = countText,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    ),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-            }
+            Text(
+                text = countText,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                ),
+                color = Color(0xFF00201D)
+            )
         }
 
         Spacer(modifier = Modifier.width(10.dp))

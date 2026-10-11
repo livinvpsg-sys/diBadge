@@ -8,7 +8,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Logout
-import androidx.compose.material.icons.outlined.Analytics
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Person
@@ -17,18 +16,20 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import com.fabxdi.dibadge.R
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fabxdi.dibadge.util.UserColorUtils
+import com.fabxdi.dibadge.R
+import com.fabxdi.dibadge.util.capitalizeWords
 
 val DrawerBackgroundColor = Color(0xFF1C1C1E)
 val DrawerDividerColor = Color(0xFF2E2E30)
@@ -69,9 +70,16 @@ fun HomeMenu(
         }
     }
 
-    val displayFullName = if (fullName.isNotBlank()) fullName else if (firstName.isNotBlank()) firstName else "User"
+    val displayFullName = remember(fullName, firstName) {
+        val raw = if (fullName.isNotBlank()) fullName else if (firstName.isNotBlank()) firstName else "User"
+        raw.capitalizeWords()
+    }
     val avatarInitial = displayFullName.trim().take(1).uppercase()
-    val avatarColor = remember(displayFullName) { UserColorUtils.getColorForName(displayFullName) }
+    val avatarGradient = remember {
+        Brush.linearGradient(
+            colors = listOf(Color(0xFF5CC9C0), Color(0xFF17645E))
+        )
+    }
 
     val topNavGroup = listOf(
         MenuRowData("Profile", "Profile", iconVector = Icons.Outlined.Person),
@@ -100,7 +108,7 @@ fun HomeMenu(
         ) {
             Spacer(modifier = Modifier.height(20.dp))
 
-            // 1. Identity Header (display only)
+            // 1. Identity Header (display only, not clickable)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -111,18 +119,23 @@ fun HomeMenu(
                     },
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Avatar Circle 60dp
+                // Teal Gradient Avatar Circle 60dp
                 Surface(
                     modifier = Modifier.size(60.dp),
                     shape = CircleShape,
-                    color = avatarColor
+                    color = Color.Transparent
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(brush = avatarGradient, shape = CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Text(
                             text = avatarInitial,
                             fontSize = 26.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFFEDEDED)
                         )
                     }
                 }
@@ -210,18 +223,21 @@ fun HomeMenu(
             // 4. Flexible Space
             Spacer(modifier = Modifier.weight(1f))
 
-            // 5. Divider & Sign Out
+            // 5. Bottom Block: Divider aligned with bottom bar top edge, then Sign Out, then Version Text
             HorizontalDivider(
                 modifier = Modifier.padding(horizontal = 24.dp),
                 thickness = 1.dp,
                 color = DrawerDividerColor
             )
 
+            Spacer(modifier = Modifier.height(4.dp))
+
             DrawerRowItem(
                 label = "Sign out",
                 iconVector = Icons.AutoMirrored.Outlined.Logout,
                 textColor = DrawerSignOutColor,
                 iconColor = DrawerSignOutColor,
+                height = 44.dp,
                 onClick = {
                     showSignOutConfirmation = true
                 }
@@ -234,7 +250,7 @@ fun HomeMenu(
                 fontWeight = FontWeight.Normal,
                 color = DrawerVersionTextColor,
                 modifier = Modifier
-                    .padding(start = 24.dp, bottom = 36.dp)
+                    .padding(start = 24.dp, top = 4.dp, bottom = 36.dp)
                     .windowInsetsPadding(WindowInsets.navigationBars)
             )
         }
@@ -273,12 +289,13 @@ fun DrawerRowItem(
     iconRes: Int? = null,
     textColor: Color = DrawerRowTextColor,
     iconColor: Color = DrawerRowTextColor,
+    height: Dp = 52.dp,
     onClick: () -> Unit
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
+            .height(height)
             .clickable(onClick = onClick)
             .padding(horizontal = 24.dp)
             .semantics(mergeDescendants = true) {

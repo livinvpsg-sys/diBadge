@@ -1,6 +1,7 @@
 package com.fabxdi.dibadge.util
 
 import androidx.compose.ui.graphics.Color
+import java.util.Locale
 import kotlin.math.abs
 
 object UserColorUtils {
@@ -31,5 +32,24 @@ object UserColorUtils {
         }
         val index = abs(hash) % colors.size
         return colors[index]
+    }
+}
+
+fun String.capitalizeWords(): String {
+    if (this.isBlank()) return this
+    return this.split(" ").joinToString(" ") { word ->
+        if (word.isNotEmpty()) {
+            word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+        } else {
+            word
+        }
+    }
+}
+
+fun getGreetingName(firstName: String, nickname: String = ""): String {
+    return if (nickname.isNotBlank()) {
+        nickname.trim()
+    } else {
+        firstName.capitalizeWords()
     }
 }
