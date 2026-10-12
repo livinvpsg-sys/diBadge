@@ -226,35 +226,34 @@ fun TaskCountRow(
     }
     val accessibilityDescription = "$reminderCount $labelText"
 
-    val tealGradient = remember {
-        Brush.linearGradient(
-            colors = listOf(Color(0xFF5CC9C0), Color(0xFF17645E))
-        )
-    }
-
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier.semantics(mergeDescendants = true) {
             contentDescription = accessibilityDescription
         }
     ) {
-        // Teal Gradient Filled Circle/Pill
-        Box(
-            contentAlignment = Alignment.Center,
+        // Circle/Pill filled with bottom bar color, dark outline in light theme & light outline in dark theme
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onBackground),
             modifier = Modifier
                 .height(28.dp)
                 .widthIn(min = 28.dp)
-                .background(brush = tealGradient, shape = CircleShape)
-                .padding(horizontal = 8.dp)
         ) {
-            Text(
-                text = countText,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                ),
-                color = Color(0xFF00201D)
-            )
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            ) {
+                Text(
+                    text = countText,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+            }
         }
 
         Spacer(modifier = Modifier.width(10.dp))

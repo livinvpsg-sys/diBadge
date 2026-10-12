@@ -88,7 +88,7 @@ class ProfileViewModel : ViewModel() {
                     val ph = doc.getString("phone") ?: ""
                     val bd = doc.getString("birthday") ?: ""
                     val bioText = doc.getString("bio") ?: ""
-                    val photo = doc.getString("photoUrl") ?: (user.photoUrl?.toString() ?: "")
+                    val photo = doc.getString("photoUrl") ?: ""
                     val sig = doc.getString("signatureUrl") ?: ""
 
                     val loaded = UserProfileData(
@@ -114,7 +114,7 @@ class ProfileViewModel : ViewModel() {
                         firstName = fn,
                         lastName = ln,
                         email = emailVal,
-                        photoUrl = user.photoUrl?.toString() ?: ""
+                        photoUrl = ""
                     )
                     initialProfileData = loaded
                     _profileData.value = loaded

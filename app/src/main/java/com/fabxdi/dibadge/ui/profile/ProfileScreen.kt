@@ -3,6 +3,7 @@ package com.fabxdi.dibadge.ui.profile
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.util.Base64
 import java.io.ByteArrayOutputStream
@@ -39,8 +40,10 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
@@ -149,10 +152,19 @@ fun ProfileScreen(
         }
     )
 
+    val profileBgColor = MaterialTheme.colorScheme.background
+    val profileTextColor = MaterialTheme.colorScheme.onBackground
+    val profileLabelColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+    val profileFieldLineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    val profileDisabledTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    val profileDisabledLineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
+    val profileAccentTeal = MaterialTheme.colorScheme.primary
+    val profileErrorColor = MaterialTheme.colorScheme.error
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(ProfileBackgroundColor)
+            .background(profileBgColor)
             .windowInsetsPadding(WindowInsets.systemBars)
     ) {
         // 1. Top Bar ("Profile", Back Arrow, "Save")
@@ -164,7 +176,7 @@ fun ProfileScreen(
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Medium
                     ),
-                    color = ProfileTextColor
+                    color = profileTextColor
                 )
             },
             navigationIcon = {
@@ -172,7 +184,7 @@ fun ProfileScreen(
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
-                        tint = ProfileTextColor
+                        tint = profileTextColor
                     )
                 }
             },
@@ -185,7 +197,7 @@ fun ProfileScreen(
                 ) {
                     if (isSaving) {
                         CircularProgressIndicator(
-                            color = ProfileAccentTeal,
+                            color = profileAccentTeal,
                             strokeWidth = 2.dp,
                             modifier = Modifier.size(18.dp)
                         )
@@ -204,8 +216,8 @@ fun ProfileScreen(
                             },
                             enabled = hasChanges && !isSaving,
                             colors = ButtonDefaults.textButtonColors(
-                                contentColor = ProfileAccentTeal,
-                                disabledContentColor = ProfileAccentTeal.copy(alpha = 0.38f)
+                                contentColor = profileAccentTeal,
+                                disabledContentColor = profileAccentTeal.copy(alpha = 0.38f)
                             )
                         ) {
                             Text(
@@ -218,7 +230,7 @@ fun ProfileScreen(
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = ProfileBackgroundColor
+                containerColor = profileBgColor
             )
         )
 
@@ -294,14 +306,14 @@ fun ProfileScreen(
                                 .align(Alignment.BottomEnd)
                                 .clickable(enabled = !isSaving) { showPhotoOptionsSheet = true },
                             shape = CircleShape,
-                            color = ProfileBackgroundColor,
-                            border = BorderStroke(1.5.dp, ProfileFieldLineColor)
+                            color = profileBgColor,
+                            border = BorderStroke(1.5.dp, profileFieldLineColor)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Outlined.PhotoCamera,
                                     contentDescription = "Change photo badge",
-                                    tint = ProfileLabelColor,
+                                    tint = profileLabelColor,
                                     modifier = Modifier.size(15.dp)
                                 )
                             }
@@ -315,7 +327,7 @@ fun ProfileScreen(
                         text = "Change photo",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
-                        color = ProfileAccentTeal,
+                        color = profileAccentTeal,
                         modifier = Modifier
                             .clickable(enabled = !isSaving) { showPhotoOptionsSheet = true }
                             .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -481,55 +493,57 @@ fun ProfileScreen(
                         Spacer(modifier = Modifier.height(6.dp))
 
                         if (profileData.signatureUrl.isNotBlank()) {
-                            // Saved Signature Box
+                            // Saved Signature Box (110dp height for ample vertical room)
                             val parsedSigBitmap = remember(profileData.signatureUrl) { parseSignatureImageBitmap(profileData.signatureUrl) }
+                            val isDarkTheme = MaterialTheme.colorScheme.background.red < 0.5f
+                            val sigTintColor = if (isDarkTheme) Color(0xFFFAF9F5) else Color(0xFF1C1B1F)
 
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(68.dp)
+                                    .height(110.dp)
                                     .clickable(enabled = !isSaving) { showSignatureDialog = true },
                                 shape = RoundedCornerShape(8.dp),
-                                color = Color.Transparent,
-                                border = BorderStroke(1.dp, ProfileDisabledLineColor)
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                border = BorderStroke(1.dp, profileDisabledLineColor)
                             ) {
                                 Box(
                                     contentAlignment = Alignment.Center,
-                                    modifier = Modifier.semantics {
-                                        contentDescription = "Your saved signature"
-                                    }
+                                    modifier = Modifier
+                                        .padding(12.dp)
+                                        .semantics {
+                                            contentDescription = "Your saved signature"
+                                        }
                                 ) {
                                     if (parsedSigBitmap != null) {
                                         Image(
                                             bitmap = parsedSigBitmap,
                                             contentDescription = "Signature",
                                             contentScale = ContentScale.Fit,
-                                            modifier = Modifier
-                                                .fillMaxHeight()
-                                                .padding(vertical = 8.dp)
+                                            colorFilter = ColorFilter.tint(sigTintColor, BlendMode.SrcIn),
+                                            modifier = Modifier.fillMaxSize()
                                         )
                                     } else {
                                         AsyncImage(
                                             model = profileData.signatureUrl,
                                             contentDescription = "Signature",
                                             contentScale = ContentScale.Fit,
-                                            modifier = Modifier
-                                                .fillMaxHeight()
-                                                .padding(vertical = 8.dp)
+                                            colorFilter = ColorFilter.tint(sigTintColor, BlendMode.SrcIn),
+                                            modifier = Modifier.fillMaxSize()
                                         )
                                     }
                                 }
                             }
                         } else {
-                            // Empty Signature Box (Dashed 1.5dp border)
+                            // Empty Signature Box (110dp height)
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(68.dp)
+                                    .height(110.dp)
                                     .clickable(enabled = !isSaving) { showSignatureDialog = true },
                                 shape = RoundedCornerShape(8.dp),
                                 color = Color.Transparent,
-                                border = BorderStroke(1.5.dp, ProfileFieldLineColor)
+                                border = BorderStroke(1.5.dp, profileFieldLineColor)
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxSize(),
@@ -724,6 +738,13 @@ fun ProfileUnderlineField(
 ) {
     var isFocused by remember { mutableStateOf(false) }
 
+    val labelColor = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    val textColor = if (enabled) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    val fieldLineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    val disabledLineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
+    val accentColor = MaterialTheme.colorScheme.primary
+    val errorColor = MaterialTheme.colorScheme.error
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -734,7 +755,7 @@ fun ProfileUnderlineField(
             text = label,
             fontSize = 12.sp,
             fontWeight = FontWeight.Normal,
-            color = if (enabled) ProfileLabelColor else ProfileDisabledTextColor
+            color = labelColor
         )
 
         Spacer(modifier = Modifier.height(2.dp))
@@ -755,7 +776,7 @@ fun ProfileUnderlineField(
                         text = prefixText,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Normal,
-                        color = ProfileLabelColor
+                        color = labelColor
                     )
                 }
 
@@ -768,7 +789,7 @@ fun ProfileUnderlineField(
                             text = hint,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Normal,
-                            color = ProfileLabelColor
+                            color = labelColor
                         )
                     }
 
@@ -782,9 +803,9 @@ fun ProfileUnderlineField(
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Normal,
-                            color = if (enabled) ProfileTextColor else ProfileDisabledTextColor
+                            color = textColor
                         ),
-                        cursorBrush = SolidColor(ProfileAccentTeal),
+                        cursorBrush = SolidColor(accentColor),
                         keyboardOptions = keyboardOptions,
                         keyboardActions = keyboardActions,
                         modifier = Modifier
@@ -800,15 +821,15 @@ fun ProfileUnderlineField(
             }
         }
 
-        // Underline (1dp #5A5955 -> 2dp #14B8A6 when focused -> 2dp #FF8A80 on error)
+        // Underline (1dp -> 2dp when focused -> 2dp on error)
         HorizontalDivider(
             modifier = Modifier.fillMaxWidth(),
             thickness = if (errorMessage != null || isFocused) 2.dp else 1.dp,
             color = when {
-                !enabled -> ProfileDisabledLineColor
-                errorMessage != null -> ProfileErrorColor
-                isFocused -> ProfileAccentTeal
-                else -> ProfileFieldLineColor
+                !enabled -> disabledLineColor
+                errorMessage != null -> errorColor
+                isFocused -> accentColor
+                else -> fieldLineColor
             }
         )
 
@@ -818,7 +839,7 @@ fun ProfileUnderlineField(
                 text = errorMessage,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Normal,
-                color = ProfileErrorColor,
+                color = errorColor,
                 modifier = Modifier.semantics {
                     error(errorMessage)
                 }
@@ -832,14 +853,22 @@ fun createSignatureDataUrl(
     height: Int,
     strokes: List<List<Offset>>,
     typedText: String,
-    mode: String
+    mode: String,
+    strokeColorHex: String = "#FAF9F5"
 ): String {
-    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    val canvas = android.graphics.Canvas(bitmap)
+    val rawWidth = if (width > 0) width else 1200
+    val rawHeight = if (height > 0) height else 800
+    val tempBitmap = Bitmap.createBitmap(rawWidth, rawHeight, Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(tempBitmap)
+
+    var minX = Float.MAX_VALUE
+    var minY = Float.MAX_VALUE
+    var maxX = Float.MIN_VALUE
+    var maxY = Float.MIN_VALUE
 
     if (mode == "draw") {
         val paint = Paint().apply {
-            color = android.graphics.Color.parseColor("#FAF9F5")
+            color = android.graphics.Color.parseColor(strokeColorHex)
             isAntiAlias = true
             style = Paint.Style.STROKE
             strokeWidth = 10f
@@ -850,6 +879,12 @@ fun createSignatureDataUrl(
             if (stroke.size > 1) {
                 val path = android.graphics.Path()
                 path.moveTo(stroke[0].x, stroke[0].y)
+                for (pt in stroke) {
+                    minX = minOf(minX, pt.x)
+                    minY = minOf(minY, pt.y)
+                    maxX = maxOf(maxX, pt.x)
+                    maxY = maxOf(maxY, pt.y)
+                }
                 for (i in 1 until stroke.size) {
                     path.lineTo(stroke[i].x, stroke[i].y)
                 }
@@ -858,20 +893,42 @@ fun createSignatureDataUrl(
         }
     } else {
         val textPaint = Paint().apply {
-            color = android.graphics.Color.parseColor("#FAF9F5")
+            color = android.graphics.Color.parseColor(strokeColorHex)
             isAntiAlias = true
             textSize = 72f
             typeface = Typeface.create(Typeface.SERIF, Typeface.ITALIC)
             textAlign = Paint.Align.CENTER
         }
         val textToDraw = if (typedText.isNotBlank()) typedText else "Signature"
-        val x = width / 2f
-        val y = height / 2f - (textPaint.descent() + textPaint.ascent()) / 2f
+        val x = rawWidth / 2f
+        val y = rawHeight / 2f - (textPaint.descent() + textPaint.ascent()) / 2f
         canvas.drawText(textToDraw, x, y, textPaint)
+
+        val bounds = Rect()
+        textPaint.getTextBounds(textToDraw, 0, textToDraw.length, bounds)
+        minX = x - bounds.width() / 2f - 10f
+        maxX = x + bounds.width() / 2f + 10f
+        minY = y + bounds.top - 10f
+        maxY = y + bounds.bottom + 10f
+    }
+
+    val finalBitmap = if (minX < maxX && minY < maxY) {
+        val pad = 20
+        val cropX = maxOf(0, (minX - pad).toInt())
+        val cropY = maxOf(0, (minY - pad).toInt())
+        val cropW = minOf(rawWidth - cropX, (maxX - minX + pad * 2).toInt())
+        val cropH = minOf(rawHeight - cropY, (maxY - minY + pad * 2).toInt())
+        if (cropW > 10 && cropH > 10) {
+            Bitmap.createBitmap(tempBitmap, cropX, cropY, cropW, cropH)
+        } else {
+            tempBitmap
+        }
+    } else {
+        tempBitmap
     }
 
     val baos = ByteArrayOutputStream()
-    bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
+    finalBitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
     val bytes = baos.toByteArray()
     return "data:image/png;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
 }
@@ -889,6 +946,10 @@ fun SignatureDialog(
 
     val currentStroke = remember { mutableStateListOf<Offset>() }
     val allStrokes = remember { mutableStateListOf<List<Offset>>().apply { addAll(initialStrokes) } }
+
+    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
+    val strokeColorHex = if (isDark) "#FAF9F5" else "#1C1B1F"
+    val strokeColor = if (isDark) Color(0xFFFAF9F5) else Color(0xFF1C1B1F)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -971,14 +1032,14 @@ fun SignatureDialog(
                                     )
                                 },
                             shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF1C1C1E),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                         ) {
                             Canvas(modifier = Modifier.fillMaxSize()) {
                                 for (stroke in allStrokes) {
                                     for (i in 0 until stroke.size - 1) {
                                         drawLine(
-                                            color = Color(0xFFFAF9F5),
+                                            color = strokeColor,
                                             start = stroke[i],
                                             end = stroke[i + 1],
                                             strokeWidth = 3.dp.toPx(),
@@ -988,7 +1049,7 @@ fun SignatureDialog(
                                 }
                                 for (i in 0 until currentStroke.size - 1) {
                                     drawLine(
-                                        color = Color(0xFFFAF9F5),
+                                        color = strokeColor,
                                         start = currentStroke[i],
                                         end = currentStroke[i + 1],
                                         strokeWidth = 3.dp.toPx(),
@@ -1015,7 +1076,7 @@ fun SignatureDialog(
                             textStyle = MaterialTheme.typography.titleLarge.copy(
                                 fontSize = 26.sp,
                                 fontFamily = FontFamily.Cursive,
-                                color = Color(0xFFFAF9F5)
+                                color = MaterialTheme.colorScheme.onSurface
                             ),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
@@ -1036,11 +1097,12 @@ fun SignatureDialog(
                     val finalTypedName = if (selectedMode == "type") typedName.trim() else ""
 
                     val sigDataUrl = createSignatureDataUrl(
-                        width = 600,
-                        height = 200,
+                        width = 1200,
+                        height = 800,
                         strokes = finalStrokes,
                         typedText = finalTypedName,
-                        mode = selectedMode
+                        mode = selectedMode,
+                        strokeColorHex = strokeColorHex
                     )
 
                     onSignatureSaved(sigDataUrl, selectedMode, finalTypedName, finalStrokes)

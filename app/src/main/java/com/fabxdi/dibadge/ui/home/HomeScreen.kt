@@ -171,80 +171,10 @@ fun MainDashboard(
         return
     }
 
-    val bottomNavBar: @Composable () -> Unit = {
-        NavigationBar(
-            containerColor = MaterialTheme.colorScheme.surface,
-            tonalElevation = NavigationBarDefaults.Elevation
-        ) {
-            HomeTab.entries.forEach { tab ->
-                NavigationBarItem(
-                    selected = selectedTab == tab,
-                    onClick = {
-                        onTabSelected(tab)
-                    },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.onSurface,
-                        selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                        indicatorColor = Color.Transparent,
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-                    ),
-                    alwaysShowLabel = true,
-                    label = {
-                        Text(
-                            text = tab.label,
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
-                            )
-                        )
-                    },
-                    icon = {
-                        val iconTint = if (tab == HomeTab.Home) {
-                            if (selectedTab == tab) TealGreen else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-                        } else {
-                            if (selectedTab == tab) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-                        }
-
-                        when (tab) {
-                            HomeTab.Home -> {
-                                Icon(
-                                    painter = painterResource(id = tab.iconRes),
-                                    contentDescription = tab.label,
-                                    tint = iconTint
-                                )
-                            }
-                            HomeTab.Connections -> {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_connections),
-                                    contentDescription = tab.label,
-                                    tint = iconTint
-                                )
-                            }
-                            HomeTab.MyTasks -> {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_my_tasks),
-                                    contentDescription = tab.label,
-                                    tint = iconTint
-                                )
-                            }
-                            HomeTab.Note -> {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_inbox),
-                                    contentDescription = tab.label,
-                                    tint = iconTint
-                                )
-                            }
-                        }
-                    }
-                )
-            }
-        }
-    }
-
     if (selectedTab == HomeTab.MyTasks) {
         MyTasksScreen(
             onBack = { onTabSelected(HomeTab.Home) },
-            bottomBar = bottomNavBar,
+            bottomBar = { AppBottomBar(selectedTab, onTabSelected) },
             initialReminderIdToEdit = initialReminderIdToEdit,
             openSnoozeTimePicker = openSnoozeTimePicker,
             onSnoozeHandled = onSnoozeHandled
@@ -291,82 +221,7 @@ fun MainDashboard(
                             )
                         }
                     },
-                    bottomBar = {
-                        NavigationBar(
-                            containerColor = MaterialTheme.colorScheme.surface,
-                            tonalElevation = NavigationBarDefaults.Elevation
-                        ) {
-                            HomeTab.entries.forEach { tab ->
-                                NavigationBarItem(
-                                    selected = selectedTab == tab,
-                                    onClick = {
-                                        onTabSelected(tab)
-                                    },
-                                    colors = NavigationBarItemDefaults.colors(
-                                        selectedIconColor = MaterialTheme.colorScheme.onSurface,
-                                        selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                                        indicatorColor = Color.Transparent,
-                                        unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
-                                        unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-                                    ),
-                                    alwaysShowLabel = true,
-                                    label = {
-                                        Text(
-                                            text = tab.label,
-                                            style = MaterialTheme.typography.labelMedium.copy(
-                                                fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
-                                            )
-                                        )
-                                    },
-                                    icon = {
-                                        val isSelected = selectedTab == tab
-                                        val iconTint = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-
-                                        when (tab) {
-                                            HomeTab.Home -> {
-                                                if (isSelected) {
-                                                    Icon(
-                                                        painter = painterResource(id = R.drawable.ic_dibadge_mark),
-                                                        contentDescription = tab.label,
-                                                        tint = Color.Unspecified,
-                                                        modifier = Modifier.size(24.dp)
-                                                    )
-                                                } else {
-                                                    Icon(
-                                                        painter = painterResource(id = R.drawable.ic_dibadge_mark),
-                                                        contentDescription = tab.label,
-                                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
-                                                        modifier = Modifier.size(24.dp)
-                                                    )
-                                                }
-                                            }
-                                            HomeTab.Connections -> {
-                                                Icon(
-                                                    painter = painterResource(id = R.drawable.ic_connections),
-                                                    contentDescription = tab.label,
-                                                    tint = iconTint
-                                                )
-                                            }
-                                            HomeTab.MyTasks -> {
-                                                Icon(
-                                                    painter = painterResource(id = R.drawable.ic_my_tasks),
-                                                    contentDescription = tab.label,
-                                                    tint = iconTint
-                                                )
-                                            }
-                                            HomeTab.Note -> {
-                                                Icon(
-                                                    painter = painterResource(id = R.drawable.ic_inbox),
-                                                    contentDescription = tab.label,
-                                                    tint = iconTint
-                                                )
-                                            }
-                                        }
-                                    }
-                                )
-                            }
-                        }
-                    },
+                    bottomBar = { AppBottomBar(selectedTab, onTabSelected) },
                     floatingActionButton = {
                         FloatingActionButton(
                             onClick = { showAddEntryDialog = true },
@@ -546,5 +401,88 @@ fun MainDashboardPreview() {
             reminderCount = 2,
             notificationCount = 5
         )
+    }
+}
+
+@Composable
+fun AppBottomBar(
+    selectedTab: HomeTab,
+    onTabSelected: (HomeTab) -> Unit
+) {
+    NavigationBar(
+        containerColor = MaterialTheme.colorScheme.surface,
+        tonalElevation = NavigationBarDefaults.Elevation
+    ) {
+        HomeTab.entries.forEach { tab ->
+            val isSelected = selectedTab == tab
+            val iconSize = if (isSelected) 28.dp else 22.dp
+            val iconTint = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+
+            NavigationBarItem(
+                selected = isSelected,
+                onClick = { onTabSelected(tab) },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.onSurface,
+                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                    indicatorColor = Color.Transparent,
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                ),
+                alwaysShowLabel = true,
+                label = {
+                    Text(
+                        text = tab.label,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    )
+                },
+                icon = {
+                    when (tab) {
+                        HomeTab.Home -> {
+                            if (isSelected) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_dibadge_nav),
+                                    contentDescription = tab.label,
+                                    tint = Color.Unspecified,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            } else {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_dibadge_nav),
+                                    contentDescription = tab.label,
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                                    modifier = Modifier.size(iconSize)
+                                )
+                            }
+                        }
+                        HomeTab.Connections -> {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_connections),
+                                contentDescription = tab.label,
+                                tint = iconTint,
+                                modifier = Modifier.size(iconSize)
+                            )
+                        }
+                        HomeTab.MyTasks -> {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_my_tasks),
+                                contentDescription = tab.label,
+                                tint = iconTint,
+                                modifier = Modifier.size(iconSize)
+                            )
+                        }
+                        HomeTab.Note -> {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_inbox),
+                                contentDescription = tab.label,
+                                tint = iconTint,
+                                modifier = Modifier.size(iconSize)
+                            )
+                        }
+                    }
+                }
+            )
+        }
     }
 }

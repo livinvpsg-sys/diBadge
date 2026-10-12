@@ -92,17 +92,24 @@ fun HomeMenu(
         MenuRowData("Settings", "Settings", iconVector = Icons.Outlined.Settings)
     )
 
+    val drawerBgColor = MaterialTheme.colorScheme.surface
+    val drawerDividerColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    val drawerEmailColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+    val drawerRowTextColor = MaterialTheme.colorScheme.onSurface
+    val drawerSignOutColor = MaterialTheme.colorScheme.error
+    val drawerVersionTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+
     ModalDrawerSheet(
         modifier = Modifier
             .fillMaxHeight()
             .fillMaxWidth(0.72f)
             .widthIn(max = 320.dp),
-        drawerContainerColor = DrawerBackgroundColor
+        drawerContainerColor = drawerBgColor
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(DrawerBackgroundColor)
+                .background(drawerBgColor)
                 .windowInsetsPadding(WindowInsets.statusBars)
                 .verticalScroll(rememberScrollState())
         ) {
@@ -151,7 +158,7 @@ fun HomeMenu(
                         text = displayFullName,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -161,7 +168,7 @@ fun HomeMenu(
                             text = email,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Normal,
-                            color = DrawerEmailColor,
+                            color = drawerEmailColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -173,7 +180,7 @@ fun HomeMenu(
             HorizontalDivider(
                 modifier = Modifier.padding(horizontal = 24.dp),
                 thickness = 1.dp,
-                color = DrawerDividerColor
+                color = drawerDividerColor
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -184,6 +191,8 @@ fun HomeMenu(
                     label = item.label,
                     iconVector = item.iconVector,
                     iconRes = item.iconRes,
+                    textColor = drawerRowTextColor,
+                    iconColor = drawerRowTextColor,
                     onClick = {
                         onCloseDrawer()
                         when (item.id) {
@@ -202,7 +211,7 @@ fun HomeMenu(
             HorizontalDivider(
                 modifier = Modifier.padding(horizontal = 24.dp),
                 thickness = 1.dp,
-                color = DrawerDividerColor
+                color = drawerDividerColor
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -213,6 +222,8 @@ fun HomeMenu(
                     label = item.label,
                     iconVector = item.iconVector,
                     iconRes = item.iconRes,
+                    textColor = drawerRowTextColor,
+                    iconColor = drawerRowTextColor,
                     onClick = {
                         onCloseDrawer()
                         if (item.id == "Settings") onSettingsClick()
@@ -227,7 +238,7 @@ fun HomeMenu(
             HorizontalDivider(
                 modifier = Modifier.padding(horizontal = 24.dp),
                 thickness = 1.dp,
-                color = DrawerDividerColor
+                color = drawerDividerColor
             )
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -235,8 +246,8 @@ fun HomeMenu(
             DrawerRowItem(
                 label = "Sign out",
                 iconVector = Icons.AutoMirrored.Outlined.Logout,
-                textColor = DrawerSignOutColor,
-                iconColor = DrawerSignOutColor,
+                textColor = drawerSignOutColor,
+                iconColor = drawerSignOutColor,
                 height = 44.dp,
                 onClick = {
                     showSignOutConfirmation = true
@@ -248,7 +259,7 @@ fun HomeMenu(
                 text = "diBadge v$versionName",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Normal,
-                color = DrawerVersionTextColor,
+                color = drawerVersionTextColor,
                 modifier = Modifier
                     .padding(start = 24.dp, top = 4.dp, bottom = 36.dp)
                     .windowInsetsPadding(WindowInsets.navigationBars)
@@ -287,8 +298,8 @@ fun DrawerRowItem(
     label: String,
     iconVector: ImageVector? = null,
     iconRes: Int? = null,
-    textColor: Color = DrawerRowTextColor,
-    iconColor: Color = DrawerRowTextColor,
+    textColor: Color = MaterialTheme.colorScheme.onSurface,
+    iconColor: Color = MaterialTheme.colorScheme.onSurface,
     height: Dp = 52.dp,
     onClick: () -> Unit
 ) {

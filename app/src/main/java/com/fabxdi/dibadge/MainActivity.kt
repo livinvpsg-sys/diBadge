@@ -9,7 +9,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import com.google.firebase.firestore.FirebaseFirestore
+import com.fabxdi.dibadge.util.getGreetingName
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -102,6 +105,35 @@ class MainActivity : ComponentActivity() {
                         ?: user?.email?.substringBefore("@")
                         ?: "User"
 
+                    var userNickname by remember { mutableStateOf("") }
+                    var userFirstName by remember { mutableStateOf("") }
+
+                    DisposableEffect(user?.uid) {
+                        val uid = user?.uid
+                        val listener = if (uid != null) {
+                            FirebaseFirestore.getInstance()
+                                .collection("users")
+                                .document(uid)
+                                .addSnapshotListener { snapshot, _ ->
+                                    if (snapshot != null && snapshot.exists()) {
+                                        userNickname = snapshot.getString("nickname") ?: ""
+                                        userFirstName = snapshot.getString("firstName") ?: ""
+                                    }
+                                }
+                        } else null
+
+                        onDispose {
+                            listener?.remove()
+                        }
+                    }
+
+                    val bannerGreetingName = remember(userFirstName, userNickname, displayName) {
+                        getGreetingName(
+                            firstName = if (userFirstName.isNotBlank()) userFirstName else displayName,
+                            nickname = userNickname
+                        )
+                    }
+
                     val reminderViewModel: ReminderViewModel = viewModel()
                     val leaveOvertimeViewModel: LeaveOvertimeViewModel = viewModel()
                     val todayRemindersCount by reminderViewModel.todayRemindersCount.collectAsState()
@@ -147,7 +179,7 @@ class MainActivity : ComponentActivity() {
                             },
                             reminderCount = todayRemindersCount,
                             notificationCount = 0,
-                            firstName = displayName,
+                            firstName = bannerGreetingName,
                             fullName = user?.displayName ?: displayName,
                             email = user?.email ?: "",
                             onSettingsClick = { showSettingsDialog = true },
