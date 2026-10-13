@@ -23,9 +23,11 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.data.ReminderEntity
+import com.fabxdi.dibadge.data.ToDoEntity
 import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
@@ -59,6 +61,9 @@ fun MyTasksScreen(
 
     val allReminders by reminderViewModel.allReminders.collectAsState(initial = emptyList())
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+
     var showReminderForm by remember { mutableStateOf(false) }
     var editingReminder by remember { mutableStateOf<ReminderEntity?>(null) }
     var shouldOpenSnooze by remember { mutableStateOf(false) }
@@ -86,18 +91,13 @@ fun MyTasksScreen(
     }
 
     val sortedReminders = remember(allReminders, selectedDate) {
-        allReminders.filter { isReminderOnDate(it, selectedDate) }
-            .sortedBy { parseReminderTime(it.time) }
+        val dateReminders = allReminders.filter { isReminderOnDate(it, selectedDate) }
+        sortTasksByTime(dateReminders)
     }
 
-    val uncompletedTasks = remember(sortedReminders, selectedDate) {
+    val uncompletedCount = remember(sortedReminders, selectedDate) {
         val dateStr = selectedDate.toString()
-        sortedReminders.filter { !it.completedDates.contains(dateStr) }
-    }
-
-    val completedTasks = remember(sortedReminders, selectedDate) {
-        val dateStr = selectedDate.toString()
-        sortedReminders.filter { it.completedDates.contains(dateStr) }
+        sortedReminders.count { !it.completedDates.contains(dateStr) }
     }
 
     if (showReminderForm) {
@@ -171,7 +171,6 @@ fun MyTasksScreen(
         }
     }
 
-    val uncompletedCount = uncompletedTasks.size
     val assignedCount = 0
 
     val todayFilterLabel = if (uncompletedCount > 0 && selectedDate == LocalDate.now()) "Today $uncompletedCount" else "Today"
@@ -253,6 +252,7 @@ fun MyTasksScreen(
                 )
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = bottomBar,
         floatingActionButton = {
             if (selectedTaskFilter == "Today") {
@@ -261,7 +261,7 @@ fun MyTasksScreen(
                         editingReminder = null
                         showReminderForm = true
                     },
-                    containerColor = Color.Transparent,
+                    containerColor = MaterialTheme.colorScheme.surface,
                     contentColor = MaterialTheme.colorScheme.onSurface,
                     shape = RoundedCornerShape(16.dp),
                     elevation = FloatingActionButtonDefaults.elevation(
@@ -403,49 +403,37 @@ fun MyTasksScreen(
                                 }
                             }
                         } else {
-                            // 1. UNCOMPLETED TASKS
-                            items(uncompletedTasks, key = { it.id }) { reminder ->
+                            items(sortedReminders, key = { it.id }) { reminder ->
+                                val dateStr = selectedDate.toString()
+                                val isCompleted = reminder.completedDates.contains(dateStr)
+
                                 TaskCardItem(
                                     reminder = reminder,
-                                    isCompleted = false,
+                                    isCompleted = isCompleted,
                                     viewDate = selectedDate,
-                                    onCheckedChange = {
+                                    onCheckedChange = { isDone ->
                                         reminderViewModel.toggleTaskCompletedForDate(reminder, selectedDate)
+                                        if (isDone) {
+                                            coroutineScope.launch {
+                                                val result = snackbarHostState.showSnackbar(
+                                                    message = "Task completed",
+                                                    actionLabel = "Undo",
+                                                    duration = SnackbarDuration.Short
+                                                )
+                                                if (result == SnackbarResult.ActionPerformed) {
+                                                    reminderViewModel.toggleTaskCompletedForDate(reminder, selectedDate)
+                                                }
+                                            }
+                                        }
+                                    },
+                                    onStarClick = {
+                                        reminderViewModel.toggleTaskImportant(reminder)
                                     },
                                     onClick = {
                                         editingReminder = reminder
                                         showReminderForm = true
                                     }
                                 )
-                            }
-
-                            // 2. COMPLETED TASKS
-                            if (completedTasks.isNotEmpty()) {
-                                item {
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Text(
-                                        text = "Completed (${completedTasks.size})",
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                        modifier = Modifier.padding(vertical = 4.dp)
-                                    )
-                                }
-
-                                items(completedTasks, key = { it.id }) { reminder ->
-                                    TaskCardItem(
-                                        reminder = reminder,
-                                        isCompleted = true,
-                                        viewDate = selectedDate,
-                                        onCheckedChange = {
-                                            reminderViewModel.toggleTaskCompletedForDate(reminder, selectedDate)
-                                        },
-                                        onClick = {
-                                            editingReminder = reminder
-                                            showReminderForm = true
-                                        }
-                                    )
-                                }
                             }
                         }
                     }
@@ -494,4 +482,21 @@ fun MyTasksScreen(
             onDismiss = { showDatePicker = false }
         )
     }
+}
+
+fun parseTimeInMinutes(timeStr: String?): Int {
+    if (timeStr.isNullOrBlank()) return Int.MAX_VALUE
+    val parsed = parseReminderTime(timeStr)
+    return if (parsed != LocalTime.MAX) {
+        parsed.hour * 60 + parsed.minute
+    } else {
+        Int.MAX_VALUE
+    }
+}
+
+fun sortTasksByTime(reminders: List<ToDoEntity>): List<ToDoEntity> {
+    return reminders.sortedWith(
+        compareBy<ToDoEntity> { parseTimeInMinutes(it.time) }
+            .thenBy { it.id }
+    )
 }

@@ -1,5 +1,7 @@
 package com.fabxdi.dibadge.ui.my_tasks
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -7,23 +9,36 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.data.ReminderEntity
+import com.fabxdi.dibadge.data.ToDoEntity
 import java.time.LocalDate
 import java.time.LocalTime
-import java.time.format.DateTimeFormatter
-import java.util.Locale
+
+// Color Tokens
+val RowTitleColor = Color(0xFFF5F5F5)
+val RowDetailsColor = Color(0xFF77777C)
+val RowUncompletedRingColor = Color(0xFFCFCFD2)
+val RowDoneTeal = Color(0xFF14B8A6)
+val RowDoneCheckMarkColor = Color(0xFF00201D)
+val RowOverdueRed = Color(0xFFFF8A80)
+val RowStarUnimportant = Color(0xFF3A3A3C)
+val RowDividerColor = Color(0xFF2A2A2C)
 
 @Composable
 fun TaskCardItem(
@@ -32,8 +47,28 @@ fun TaskCardItem(
     viewDate: LocalDate? = null,
     badgeText: String? = null,
     onCheckedChange: (Boolean) -> Unit,
+    onStarClick: () -> Unit = {},
     onClick: () -> Unit
 ) {
+    val today = LocalDate.now()
+    val currentViewDate = viewDate ?: reminder.date ?: reminder.startDate ?: today
+
+    val isOverdue = remember(reminder.time, isCompleted, currentViewDate) {
+        if (isCompleted || currentViewDate.isAfter(today)) {
+            false
+        } else if (currentViewDate.isBefore(today)) {
+            true
+        } else {
+            // Today
+            if (!reminder.time.isNullOrBlank()) {
+                val parsedTime = parseReminderTime(reminder.time)
+                parsedTime != LocalTime.MAX && parsedTime.isBefore(LocalTime.now())
+            } else {
+                false
+            }
+        }
+    }
+
     val displayTitle = remember(reminder.title, reminder.content) {
         if (reminder.title.isNotBlank()) {
             reminder.title
@@ -44,200 +79,180 @@ fun TaskCardItem(
         }
     }
 
-    val contentPreview = remember(reminder.title, reminder.content) {
-        if (reminder.title.isNotBlank() && reminder.content.isNotBlank()) {
-            reminder.content.take(40).let { if (reminder.content.length > 40) "$it..." else it }
+    val hasDetails = reminder.title.isNotBlank() && reminder.content.isNotBlank()
+    val detailsText = if (hasDetails) {
+        reminder.content.take(45).let { if (reminder.content.length > 45) "$it..." else it }
+    } else ""
+
+    val timeDisplay = remember(reminder.time) {
+        if (reminder.time.isNullOrBlank()) {
+            "Anytime"
         } else {
-            ""
+            reminder.time.lowercase()
         }
     }
 
-    val isOverdueTime = remember(reminder.time, isCompleted, reminder.date, reminder.startDate, viewDate) {
-        val today = LocalDate.now()
-        val currentViewDate = viewDate ?: reminder.date ?: reminder.startDate ?: today
+    val ringColor by animateColorAsState(
+        targetValue = when {
+            isCompleted -> RowDoneTeal
+            isOverdue -> RowOverdueRed
+            else -> RowUncompletedRingColor
+        },
+        animationSpec = tween(durationMillis = 150),
+        label = "RingColor"
+    )
 
-        if (currentViewDate.isAfter(today)) {
-            false
-        } else if (isCompleted || reminder.time.isNullOrBlank()) {
-            false
-        } else {
-            val parsedTime = parseReminderTime(reminder.time)
-            if (parsedTime != LocalTime.MAX) {
-                if (currentViewDate.isBefore(today)) {
-                    true
-                } else if (currentViewDate == today) {
-                    parsedTime.isBefore(LocalTime.now())
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        }
+    val starColor by animateColorAsState(
+        targetValue = if (reminder.isImportant) RowDoneTeal else RowStarUnimportant,
+        animationSpec = tween(durationMillis = 150),
+        label = "StarColor"
+    )
+
+    val accessibilityRowDescription = buildString {
+        append(displayTitle)
+        if (hasDetails) append(". $detailsText")
+        append(". $timeDisplay")
+        if (isCompleted) append(". Done") else if (isOverdue) append(". Overdue. Not done") else append(". Not done")
+        if (reminder.isImportant) append(". Important") else append(". Not important")
     }
 
-    val softRedColor = Color(0xFFEF5350)
-
-Column(
-    modifier = Modifier.fillMaxWidth()
-) {
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        contentAlignment = Alignment.CenterStart
+            .semantics(mergeDescendants = true) {
+                contentDescription = accessibilityRowDescription
+            }
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 66.dp)
+                .clickable(onClick = onClick)
+                .padding(horizontal = 20.dp, vertical = 10.dp),
+            contentAlignment = Alignment.CenterStart
         ) {
-            // LEFT SIDE: CIRCULAR CHECK BUTTON
-            IconButton(
-                onClick = { onCheckedChange(!isCompleted) },
-                modifier = Modifier.size(32.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (isCompleted) {
-                    Surface(
-                        modifier = Modifier.size(22.dp),
-                        shape = CircleShape,
-                        color = Color(0xFF00A884)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "Completed",
-                                tint = Color.White,
-                                modifier = Modifier.size(14.dp)
-                            )
+                // 1. CHECK CIRCLE (22dp, 48dp touch target, 14dp gap)
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clickable { onCheckedChange(!isCompleted) }
+                        .semantics {
+                            role = Role.Checkbox
+                            contentDescription = if (isCompleted) "Mark as not done" else "Mark as done"
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isCompleted) {
+                        Surface(
+                            modifier = Modifier.size(22.dp),
+                            shape = CircleShape,
+                            color = ringColor
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = RowDoneCheckMarkColor,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
                         }
-                    }
-                } else {
-                    Surface(
-                        modifier = Modifier.size(22.dp),
-                        shape = CircleShape,
-                        color = Color.Transparent,
-                        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
-                    ) {
-                        // Empty uncompleted circle
+                    } else {
+                        Surface(
+                            modifier = Modifier.size(22.dp),
+                            shape = CircleShape,
+                            color = Color.Transparent,
+                            border = BorderStroke(1.5.dp, ringColor)
+                        ) {}
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(6.dp)) // 6dp + 8dp inside 48dp box = 14dp gap to text
 
-            // MIDDLE: TITLE & CONTENT PREVIEW
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.Center
-            ) {
-                // Title
-                Text(
-                    text = displayTitle,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Normal,
-                        fontSize = 15.sp,
-                        textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
-                    ),
-                    color = if (isCompleted) {
-                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                // Subtitle / Content Preview
-                if (contentPreview.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(2.dp))
+                // 2. TEXT BLOCK (Remaining width, vertically centered)
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.Center
+                ) {
                     Text(
-                        text = contentPreview,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontSize = 12.sp,
+                        text = displayTitle,
+                        style = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Normal,
                             textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
                         ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        color = if (isCompleted) RowDetailsColor else RowTitleColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    if (hasDetails) {
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = detailsText,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Normal
+                            ),
+                            color = RowDetailsColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // 3. STAR AND TIME COLUMN (Fixed width 56dp, items centered, 4dp apart)
+                Column(
+                    modifier = Modifier.width(56.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Star Icon (20dp, 48dp touch target)
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clickable(onClick = onStarClick)
+                            .semantics {
+                                role = Role.Button
+                                contentDescription = if (reminder.isImportant) "Remove important" else "Mark as important"
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (reminder.isImportant) Icons.Default.Star else Icons.Outlined.StarOutline,
+                            contentDescription = null,
+                            tint = starColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    // Time Text (12sp Regular #77777C, or #FF8A80 if overdue and not done)
+                    Text(
+                        text = timeDisplay,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Normal
+                        ),
+                        color = if (isOverdue && !isCompleted) RowOverdueRed else RowDetailsColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-
-                // Badge (e.g. "To Do")
-                if (!badgeText.isNullOrBlank()) {
-                    Spacer(modifier = Modifier.height(3.dp))
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
-                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-                    ) {
-                        Text(
-                            text = badgeText,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            // RIGHT SIDE: DUE TIME, ALARM ICON & OVERDUE LABEL
-            if (!reminder.time.isNullOrBlank()) {
-                Column(horizontalAlignment = Alignment.End) {
-                    // Show Alarm Icon ABOVE time if Alarm is ON, task is not completed, and task is not overdue
-                    if (reminder.isAlarmEnabled && !isCompleted && !isOverdueTime) {
-                        Icon(
-                            imageVector = Icons.Default.NotificationsActive,
-                            contentDescription = "Alarm Enabled",
-                            modifier = Modifier.size(13.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                    }
-
-                    Text(
-                        text = reminder.time.lowercase(),
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontSize = 11.sp,
-                            fontWeight = if (isOverdueTime) FontWeight.Bold else FontWeight.Normal
-                        ),
-                        color = when {
-                            isCompleted -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-                            isOverdueTime -> softRedColor
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                        }
-                    )
-
-                    if (isOverdueTime) {
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Overdue",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Medium
-                            ),
-                            color = softRedColor.copy(alpha = 0.9f)
-                        )
-                    }
-                }
             }
         }
-    }
 
-    // 1dp Divider under uncompleted rows only
-    if (!isCompleted) {
+        // 1dp Divider under EVERY row
         HorizontalDivider(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
             thickness = 1.dp,
-            color = Color(0xFF2A2A2C)
+            color = RowDividerColor
         )
     }
-}
 }

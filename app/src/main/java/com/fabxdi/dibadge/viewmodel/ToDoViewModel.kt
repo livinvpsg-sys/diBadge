@@ -203,6 +203,24 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    fun toggleTaskImportant(reminder: ToDoEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val updated = reminder.copy(isImportant = !reminder.isImportant)
+            reminderDao.updateReminder(updated)
+
+            val userId = auth.currentUser?.uid
+            if (userId != null) {
+                try {
+                    firestore.collection("users")
+                        .document(userId)
+                        .collection("tasks")
+                        .document(updated.id.toString())
+                        .set(updated.toFirestoreMap(), SetOptions.merge())
+                } catch (e: Exception) {}
+            }
+        }
+    }
 }
 
 fun ToDoEntity.toFirestoreMap(): Map<String, Any?> {
@@ -218,6 +236,7 @@ fun ToDoEntity.toFirestoreMap(): Map<String, Any?> {
         "isAlarmEnabled" to isAlarmEnabled,
         "attachments" to attachments,
         "completedDates" to completedDates,
+        "isImportant" to isImportant,
         "updatedAt" to System.currentTimeMillis()
     )
 }
@@ -234,6 +253,7 @@ fun Map<String, Any?>.toToDoEntity(documentId: String): ToDoEntity? {
     val isAlarmEnabledVal = this["isAlarmEnabled"] as? Boolean ?: false
     val attachmentsVal = (this["attachments"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
     val completedDatesVal = (this["completedDates"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
+    val isImportantVal = this["isImportant"] as? Boolean ?: false
 
     return ToDoEntity(
         id = idVal,
@@ -246,7 +266,8 @@ fun Map<String, Any?>.toToDoEntity(documentId: String): ToDoEntity? {
         time = timeVal,
         isAlarmEnabled = isAlarmEnabledVal,
         attachments = attachmentsVal,
-        completedDates = completedDatesVal
+        completedDates = completedDatesVal,
+        isImportant = isImportantVal
     )
 }
 

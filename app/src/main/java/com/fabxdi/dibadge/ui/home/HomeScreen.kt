@@ -2,6 +2,9 @@ package com.fabxdi.dibadge.ui.home
 
 import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -404,6 +407,9 @@ fun MainDashboardPreview() {
     }
 }
 
+val NavIconSize = 24.dp
+val NavIconSizeSelected = 32.dp
+
 @Composable
 fun AppBottomBar(
     selectedTab: HomeTab,
@@ -415,7 +421,14 @@ fun AppBottomBar(
     ) {
         HomeTab.entries.forEach { tab ->
             val isSelected = selectedTab == tab
-            val iconSize = if (isSelected) 28.dp else 22.dp
+
+            // Animate icon size transition (200ms ease-out)
+            val animatedIconSize by animateDpAsState(
+                targetValue = if (isSelected) NavIconSizeSelected else NavIconSize,
+                animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+                label = "NavIconSize"
+            )
+
             val iconTint = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
 
             NavigationBarItem(
@@ -438,47 +451,53 @@ fun AppBottomBar(
                     )
                 },
                 icon = {
-                    when (tab) {
-                        HomeTab.Home -> {
-                            if (isSelected) {
+                    // Fixed 32dp container box keeps labels on exact same baseline (no layout jumps)
+                    Box(
+                        modifier = Modifier.size(NavIconSizeSelected),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        when (tab) {
+                            HomeTab.Home -> {
+                                if (isSelected) {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_dibadge_nav),
+                                        contentDescription = tab.label,
+                                        tint = Color.Unspecified,
+                                        modifier = Modifier.size(animatedIconSize)
+                                    )
+                                } else {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_dibadge_nav),
+                                        contentDescription = tab.label,
+                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                                        modifier = Modifier.size(animatedIconSize)
+                                    )
+                                }
+                            }
+                            HomeTab.Connections -> {
                                 Icon(
-                                    painter = painterResource(id = R.drawable.ic_dibadge_nav),
+                                    painter = painterResource(id = R.drawable.ic_connections),
                                     contentDescription = tab.label,
-                                    tint = Color.Unspecified,
-                                    modifier = Modifier.size(32.dp)
-                                )
-                            } else {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_dibadge_nav),
-                                    contentDescription = tab.label,
-                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
-                                    modifier = Modifier.size(iconSize)
+                                    tint = iconTint,
+                                    modifier = Modifier.size(animatedIconSize)
                                 )
                             }
-                        }
-                        HomeTab.Connections -> {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_connections),
-                                contentDescription = tab.label,
-                                tint = iconTint,
-                                modifier = Modifier.size(iconSize)
-                            )
-                        }
-                        HomeTab.MyTasks -> {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_my_tasks),
-                                contentDescription = tab.label,
-                                tint = iconTint,
-                                modifier = Modifier.size(iconSize)
-                            )
-                        }
-                        HomeTab.Note -> {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_inbox),
-                                contentDescription = tab.label,
-                                tint = iconTint,
-                                modifier = Modifier.size(iconSize)
-                            )
+                            HomeTab.MyTasks -> {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_my_tasks),
+                                    contentDescription = tab.label,
+                                    tint = iconTint,
+                                    modifier = Modifier.size(animatedIconSize)
+                                )
+                            }
+                            HomeTab.Note -> {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_inbox),
+                                    contentDescription = tab.label,
+                                    tint = iconTint,
+                                    modifier = Modifier.size(animatedIconSize)
+                                )
+                            }
                         }
                     }
                 }

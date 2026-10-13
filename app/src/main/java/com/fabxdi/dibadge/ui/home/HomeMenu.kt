@@ -157,7 +157,7 @@ fun HomeMenu(
                     Text(
                         text = displayFullName,
                         fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.Normal,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
