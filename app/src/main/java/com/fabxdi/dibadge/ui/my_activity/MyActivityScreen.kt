@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.fabxdi.dibadge.data.LeaveEntity
 import com.fabxdi.dibadge.data.OvertimeEntity
+import com.fabxdi.dibadge.ui.components.DiBadgeDateRangePicker
 import com.fabxdi.dibadge.ui.components.DiBadgeSearchBar
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.PdfSharingUtils
@@ -296,35 +297,17 @@ fun MyActivityScreen(
     }
 
     if (showDateRangePicker) {
-        DatePickerDialog(
-            onDismissRequest = { showDateRangePicker = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val startMillis = dateRangePickerState.selectedStartDateMillis
-                        val endMillis = dateRangePickerState.selectedEndDateMillis
-                        if (startMillis != null && endMillis != null) {
-                            customStartDate = Instant.ofEpochMilli(startMillis).atZone(ZoneId.systemDefault()).toLocalDate()
-                            customEndDate = Instant.ofEpochMilli(endMillis).atZone(ZoneId.systemDefault()).toLocalDate()
-                            selectedFilter = "Custom"
-                        }
-                        showDateRangePicker = false
-                    }
-                ) {
-                    Text("OK")
-                }
+        DiBadgeDateRangePicker(
+            initialStartDate = customStartDate,
+            initialEndDate = customEndDate,
+            onRangeSelected = { start, end ->
+                showDateRangePicker = false
+                customStartDate = start
+                customEndDate = end
+                selectedFilter = "Custom"
             },
-            dismissButton = {
-                TextButton(onClick = { showDateRangePicker = false }) {
-                    Text("Cancel")
-                }
-            }
-        ) {
-            DateRangePicker(
-                state = dateRangePickerState,
-                modifier = Modifier.height(400.dp)
-            )
-        }
+            onDismiss = { showDateRangePicker = false }
+        )
     }
 }
 

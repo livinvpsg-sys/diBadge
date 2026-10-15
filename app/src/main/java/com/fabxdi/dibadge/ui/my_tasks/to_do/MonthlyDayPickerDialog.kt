@@ -1,15 +1,12 @@
 package com.fabxdi.dibadge.ui.my_tasks.to_do
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,9 +15,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MonthlyDayPickerDialog(
     initialDayNumbers: Set<Int>,
@@ -30,101 +26,90 @@ fun MonthlyDayPickerDialog(
     val selectedDayNums = remember { mutableStateListOf<Int>().apply { addAll(initialDayNumbers) } }
     val dayNumbers = remember { (1..31).toList() }
 
-    Dialog(
+    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
+    val sheetBgColor = if (isDark) Color(0xFF2C2C2E) else Color(0xFFFFFFFF)
+    val primaryTextColor = if (isDark) Color(0xFFFFFFFF) else Color(0xFF111318)
+    val secondaryTextColor = if (isDark) Color(0xFF8A8A8E) else Color(0xFF6B7078)
+    val tealAccent = if (isDark) Color(0xFF5CC9C0) else Color(0xFF17645E)
+
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        sheetState = rememberModalBottomSheetState(),
+        containerColor = sheetBgColor,
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(color = if (isDark) Color(0xFF5A5A5E) else Color(0xFFC9CCD4))
+        }
     ) {
-        Box(
+        Column(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.5f))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) { onDismiss() },
-            contentAlignment = Alignment.Center
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 12.dp)
         ) {
-            Surface(
+            Text(
+                text = "Monthly",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = primaryTextColor
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(7),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .wrapContentHeight()
-                    .clickable(enabled = false) {},
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp
+                    .height(240.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                ) {
-                    Text(
-                        text = "Repeat Monthly On Days",
-                        style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp),
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(7),
+                items(dayNumbers) { dayNum ->
+                    val isSelected = selectedDayNums.contains(dayNum)
+                    Surface(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(240.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(dayNumbers) { dayNum ->
-                            val isSelected = selectedDayNums.contains(dayNum)
-                            Surface(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clickable {
-                                        if (isSelected) {
-                                            if (selectedDayNums.size > 1) {
-                                                selectedDayNums.remove(dayNum)
-                                            }
-                                        } else {
-                                            selectedDayNums.add(dayNum)
-                                        }
-                                    },
-                                shape = CircleShape,
-                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                                border = if (isSelected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = dayNum.toString(),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-                                    )
+                            .size(38.dp)
+                            .clickable {
+                                if (isSelected) {
+                                    if (selectedDayNums.size > 1) {
+                                        selectedDayNums.remove(dayNum)
+                                    }
+                                } else {
+                                    selectedDayNums.add(dayNum)
                                 }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        TextButton(onClick = onDismiss) {
-                            Text("Cancel", fontWeight = FontWeight.Bold)
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        TextButton(
-                            onClick = {
-                                onDaysSelected(selectedDayNums.toSet())
                             },
-                            enabled = selectedDayNums.isNotEmpty()
-                        ) {
-                            Text("OK", fontWeight = FontWeight.Bold)
+                        shape = CircleShape,
+                        color = Color.Transparent,
+                        border = if (isSelected) BorderStroke(1.dp, primaryTextColor) else null
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = dayNum.toString(),
+                                fontSize = 15.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) primaryTextColor else secondaryTextColor
+                            )
                         }
                     }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(onClick = onDismiss) {
+                    Text("Cancel", fontSize = 16.sp, fontWeight = FontWeight.Normal, color = secondaryTextColor)
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                TextButton(
+                    onClick = {
+                        onDaysSelected(selectedDayNums.toSet())
+                        onDismiss()
+                    },
+                    enabled = selectedDayNums.isNotEmpty()
+                ) {
+                    Text("Done", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = tealAccent)
                 }
             }
         }

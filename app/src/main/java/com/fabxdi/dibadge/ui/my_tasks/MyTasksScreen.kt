@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.data.ReminderEntity
 import com.fabxdi.dibadge.data.ToDoEntity
+import com.fabxdi.dibadge.ui.components.DiBadgeDatePicker
 import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
@@ -472,9 +473,8 @@ fun MyTasksScreen(
     }
 
     if (showDatePicker) {
-        TaskDatePickerDialog(
-            initialDate = selectedDate,
-            allReminders = allReminders,
+        DiBadgeDatePicker(
+            selectedDate = selectedDate,
             onDateSelected = { chosenDate ->
                 selectedDate = chosenDate
                 showDatePicker = false

@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.fabxdi.dibadge.ui.components.DiBadgeDatePicker
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.capitalizeWords
 import com.fabxdi.dibadge.viewmodel.ProfileUiState
@@ -644,60 +645,26 @@ fun ProfileScreen(
         )
     }
 
-    // Birthday DatePicker Dialog
+    // Birthday DatePicker Sheet
     if (showDatePickerDialog) {
-        val datePickerState = rememberDatePickerState(
-            selectableDates = object : SelectableDates {
-                override fun isSelectableDate(utcTimeMillis: Long): Boolean {
-                    val date = Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneId.of("UTC")).toLocalDate()
-                    val today = LocalDate.now()
-                    val minDate = today.minusYears(120)
-                    return !date.isAfter(today) && !date.isBefore(minDate)
-                }
-            }
-        )
+        val initialBirthday = try {
+            if (profileData.birthday.isNotBlank()) {
+                LocalDate.parse(profileData.birthday, DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.getDefault()))
+            } else null
+        } catch (e: Exception) { null }
 
-        DatePickerDialog(
-            onDismissRequest = { showDatePickerDialog = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDatePickerDialog = false
-                        val selectedMillis = datePickerState.selectedDateMillis
-                        if (selectedMillis != null) {
-                            val selectedDate = Instant.ofEpochMilli(selectedMillis)
-                                .atZone(ZoneId.of("UTC"))
-                                .toLocalDate()
-                            val formatted = selectedDate.format(
-                                DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.getDefault())
-                            )
-                            viewModel.updateBirthday(formatted)
-                        }
-                    }
-                ) {
-                    Text("OK", fontWeight = FontWeight.Bold)
-                }
+        DiBadgeDatePicker(
+            selectedDate = initialBirthday,
+            maxDate = LocalDate.now(),
+            minDate = LocalDate.now().minusYears(120),
+            title = "Select Birthday",
+            onDateSelected = { chosenDate ->
+                showDatePickerDialog = false
+                val formatted = chosenDate.format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.getDefault()))
+                viewModel.updateBirthday(formatted)
             },
-            dismissButton = {
-                Row {
-                    if (profileData.birthday.isNotBlank()) {
-                        TextButton(
-                            onClick = {
-                                showDatePickerDialog = false
-                                viewModel.updateBirthday("")
-                            }
-                        ) {
-                            Text("Clear")
-                        }
-                    }
-                    TextButton(onClick = { showDatePickerDialog = false }) {
-                        Text("Cancel")
-                    }
-                }
-            }
-        ) {
-            DatePicker(state = datePickerState)
-        }
+            onDismiss = { showDatePickerDialog = false }
+        )
     }
 
     // Signature Drawing / Typing Dialog

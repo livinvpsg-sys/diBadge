@@ -1,65 +1,61 @@
 package com.fabxdi.dibadge.ui.my_tasks.to_do
 
-import com.fabxdi.dibadge.ui.my_tasks.TaskDatePickerDialog
-import androidx.activity.compose.BackHandler
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.ui.text.style.TextAlign
-import java.time.YearMonth
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import kotlinx.coroutines.delay
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.data.ReminderEntity
 import com.fabxdi.dibadge.ui.components.AttachmentList
+import com.fabxdi.dibadge.ui.components.DiBadgeDatePicker
+import com.fabxdi.dibadge.ui.components.DiBadgeDateRangePicker
+import com.fabxdi.dibadge.ui.my_tasks.TaskDatePickerDialog
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.Month
-import java.time.Year
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,9 +69,11 @@ fun ReminderFormScreen(
 ) {
     val context = LocalContext.current
     val titleFocusRequester = remember { FocusRequester() }
+    val noteFocusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    var isEditMode by remember { mutableStateOf(true) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         if (reminderToEdit == null) {
@@ -97,126 +95,37 @@ fun ReminderFormScreen(
         )
     }
     val content = contentValue.text
-    var isRepeatMenuExpanded by remember { mutableStateOf(false) }
-    var selectedRepeat by remember { mutableStateOf<String?>(reminderToEdit?.repeatType) }
-    var pendingRepeatOption by remember { mutableStateOf<String?>(null) }
-    val repeatOptions = listOf("daily", "weekly", "monthly", "Yearly", "Custom")
 
+    var selectedRepeat by remember { mutableStateOf<String?>(reminderToEdit?.repeatType) }
     var selectedTime by remember { mutableStateOf<String?>(reminderToEdit?.time) }
-    
-    val initialTime = reminderToEdit?.time?.let {
-        try {
-            LocalTime.parse(it, DateTimeFormatter.ofPattern("hh:mm a", Locale.getDefault()))
-        } catch (e: Exception) {
-            LocalTime.now()
-        }
-    } ?: LocalTime.now()
-    
-    val timePickerState = rememberTimePickerState(
-        initialHour = initialTime.hour,
-        initialMinute = initialTime.minute
-    )
+    var selectedDueDate by remember { mutableStateOf<LocalDate?>(reminderToEdit?.date) }
     var isAlarmEnabled by remember { mutableStateOf(reminderToEdit?.isAlarmEnabled ?: false) }
+    val isImportant = reminderToEdit?.isImportant ?: false
+
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var showUnsavedChangesDialog by remember { mutableStateOf(false) }
     var triedToSave by remember { mutableStateOf(false) }
 
-    val selectableDates = remember(selectedTime) {
-        object : SelectableDates {
-            override fun isSelectableDate(utcTimeMillis: Long): Boolean {
-                val date = Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneId.of("UTC")).toLocalDate()
-                val today = LocalDate.now()
-                if (date.isBefore(today)) return false
-                if (date.isEqual(today) && selectedTime != null) {
-                    val selTime = LocalTime.of(timePickerState.hour, timePickerState.minute)
-                    if (selTime.isBefore(LocalTime.now())) return false
-                }
-                return true
-            }
-            override fun isSelectableYear(year: Int): Boolean = year >= LocalDate.now().year
-        }
-    }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showDateRangePicker by remember { mutableStateOf(false) }
+    var showWeeklyDaysPicker by remember { mutableStateOf(false) }
+    var showMonthlyDayPicker by remember { mutableStateOf(false) }
+    var showYearlyDatePicker by remember { mutableStateOf(false) }
+    var showRemindMePicker by remember { mutableStateOf(autoOpenTimePicker) }
 
-    val datePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = reminderToEdit?.date?.atStartOfDay(ZoneId.of("UTC"))?.toInstant()?.toEpochMilli(),
-        selectableDates = selectableDates
-    )
-    
-    var selectedDueDate by remember { mutableStateOf<LocalDate?>(reminderToEdit?.date) }
+    var isDueDateMenuExpanded by remember { mutableStateOf(false) }
+    var isRepeatMenuExpanded by remember { mutableStateOf(false) }
 
-    val customRangeSelectableDates = remember(selectedDueDate) {
-        object : SelectableDates {
-            override fun isSelectableDate(utcTimeMillis: Long): Boolean {
-                val date = Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneId.of("UTC")).toLocalDate()
-                val today = LocalDate.now()
-                if (date.isBefore(today)) return false
-                if (selectedDueDate != null && date.isAfter(selectedDueDate)) return false
-                return true
-            }
-
-            override fun isSelectableYear(year: Int): Boolean {
-                val todayYear = LocalDate.now().year
-                val dueYear = selectedDueDate?.year ?: (todayYear + 50)
-                return year in todayYear..dueYear
-            }
-        }
-    }
-
-    val dateRangePickerState = rememberDateRangePickerState(
-        initialSelectedStartDateMillis = reminderToEdit?.startDate?.atStartOfDay(ZoneId.of("UTC"))?.toInstant()?.toEpochMilli(),
-        initialSelectedEndDateMillis = reminderToEdit?.endDate?.atStartOfDay(ZoneId.of("UTC"))?.toInstant()?.toEpochMilli(),
-        selectableDates = customRangeSelectableDates
-    )
-
-    var attachedFiles by remember { 
+    var attachedFiles by remember {
         mutableStateOf<List<Uri>>(
             reminderToEdit?.attachments?.map { Uri.parse(it) } ?: emptyList()
-        ) 
+        )
     }
-    
-    val hasChanges = remember(
-        title, content, selectedRepeat, selectedTime, isAlarmEnabled,
-        selectedDueDate,
-        dateRangePickerState.selectedStartDateMillis,
-        dateRangePickerState.selectedEndDateMillis,
-        attachedFiles, reminderToEdit
-    ) {
-        if (reminderToEdit == null) {
-            title.trim().isNotEmpty() ||
-            content.trim().isNotEmpty() ||
-            selectedTime != null ||
-            isAlarmEnabled ||
-            attachedFiles.isNotEmpty() ||
-            selectedDueDate != null ||
-            dateRangePickerState.selectedStartDateMillis != null ||
-            (selectedRepeat != null && selectedRepeat != "once")
-        } else {
-            title != reminderToEdit.title ||
-            content != reminderToEdit.content ||
-            selectedRepeat != reminderToEdit.repeatType ||
-            selectedTime != reminderToEdit.time ||
-            isAlarmEnabled != reminderToEdit.isAlarmEnabled ||
-            selectedDueDate != reminderToEdit.date ||
-            dateRangePickerState.selectedStartDateMillis != reminderToEdit.startDate?.atStartOfDay(ZoneId.of("UTC"))?.toInstant()?.toEpochMilli() ||
-            dateRangePickerState.selectedEndDateMillis != reminderToEdit.endDate?.atStartOfDay(ZoneId.of("UTC"))?.toInstant()?.toEpochMilli() ||
-            attachedFiles.map { it.toString() } != reminderToEdit.attachments
-        }
-    }
-
-    val handleBack = {
-        if (hasChanges) {
-            showUnsavedChangesDialog = true
-        } else {
-            onCancel()
-        }
-    }
-
-    BackHandler(onBack = handleBack)
 
     val attachmentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
         onResult = { uris ->
-            val remainingSpace = 3 - attachedFiles.size
+            val remainingSpace = 5 - attachedFiles.size
             if (remainingSpace > 0) {
                 val newUris = uris.take(remainingSpace)
                 newUris.forEach { uri ->
@@ -232,676 +141,531 @@ fun ReminderFormScreen(
         }
     )
 
-    var showDatePicker by remember { mutableStateOf(false) }
-    var showDateRangePicker by remember { mutableStateOf(false) }
-    var showWeeklyDaysPicker by remember { mutableStateOf(false) }
-    var showMonthlyDayPicker by remember { mutableStateOf(false) }
-    var showYearlyDatePicker by remember { mutableStateOf(false) }
-    var showRemindMePicker by remember { mutableStateOf(autoOpenTimePicker) }
-    var isDateMenuExpanded by remember { mutableStateOf(false) }
+    fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldValue): TextFieldValue {
+        val oldText = oldValue.text
+        val newText = newValue.text
 
-    LaunchedEffect(autoOpenTimePicker) {
-        if (autoOpenTimePicker) {
-            isEditMode = true
-        }
-    }
+        if (newText.length == oldText.length + 1 && newText.endsWith(" ")) {
+            val lines = oldText.split("\n")
+            val lastLine = lines.lastOrNull() ?: ""
 
-fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldValue): TextFieldValue {
-    val oldText = oldValue.text
-    val newText = newValue.text
-
-    // 1. SPACEBAR PRESSED (User typed e.g. "1." or "-" then Space)
-    if (newText.length == oldText.length + 1 && newText.endsWith(" ")) {
-        val lines = oldText.split("\n")
-        val lastLine = lines.lastOrNull() ?: ""
-
-        val numMatch = Regex("^(\\d+)([.\\)])$").find(lastLine.trim())
-        if (numMatch != null) {
-            val (numStr, delimiter) = numMatch.destructured
-            val base = oldText.dropLast(lastLine.length)
-            val updatedText = "$base$numStr$delimiter "
-            return TextFieldValue(
-                text = updatedText,
-                selection = TextRange(updatedText.length)
-            )
-        }
-
-        val bulletMatch = Regex("^([-*•])$").find(lastLine.trim())
-        if (bulletMatch != null) {
-            val bullet = bulletMatch.groupValues[1]
-            val base = oldText.dropLast(lastLine.length)
-            val updatedText = "$base$bullet "
-            return TextFieldValue(
-                text = updatedText,
-                selection = TextRange(updatedText.length)
-            )
-        }
-    }
-
-    // 2. ENTER PRESSED (User pressed Enter on an existing list line)
-    if (newText.length == oldText.length + 1 && newText.endsWith("\n")) {
-        val lines = oldText.split("\n")
-        val lastLine = lines.lastOrNull() ?: ""
-
-        val numberMatch = Regex("^(\\d+)([.\\)])\\s+(.*)$").find(lastLine)
-        if (numberMatch != null) {
-            val (numStr, delimiter, textAfter) = numberMatch.destructured
-            if (textAfter.isBlank()) {
-                val prefixToRemove = "$numStr$delimiter"
+            val numMatch = Regex("^(\\d+)([.\\)])$").find(lastLine.trim())
+            if (numMatch != null) {
+                val (numStr, delimiter) = numMatch.destructured
                 val base = oldText.dropLast(lastLine.length)
-                val cleanedLastLine = lastLine.removePrefix(prefixToRemove).trimStart()
-                val updatedText = base + cleanedLastLine
-                return TextFieldValue(
-                    text = updatedText,
-                    selection = TextRange(updatedText.length)
-                )
-            } else {
-                val nextNum = (numStr.toIntOrNull() ?: 1) + 1
-                val updatedText = "$newText$nextNum$delimiter "
-                return TextFieldValue(
-                    text = updatedText,
-                    selection = TextRange(updatedText.length)
-                )
+                val updatedText = "$base$numStr$delimiter "
+                return TextFieldValue(text = updatedText, selection = TextRange(updatedText.length))
+            }
+
+            val bulletMatch = Regex("^([-*•])$").find(lastLine.trim())
+            if (bulletMatch != null) {
+                val bullet = bulletMatch.groupValues[1]
+                val base = oldText.dropLast(lastLine.length)
+                val updatedText = "$base$bullet "
+                return TextFieldValue(text = updatedText, selection = TextRange(updatedText.length))
             }
         }
 
-        val bulletMatch = Regex("^([-*•])\\s+(.*)$").find(lastLine)
-        if (bulletMatch != null) {
-            val (bullet, textAfter) = bulletMatch.destructured
-            if (textAfter.isBlank()) {
-                val base = oldText.dropLast(lastLine.length)
-                val cleanedLastLine = lastLine.removePrefix(bullet).trimStart()
-                val updatedText = base + cleanedLastLine
-                return TextFieldValue(
-                    text = updatedText,
-                    selection = TextRange(updatedText.length)
-                )
-            } else {
-                val updatedText = "$newText$bullet "
-                return TextFieldValue(
-                    text = updatedText,
-                    selection = TextRange(updatedText.length)
-                )
+        if (newText.length == oldText.length + 1 && newText.endsWith("\n")) {
+            val lines = oldText.split("\n")
+            val lastLine = lines.lastOrNull() ?: ""
+
+            val numberMatch = Regex("^(\\d+)([.\\)])\\s+(.*)$").find(lastLine)
+            if (numberMatch != null) {
+                val (numStr, delimiter, textAfter) = numberMatch.destructured
+                if (textAfter.isBlank()) {
+                    val prefixToRemove = "$numStr$delimiter"
+                    val base = oldText.dropLast(lastLine.length)
+                    val cleanedLastLine = lastLine.removePrefix(prefixToRemove).trimStart()
+                    val updatedText = base + cleanedLastLine
+                    return TextFieldValue(text = updatedText, selection = TextRange(updatedText.length))
+                } else {
+                    val nextNum = (numStr.toIntOrNull() ?: 1) + 1
+                    val updatedText = "$newText$nextNum$delimiter "
+                    return TextFieldValue(text = updatedText, selection = TextRange(updatedText.length))
+                }
             }
+
+            val bulletMatch = Regex("^([-*•])\\s+(.*)$").find(lastLine)
+            if (bulletMatch != null) {
+                val (bullet, textAfter) = bulletMatch.destructured
+                if (textAfter.isBlank()) {
+                    val base = oldText.dropLast(lastLine.length)
+                    val cleanedLastLine = lastLine.removePrefix(bullet).trimStart()
+                    val updatedText = base + cleanedLastLine
+                    return TextFieldValue(text = updatedText, selection = TextRange(updatedText.length))
+                } else {
+                    val updatedText = "$newText$bullet "
+                    return TextFieldValue(text = updatedText, selection = TextRange(updatedText.length))
+                }
+            }
+        }
+
+        return newValue
+    }
+
+    val displayDateFormatter = remember { DateTimeFormatter.ofPattern("EEE, d MMM yyyy", Locale.getDefault()) }
+
+    val isTitleValid = title.trim().isNotEmpty()
+
+    // --- Theme Color Tokens ---
+    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
+    val pageBgColor = if (isDark) Color(0xFF000000) else Color(0xFFEBECF0)
+    val cardBgColor = if (isDark) Color(0xFF2C2C2E) else Color(0xFFFFFFFF)
+    val dividerColor = if (isDark) Color(0xFF3A3A3C) else Color(0xFFE3E5EA)
+    val primaryTextColor = if (isDark) Color(0xFFFFFFFF) else Color(0xFF111318)
+    val secondaryTextColor = if (isDark) Color(0xFF8A8A8E) else Color(0xFF6B7078)
+    val faintColor = if (isDark) Color(0xFF5A5A5E) else Color(0xFF9AA0A8)
+    val tealAccent = if (isDark) Color(0xFF5CC9C0) else Color(0xFF17645E)
+    val toggleOffColor = if (isDark) Color(0xFF48484A) else Color(0xFFC9CCD4)
+    val errorColor = Color(0xFFFF8A80)
+
+    val handleBack = {
+        if (title != (reminderToEdit?.title ?: "") || content != (reminderToEdit?.content ?: "")) {
+            showUnsavedChangesDialog = true
+        } else {
+            onCancel()
         }
     }
 
-    return newValue
-}
-
-    fun formatMillisToDate(millis: Long?): String {
-        if (millis == null) return ""
-        val formatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.getDefault())
-        return Instant.ofEpochMilli(millis)
-            .atZone(ZoneId.of("UTC"))
-            .toLocalDate()
-            .format(formatter)
-    }
-
-    val pillDateFormatter = remember { DateTimeFormatter.ofPattern("dd-MMM-yyyy", Locale.getDefault()) }
-
-    val formattedDateText = remember(selectedDueDate) {
-        selectedDueDate?.format(pillDateFormatter)
-    }
-
-    fun formatTime(hour: Int, minute: Int): String {
-        val formatter = DateTimeFormatter.ofPattern("hh:mm a", Locale.getDefault())
-        return LocalTime.of(hour, minute).format(formatter)
-    }
-
-    val isDateSelected = (selectedRepeat == "Custom" && dateRangePickerState.selectedStartDateMillis != null) ||
-            (selectedRepeat != "Custom")
-    val isTimeSelected = selectedTime != null
-    val isTextValid = title.trim().isNotEmpty() || content.trim().isNotEmpty()
-
-    val errorColor = Color(0xFFBF2C34) 
-    val iconColor = if (triedToSave && !isDateSelected) errorColor else MaterialTheme.colorScheme.onBackground
-    val textColor = if (selectedRepeat == null) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onBackground
+    BackHandler(onBack = handleBack)
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(pageBgColor)
+            .windowInsetsPadding(WindowInsets.systemBars)
     ) {
-        TopAppBar(
-            title = {
-                if (reminderToEdit == null) {
-                    Text(
-                        text = "New task",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(start = 8.dp)
-                    )
-                }
-            },
-            navigationIcon = {
+        // 1. Top Bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = handleBack) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back"
+                        contentDescription = "Back",
+                        tint = primaryTextColor
                     )
                 }
-            },
-            actions = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (reminderToEdit != null) {
-                        IconButton(onClick = { showDeleteConfirmation = true }) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Delete Task",
-                                tint = errorColor
-                            )
-                        }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (reminderToEdit == null) "New task" else "Edit task",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = primaryTextColor
+                )
+            }
+
+            TextButton(
+                onClick = {
+                    triedToSave = true
+                    if (isTitleValid) {
+                        onSave(
+                            title.trim(),
+                            content.trim(),
+                            selectedDueDate,
+                            selectedDueDate ?: LocalDate.now(),
+                            selectedDueDate,
+                            selectedRepeat ?: "once",
+                            selectedTime,
+                            isAlarmEnabled,
+                            attachedFiles.map { it.toString() },
+                            reminderToEdit?.id ?: 0
+                        )
                     }
-
-                    val showSaveButton = reminderToEdit == null || hasChanges
-
-                    if (showSaveButton) {
-                        TextButton(onClick = {
-                            triedToSave = true
-                            if (isTextValid) {
-                                val dueDate = selectedDueDate
-
-                                val startDate = if (selectedRepeat == "Custom") {
-                                    dateRangePickerState.selectedStartDateMillis?.let {
-                                        Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
-                                    } ?: dueDate ?: LocalDate.now()
-                                } else {
-                                    LocalDate.now()
-                                }
-
-                                val endDate = if (selectedRepeat == "Custom") {
-                                    dateRangePickerState.selectedEndDateMillis?.let {
-                                        Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
-                                    } ?: dueDate
-                                } else {
-                                    dueDate
-                                }
-
-                                onSave(
-                                    title,
-                                    content,
-                                    dueDate,
-                                    startDate,
-                                    endDate,
-                                    selectedRepeat ?: "once",
-                                    selectedTime,
-                                    isAlarmEnabled,
-                                    attachedFiles.map { it.toString() },
-                                    reminderToEdit?.id ?: 0
-                                )
-                            }
-                        }) {
-                            Text(
-                                text = "Save",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.background
-            )
-        )
+                },
+                enabled = isTitleValid
+            ) {
+                Text(
+                    text = "Save",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isTitleValid) tealAccent else faintColor
+                )
+            }
+        }
 
         Column(
             modifier = Modifier
-                .padding(horizontal = DiBadgeTheme.spacing.medium)
+                .fillMaxSize()
+                .weight(1f)
                 .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Title & Details Input Container Box
+            // --- CARD 1: TITLE & NOTE ---
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f))
+                shape = RoundedCornerShape(14.dp),
+                color = cardBgColor
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 4.dp, horizontal = 4.dp)
+                        .padding(horizontal = 16.dp, vertical = 16.dp)
                 ) {
-                    // 1. Title Input Field
-                    TextField(
+                    // Title Input (120 char limit, max 3 lines, cursor uses primaryTextColor)
+                    BasicTextField(
                         value = title,
-                        onValueChange = { title = it },
-                        readOnly = !isEditMode,
-                        placeholder = { 
-                            Text(
-                                text = "Title",
-                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Normal)
-                            ) 
-                        },
+                        onValueChange = { if (it.length <= 120) title = it },
+                        textStyle = MaterialTheme.typography.titleLarge.copy(
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = primaryTextColor
+                        ),
+                        cursorBrush = SolidColor(primaryTextColor),
+                        maxLines = 3,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onNext = { noteFocusRequester.requestFocus() }
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusRequester(titleFocusRequester),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            focusedIndicatorColor = Color.Transparent,
-                            focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        ),
-                        textStyle = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Normal)
+                        decorationBox = { innerTextField ->
+                            Box(contentAlignment = Alignment.CenterStart) {
+                                if (title.isEmpty()) {
+                                    Text(
+                                        text = "Title",
+                                        fontSize = 20.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = faintColor
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        }
                     )
+
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
-                        thickness = 0.5.dp,
-                        color = if (triedToSave && !isTextValid) errorColor else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                        modifier = Modifier.fillMaxWidth(),
+                        thickness = 1.dp,
+                        color = if (triedToSave && !isTitleValid) errorColor else dividerColor
                     )
 
-                    // 2. Details Input Field
-                    TextField(
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Note Input (2000 char limit, min 40dp height, grows up to 6 lines, cursor uses primaryTextColor)
+                    BasicTextField(
                         value = contentValue,
                         onValueChange = { newValue ->
-                            if (isEditMode) {
+                            if (newValue.text.length <= 2000) {
                                 contentValue = handleSmartContentValueChange(contentValue, newValue)
                             }
                         },
-                        readOnly = !isEditMode,
-                        placeholder = { 
-                            Text(
-                                text = "Details",
-                                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Normal)
-                            ) 
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            focusedIndicatorColor = Color.Transparent,
-                            focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = secondaryTextColor
                         ),
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Normal)
+                        cursorBrush = SolidColor(primaryTextColor),
+                        maxLines = 6,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = { keyboardController?.hide() }
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 40.dp)
+                            .focusRequester(noteFocusRequester),
+                        decorationBox = { innerTextField ->
+                            Box(contentAlignment = Alignment.TopStart) {
+                                if (content.isEmpty()) {
+                                    Text(
+                                        text = "Add note",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = faintColor
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        }
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
-
-            val displayDateText = remember(selectedDueDate, pillDateFormatter) {
-                if (selectedDueDate == null) {
-                    "Set due date"
-                } else if (selectedDueDate == LocalDate.now()) {
-                    "Due today"
-                } else {
-                    "Due on " + selectedDueDate!!.format(pillDateFormatter)
-                }
-            }
-            val hasDateValue = selectedDueDate != null
-
-            val isDueDateToday = selectedDueDate == LocalDate.now()
-
-            LaunchedEffect(isDueDateToday) {
-                if (isDueDateToday) {
-                    selectedRepeat = "once"
-                }
-            }
-
-            val dueGapDays = remember(selectedDueDate) {
-                if (selectedDueDate != null) {
-                    ChronoUnit.DAYS.between(LocalDate.now(), selectedDueDate!!)
-                } else {
-                    0L
-                }
-            }
-
-            val dueGapMonths = remember(selectedDueDate) {
-                if (selectedDueDate != null) {
-                    ChronoUnit.MONTHS.between(YearMonth.from(LocalDate.now()), YearMonth.from(selectedDueDate!!))
-                } else {
-                    0L
-                }
-            }
-
-            val isLessSevenDaysGap = dueGapDays in 1L..6L
-            val isNoDueDate = selectedDueDate == null
-
-            LaunchedEffect(isLessSevenDaysGap) {
-                if (isLessSevenDaysGap && selectedRepeat != "once" && selectedRepeat != "daily" && selectedRepeat != "Custom") {
-                    selectedRepeat = "once"
-                }
-            }
-
-            val customRangeText = remember(dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis) {
-                val start = dateRangePickerState.selectedStartDateMillis?.let {
-                    Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate().format(pillDateFormatter)
-                }
-                val end = dateRangePickerState.selectedEndDateMillis?.let {
-                    Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate().format(pillDateFormatter)
-                }
-                if (start != null && end != null) {
-                    "$start - $end"
-                } else {
-                    start ?: "Custom"
-                }
-            }
-
-            val repeatPillText = remember(selectedRepeat, customRangeText) {
-                when {
-                    selectedRepeat?.startsWith("weekly") == true -> {
-                        if (selectedRepeat!!.contains(":")) {
-                            val dayNames = selectedRepeat!!.substringAfter(":").split(",")
-                                .mapNotNull {
-                                    try {
-                                        DayOfWeek.valueOf(it.trim().uppercase()).name.lowercase().replaceFirstChar { c -> c.uppercase() }.take(3)
-                                    } catch (e: Exception) { null }
-                                }
-                            if (dayNames.isNotEmpty()) "Weekly (${dayNames.joinToString(", ")})" else "Weekly"
-                        } else {
-                            val defaultDay = LocalDate.now().dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }.take(3)
-                            "Weekly ($defaultDay)"
-                        }
-                    }
-                    selectedRepeat?.startsWith("monthly") == true -> {
-                        if (selectedRepeat!!.contains(":")) {
-                            val dayNums = selectedRepeat!!.substringAfter(":").split(",")
-                                .mapNotNull { it.trim().toIntOrNull() }
-                                .sorted()
-                            val formatted = dayNums.map { num ->
-                                val suffix = when (num) {
-                                    1, 21, 31 -> "st"
-                                    2, 22 -> "nd"
-                                    3, 23 -> "rd"
-                                    else -> "th"
-                                }
-                                "$num$suffix"
-                            }
-                            if (formatted.isNotEmpty()) "Monthly (${formatted.joinToString(", ")})" else "Monthly"
-                        } else {
-                            val defaultNum = LocalDate.now().dayOfMonth
-                            "Monthly (${defaultNum}th)"
-                        }
-                    }
-                    selectedRepeat?.lowercase()?.startsWith("yearly") == true -> {
-                        val monthDayPart = if (selectedRepeat!!.contains(":")) {
-                            val parts = selectedRepeat!!.substringAfter(":").split("-")
-                            if (parts.size == 2) {
-                                val m = try { Month.valueOf(parts[0].uppercase()).name.lowercase().replaceFirstChar { it.uppercase() }.take(3) } catch (e: Exception) { "Oct" }
-                                "${parts[1]} $m"
-                            } else {
-                                "15 Oct"
-                            }
-                        } else {
-                            val now = LocalDate.now()
-                            "${now.dayOfMonth} ${now.month.name.lowercase().replaceFirstChar { it.uppercase() }.take(3)}"
-                        }
-                        "Yearly ($monthDayPart)"
-                    }
-                    selectedRepeat == "Custom" -> customRangeText
-                    selectedRepeat == null || selectedRepeat == "once" -> "Repeat"
-                    else -> selectedRepeat!!
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            HorizontalDivider(
+            // --- CARD 2: OPTION BLOCK (Due date, Remind me, Repeat, Alarm) ---
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                thickness = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Task Properties (Due Date, Remind Me, Repeat, Alarm) rendered line-by-line
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                shape = RoundedCornerShape(14.dp),
+                color = cardBgColor
             ) {
-                // 1. Due Date Row
-                Box {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // 1. Due Date Row
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { if (isEditMode) isDateMenuExpanded = true }
-                            .padding(vertical = 6.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .heightIn(min = 56.dp)
+                            .clickable {
+                                keyboardController?.hide()
+                                isDueDateMenuExpanded = true
+                            }
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.CalendarMonth,
-                            contentDescription = "Due Date",
-                            modifier = Modifier.size(20.dp),
-                            tint = if (hasDateValue) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = displayDateText,
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontSize = 14.sp,
-                                fontWeight = if (hasDateValue) FontWeight.SemiBold else FontWeight.Normal
-                            ),
-                            color = if (hasDateValue) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.weight(1f)
-                        )
-                        if (hasDateValue && isEditMode) {
-                            IconButton(
-                                onClick = { selectedDueDate = null },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Clear Date",
-                                    modifier = Modifier.size(16.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                )
-                            }
-                        }
-                    }
-
-                    DropdownMenu(
-                        expanded = isDateMenuExpanded,
-                        onDismissRequest = { isDateMenuExpanded = false },
-                        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-                    ) {
-                        val todayDate = LocalDate.now()
-                        val todayFormatted = todayDate.format(pillDateFormatter)
-                        DropdownMenuItem(
-                            text = { Text("Today ($todayFormatted)") },
-                            onClick = {
-                                isDateMenuExpanded = false
-                                selectedDueDate = todayDate
-                            }
-                        )
-                        val tomorrow = todayDate.plusDays(1)
-                        val tomorrowFormatted = tomorrow.format(pillDateFormatter)
-                        DropdownMenuItem(
-                            text = { Text("Tomorrow ($tomorrowFormatted)") },
-                            onClick = {
-                                isDateMenuExpanded = false
-                                selectedDueDate = tomorrow
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Pick a date") },
-                            onClick = {
-                                isDateMenuExpanded = false
-                                showDatePicker = true
-                            }
-                        )
-                    }
-                }
-
-                // 2. Remind Me Row
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { if (isEditMode) showRemindMePicker = true }
-                        .padding(vertical = 6.dp, horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AccessTime,
-                        contentDescription = "Remind Me",
-                        modifier = Modifier.size(20.dp),
-                        tint = if (selectedTime != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = if (selectedTime != null) "Reminder at ${selectedTime!!.lowercase()}" else "Remind me",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = 14.sp,
-                            fontWeight = if (selectedTime != null) FontWeight.SemiBold else FontWeight.Normal
-                        ),
-                        color = if (selectedTime != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (selectedTime != null && isEditMode) {
-                        IconButton(
-                            onClick = { selectedTime = null },
-                            modifier = Modifier.size(24.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Clear Time",
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                imageVector = Icons.Outlined.CalendarMonth,
+                                contentDescription = "Due date",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = "Due date",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = primaryTextColor
                             )
                         }
+                        Text(
+                            text = selectedDueDate?.format(displayDateFormatter) ?: "None",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = if (selectedDueDate != null) primaryTextColor else faintColor
+                        )
                     }
-                }
 
-                // 3. Repeat Row
-                Box {
-                    val isRepeatSelected = selectedRepeat != null && selectedRepeat != "once"
+                    HorizontalDivider(thickness = 1.dp, color = dividerColor)
+
+                    // 2. Remind Me Row
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { if (isEditMode && !isDueDateToday) isRepeatMenuExpanded = true }
-                            .padding(vertical = 6.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .heightIn(min = 56.dp)
+                            .clickable {
+                                keyboardController?.hide()
+                                showRemindMePicker = true
+                            }
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Repeat,
-                            contentDescription = "Repeat",
-                            modifier = Modifier.size(20.dp),
-                            tint = if (isRepeatSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (isDueDateToday) 0.3f else 0.5f)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = repeatPillText,
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontSize = 14.sp,
-                                fontWeight = if (isRepeatSelected) FontWeight.SemiBold else FontWeight.Normal
-                            ),
-                            color = if (isRepeatSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (isDueDateToday) 0.3f else 0.6f),
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.weight(1f)
-                        )
-                        if (isRepeatSelected && isEditMode && !isDueDateToday) {
-                            IconButton(
-                                onClick = { selectedRepeat = "once" },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Clear Repeat",
-                                    modifier = Modifier.size(16.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                )
-                            }
-                        }
-                    }
-
-                    DropdownMenu(
-                        expanded = isRepeatMenuExpanded,
-                        onDismissRequest = { isRepeatMenuExpanded = false },
-                        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-                    ) {
-                        repeatOptions.forEach { option ->
-                            val isOptionEnabled = when {
-                                isNoDueDate -> {
-                                    option != "once"
-                                }
-                                isLessSevenDaysGap -> {
-                                    option == "once" || option == "daily" || option == "Custom"
-                                }
-                                dueGapMonths < 1L -> {
-                                    option != "monthly" && option != "Yearly"
-                                }
-                                dueGapMonths < 12L -> {
-                                    option != "Yearly"
-                                }
-                                else -> true
-                            }
-
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = option,
-                                        color = if (isOptionEnabled) {
-                                            MaterialTheme.colorScheme.onSurface
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
-                                        }
-                                    )
-                                },
-                                enabled = isOptionEnabled,
-                                onClick = {
-                                    if (isOptionEnabled) {
-                                        isRepeatMenuExpanded = false
-                                        if (option == "Custom") {
-                                            showDateRangePicker = true
-                                        } else if (option == "weekly") {
-                                            showWeeklyDaysPicker = true
-                                        } else if (option == "monthly") {
-                                            showMonthlyDayPicker = true
-                                        } else if (option.equals("Yearly", ignoreCase = true)) {
-                                            showYearlyDatePicker = true
-                                        } else {
-                                            selectedRepeat = option
-                                        }
-                                    }
-                                }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Notifications,
+                                contentDescription = "Remind me",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = "Remind me",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = primaryTextColor
                             )
                         }
-                    }
-                }
+                        val remindText = if (selectedTime != null) {
+                            val datePart = selectedDueDate ?: LocalDate.now()
+                            "${datePart.format(DateTimeFormatter.ofPattern("EEE, d MMM"))}, ${selectedTime!!.lowercase()}"
+                        } else "None"
 
-                // 4. Alarm Row
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { if (isEditMode) isAlarmEnabled = !isAlarmEnabled }
-                        .padding(vertical = 6.dp, horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = if (isAlarmEnabled) Icons.Default.NotificationsActive else Icons.Default.NotificationsNone,
-                        contentDescription = "Alarm",
-                        modifier = Modifier.size(20.dp),
-                        tint = if (isAlarmEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        text = if (isAlarmEnabled) "Alarm ON" else "Alarm",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = 14.sp,
-                            fontWeight = if (isAlarmEnabled) FontWeight.SemiBold else FontWeight.Normal
-                        ),
-                        color = if (isAlarmEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.weight(1f)
-                    )
+                        Text(
+                            text = remindText,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = if (selectedTime != null) primaryTextColor else faintColor
+                        )
+                    }
+
+                    HorizontalDivider(thickness = 1.dp, color = dividerColor)
+
+                    // 3. Repeat Row
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp)
+                            .clickable {
+                                keyboardController?.hide()
+                                isRepeatMenuExpanded = true
+                            }
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Repeat,
+                                contentDescription = "Repeat",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column {
+                                Text(
+                                    text = "Repeat",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = primaryTextColor
+                                )
+                                if (selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") {
+                                    val untilText = if (selectedRepeat == "Custom") {
+                                        ""
+                                    } else if (selectedDueDate != null) {
+                                        "repeats until ${selectedDueDate!!.format(DateTimeFormatter.ofPattern("d MMM yyyy"))}"
+                                    } else {
+                                        "repeats forever"
+                                    }
+
+                                    if (untilText.isNotBlank()) {
+                                        Text(
+                                            text = untilText,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Normal,
+                                            color = secondaryTextColor
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        Text(
+                            text = when (selectedRepeat) {
+                                "daily" -> "Daily"
+                                "weekly" -> "Weekly"
+                                "monthly" -> "Monthly"
+                                "Yearly" -> "Yearly"
+                                "Custom" -> "Custom"
+                                else -> "None"
+                            },
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = if (selectedRepeat != null && selectedRepeat != "once") primaryTextColor else faintColor
+                        )
+                    }
+
+                    HorizontalDivider(thickness = 1.dp, color = dividerColor)
+
+                    // 4. Alarm Row
+                    val isAlarmDimmed = selectedTime == null
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp)
+                            .alpha(if (isAlarmDimmed) 0.45f else 1.0f)
+                            .clickable(enabled = !isAlarmDimmed) { isAlarmEnabled = !isAlarmEnabled }
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Notifications,
+                                contentDescription = "Alarm",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Column {
+                                Text(
+                                    text = "Alarm",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = primaryTextColor
+                                )
+                                if (isAlarmDimmed) {
+                                    Text(
+                                        text = "Set a remind time first",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = faintColor
+                                    )
+                                }
+                            }
+                        }
+
+                        Switch(
+                            checked = isAlarmEnabled && !isAlarmDimmed,
+                            onCheckedChange = { if (!isAlarmDimmed) isAlarmEnabled = it },
+                            enabled = !isAlarmDimmed,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = tealAccent,
+                                uncheckedThumbColor = Color.White,
+                                uncheckedTrackColor = toggleOffColor
+                            )
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            // --- CARD 3: ADD ATTACHMENT ---
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                color = cardBgColor
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 36.dp)
+                            .clickable { attachmentLauncher.launch(arrayOf("*/*")) },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.AttachFile,
+                            contentDescription = "Add attachment",
+                            tint = primaryTextColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(
+                            text = "Add attachment",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = primaryTextColor
+                        )
+                    }
 
-            AttachmentList(
-                context = context,
-                attachedFiles = attachedFiles,
-                onRemove = { index ->
-                    attachedFiles = attachedFiles.filterIndexed { i, _ -> i != index }
-                },
-                onAddClick = { attachmentLauncher.launch(arrayOf("*/*")) },
-                isReadOnly = !isEditMode
-            )
+                    if (attachedFiles.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        AttachmentList(
+                            context = context,
+                            attachedFiles = attachedFiles,
+                            onRemove = { index ->
+                                attachedFiles = attachedFiles.filterIndexed { i, _ -> i != index }
+                            },
+                            onAddClick = { attachmentLauncher.launch(arrayOf("*/*")) },
+                            isReadOnly = false
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 
@@ -920,9 +684,9 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
     if (showDatePicker) {
         val curDate = selectedDueDate ?: LocalDate.now()
 
-        TaskDatePickerDialog(
-            initialDate = curDate,
-            allReminders = emptyList(),
+        DiBadgeDatePicker(
+            selectedDate = curDate,
+            minDate = LocalDate.now(),
             onDateSelected = { chosenDate ->
                 selectedDueDate = chosenDate
                 showDatePicker = false
@@ -955,176 +719,344 @@ fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldV
     if (showMonthlyDayPicker) {
         val initialDayNums = if (selectedRepeat?.startsWith("monthly:") == true) {
             selectedRepeat!!.substringAfter(":").split(",")
-                .mapNotNull { it.trim().toIntOrNull() }
-                .toSet().ifEmpty { setOf(LocalDate.now().dayOfMonth) }
+                .mapNotNull { it.trim().toIntOrNull() }.toSet().ifEmpty { setOf(LocalDate.now().dayOfMonth) }
         } else {
             setOf(LocalDate.now().dayOfMonth)
         }
 
         MonthlyDayPickerDialog(
             initialDayNumbers = initialDayNums,
-            onDaysSelected = { chosenDays ->
-                val dayNumsStr = chosenDays.sorted().joinToString(",")
-                selectedRepeat = "monthly:$dayNumsStr"
+            onDaysSelected = { chosenNums ->
+                val dayStr = chosenNums.joinToString(",")
+                selectedRepeat = "monthly:$dayStr"
                 showMonthlyDayPicker = false
             },
             onDismiss = { showMonthlyDayPicker = false }
         )
     }
 
+    if (showDateRangePicker) {
+        val curStart = selectedDueDate ?: LocalDate.now()
+        val curEnd = selectedDueDate ?: LocalDate.now().plusDays(6)
+
+        DiBadgeDateRangePicker(
+            initialStartDate = curStart,
+            initialEndDate = curEnd,
+            minDate = LocalDate.now(),
+            maxDate = selectedDueDate,
+            onRangeSelected = { start, end ->
+                showDateRangePicker = false
+                selectedRepeat = "Custom"
+                if (selectedDueDate == null) {
+                    selectedDueDate = end
+                }
+            },
+            onDismiss = { showDateRangePicker = false }
+        )
+    }
+
     if (showYearlyDatePicker) {
-        val (initialMonth, initialDayNum) = if (selectedRepeat?.lowercase()?.startsWith("yearly:") == true) {
+        val now = LocalDate.now()
+        val initialMonth = if (selectedRepeat?.startsWith("yearly:") == true) {
             val parts = selectedRepeat!!.substringAfter(":").split("-")
             if (parts.size == 2) {
-                val m = try { Month.valueOf(parts[0].uppercase()) } catch (e: Exception) { LocalDate.now().month }
-                val d = parts[1].toIntOrNull() ?: LocalDate.now().dayOfMonth
-                m to d
-            } else {
-                LocalDate.now().month to LocalDate.now().dayOfMonth
-            }
-        } else {
-            LocalDate.now().month to LocalDate.now().dayOfMonth
-        }
+                try { Month.valueOf(parts[0].uppercase()) } catch (e: Exception) { now.month }
+            } else now.month
+        } else now.month
+
+        val initialDay = if (selectedRepeat?.startsWith("yearly:") == true) {
+            val parts = selectedRepeat!!.substringAfter(":").split("-")
+            if (parts.size == 2) {
+                parts[1].toIntOrNull() ?: now.dayOfMonth
+            } else now.dayOfMonth
+        } else now.dayOfMonth
 
         YearlyDatePickerDialog(
             initialMonth = initialMonth,
-            initialDayNumber = initialDayNum,
-            onDateSelected = { chosenMonth, chosenDayNum ->
-                selectedRepeat = "yearly:${chosenMonth.name}-$chosenDayNum"
+            initialDayNumber = initialDay,
+            onDateSelected = { chosenMonth, chosenDay ->
+                selectedRepeat = "yearly:${chosenMonth.name.lowercase()}-$chosenDay"
                 showYearlyDatePicker = false
             },
             onDismiss = { showYearlyDatePicker = false }
         )
     }
 
-    if (showDateRangePicker) {
-        DatePickerDialog(
-            onDismissRequest = { 
-                showDateRangePicker = false
-                if (dateRangePickerState.selectedStartDateMillis == null || dateRangePickerState.selectedEndDateMillis == null) {
-                    if (selectedRepeat == "Custom") {
-                        selectedRepeat = "once"
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = { 
-                        selectedRepeat = "Custom"
-                        showDateRangePicker = false 
-                    },
-                    enabled = dateRangePickerState.selectedStartDateMillis != null && 
-                             dateRangePickerState.selectedEndDateMillis != null
-                ) { Text("OK") }
-            },
-            dismissButton = {
-                TextButton(onClick = { 
-                    showDateRangePicker = false
-                    if (dateRangePickerState.selectedStartDateMillis == null || dateRangePickerState.selectedEndDateMillis == null) {
-                        if (selectedRepeat == "Custom") {
-                            selectedRepeat = "once"
-                        }
-                    }
-                }) { Text("Cancel") }
-            }
-        ) {
-            DateRangePicker(
-                state = dateRangePickerState,
-                title = { Text(text = "Select Range", modifier = Modifier.padding(start = 16.dp, top = 16.dp), style = MaterialTheme.typography.labelMedium) },
-                headline = {
-                    val startDateText = dateRangePickerState.selectedStartDateMillis?.let { formatMillisToDate(it) }
-                    val endDateText = dateRangePickerState.selectedEndDateMillis?.let { formatMillisToDate(it) }
-                    Row(
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = startDateText ?: "Start Date",
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            color = if (startDateText != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                        )
-                        Text(text = " - ", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-                        Text(
-                            text = endDateText ?: "End Date",
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            color = if (endDateText != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                        )
-                    }
-                },
-                showModeToggle = false,
-                modifier = Modifier.weight(1f)
-            )
-        }
+    if (isDueDateMenuExpanded) {
+        DueDateBottomSheet(
+            selectedDueDate = selectedDueDate,
+            onTodaySelect = { selectedDueDate = LocalDate.now() },
+            onTomorrowSelect = { selectedDueDate = LocalDate.now().plusDays(1) },
+            onPickDateSelect = { showDatePicker = true },
+            onRemoveDueDateSelect = { selectedDueDate = null },
+            onDismiss = { isDueDateMenuExpanded = false }
+        )
     }
 
-    if (showDeleteConfirmation) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirmation = false },
-            title = { Text("Confirm Delete") },
-            text = { Text("Are you sure you want to delete this To Do?") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDeleteConfirmation = false
-                    reminderToEdit?.let { onDelete(it) }
-                }) { Text("Delete", color = errorColor) }
+    if (isRepeatMenuExpanded) {
+        RepeatOptionsBottomSheet(
+            selectedOption = selectedRepeat,
+            onOptionSelected = { option ->
+                when (option) {
+                    "Custom" -> showDateRangePicker = true
+                    "Weekly" -> showWeeklyDaysPicker = true
+                    "Monthly" -> showMonthlyDayPicker = true
+                    "Yearly" -> showYearlyDatePicker = true
+                    "Does not repeat" -> selectedRepeat = "once"
+                    else -> selectedRepeat = option.lowercase()
+                }
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirmation = false }) { Text("Cancel") }
-            }
+            onDismiss = { isRepeatMenuExpanded = false }
         )
     }
 
     if (showUnsavedChangesDialog) {
         AlertDialog(
             onDismissRequest = { showUnsavedChangesDialog = false },
-            title = { Text("Unsaved Changes") },
-            text = { Text("You have unsaved changes. Do you want to save them before leaving?") },
+            title = { Text("Discard changes?") },
+            text = { Text("You have unsaved changes. Are you sure you want to discard them?") },
             confirmButton = {
-                TextButton(onClick = {
-                    showUnsavedChangesDialog = false
-                    triedToSave = true
-                    if (isTextValid) {
-                        val dueDate = selectedDueDate
-
-                        val startDate = if (selectedRepeat == "Custom") {
-                            dateRangePickerState.selectedStartDateMillis?.let {
-                                Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
-                            } ?: dueDate ?: LocalDate.now()
-                        } else {
-                            LocalDate.now()
-                        }
-
-                        val endDate = if (selectedRepeat == "Custom") {
-                            dateRangePickerState.selectedEndDateMillis?.let {
-                                Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
-                            } ?: dueDate
-                        } else {
-                            dueDate
-                        }
-
-                        onSave(
-                            title,
-                            content,
-                            dueDate,
-                            startDate,
-                            endDate,
-                            selectedRepeat ?: "once",
-                            selectedTime,
-                            isAlarmEnabled,
-                            attachedFiles.map { it.toString() },
-                            reminderToEdit?.id ?: 0
-                        )
+                TextButton(
+                    onClick = {
+                        showUnsavedChangesDialog = false
+                        onCancel()
                     }
-                }) { Text("Save") }
+                ) {
+                    Text("Discard", color = errorColor, fontWeight = FontWeight.Bold)
+                }
             },
             dismissButton = {
-                TextButton(onClick = {
-                    showUnsavedChangesDialog = false
-                    onCancel()
-                }) { Text("Discard") }
+                TextButton(onClick = { showUnsavedChangesDialog = false }) {
+                    Text("Cancel")
+                }
             }
         )
+    }
+
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("Delete task?") },
+            text = { Text("Are you sure you want to delete this task?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirmation = false
+                        if (reminderToEdit != null) {
+                            onDelete(reminderToEdit)
+                        }
+                    }
+                ) {
+                    Text("Delete", color = errorColor, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DueDateBottomSheet(
+    selectedDueDate: LocalDate?,
+    onTodaySelect: () -> Unit,
+    onTomorrowSelect: () -> Unit,
+    onPickDateSelect: () -> Unit,
+    onRemoveDueDateSelect: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val todayDate = remember { LocalDate.now() }
+    val tomorrowDate = remember { todayDate.plusDays(1) }
+    val dateDisplayFormatter = remember { DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault()) }
+
+    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
+    val sheetBgColor = if (isDark) Color(0xFF2C2C2E) else Color(0xFFFFFFFF)
+    val primaryTextColor = if (isDark) Color(0xFFFFFFFF) else Color(0xFF111318)
+    val secondaryTextColor = if (isDark) Color(0xFF8A8A8E) else Color(0xFF6B7078)
+    val errorColor = Color(0xFFFF8A80)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(),
+        containerColor = sheetBgColor,
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(color = if (isDark) Color(0xFF5A5A5E) else Color(0xFFC9CCD4))
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 12.dp)
+        ) {
+            // Row 1: Today
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .clickable {
+                        onTodaySelect()
+                        onDismiss()
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Today",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryTextColor
+                )
+                Text(
+                    text = todayDate.format(dateDisplayFormatter),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = secondaryTextColor
+                )
+            }
+
+            // Row 2: Tomorrow
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .clickable {
+                        onTomorrowSelect()
+                        onDismiss()
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Tomorrow",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryTextColor
+                )
+                Text(
+                    text = tomorrowDate.format(dateDisplayFormatter),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = secondaryTextColor
+                )
+            }
+
+            // Row 3: Pick a date
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .clickable {
+                        onDismiss()
+                        onPickDateSelect()
+                    },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Pick a date",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryTextColor
+                )
+            }
+
+            // Row 4: Remove due date (if set)
+            if (selectedDueDate != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .clickable {
+                            onRemoveDueDateSelect()
+                            onDismiss()
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Remove due date",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = errorColor
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RepeatOptionsBottomSheet(
+    selectedOption: String?,
+    onOptionSelected: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val options = listOf(
+        "Does not repeat",
+        "Daily",
+        "Weekly",
+        "Monthly",
+        "Yearly",
+        "Custom"
+    )
+
+    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
+    val sheetBgColor = if (isDark) Color(0xFF2C2C2E) else Color(0xFFFFFFFF)
+    val primaryTextColor = if (isDark) Color(0xFFFFFFFF) else Color(0xFF111318)
+    val checkColor = if (isDark) Color(0xFF5CC9C0) else Color(0xFF17645E)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(),
+        containerColor = sheetBgColor,
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(color = if (isDark) Color(0xFF5A5A5E) else Color(0xFFC9CCD4))
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 12.dp)
+        ) {
+            options.forEach { option ->
+                val isSelected = (selectedOption == null && option == "Does not repeat") ||
+                        (selectedOption?.equals(option, ignoreCase = true) == true) ||
+                        (selectedOption == "once" && option == "Does not repeat")
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .clickable {
+                            onOptionSelected(option)
+                            onDismiss()
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = option,
+                        fontSize = 16.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = primaryTextColor
+                    )
+                    if (isSelected) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Selected",
+                            tint = checkColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+        }
     }
 }

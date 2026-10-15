@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.fabxdi.dibadge.data.LeaveEntity
 import com.fabxdi.dibadge.data.OvertimeEntity
+import com.fabxdi.dibadge.ui.components.DiBadgeTimePicker
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import java.time.Duration
 import java.time.Instant
@@ -318,78 +319,31 @@ fun OvertimeFormScreen(
     }
 
     if (showStartTimePicker) {
-        val isToday = selectedDate == LocalDate.now()
-        val selectedStartTime = LocalTime.of(startTimePickerState.hour, startTimePickerState.minute)
-        val isStartTimeValid = !isToday || !selectedStartTime.isAfter(LocalTime.now())
+        val curStart = startTime ?: LocalTime.of(17, 0)
 
-        AlertDialog(
-            onDismissRequest = { showStartTimePicker = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        startTime = selectedStartTime
-                        showStartTimePicker = false
-                        showEndTimePicker = true
-                    },
-                    enabled = isStartTimeValid
-                ) { Text("Next") }
+        DiBadgeTimePicker(
+            initialTime = curStart,
+            title = "Select Start Time",
+            onTimeSelected = { chosenTime ->
+                startTime = chosenTime
+                showStartTimePicker = false
+                showEndTimePicker = true
             },
-            dismissButton = {
-                TextButton(onClick = { showStartTimePicker = false }) { Text("Cancel") }
-            },
-            text = {
-                Column {
-                    Text("Select Start Time", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 16.dp))
-                    TimePicker(state = startTimePickerState)
-                    if (!isStartTimeValid) {
-                        Text(
-                            text = "Cannot select future time for today",
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                    }
-                }
-            }
+            onDismiss = { showStartTimePicker = false }
         )
     }
 
     if (showEndTimePicker) {
-        val isToday = selectedDate == LocalDate.now()
-        val selectedEndTime = LocalTime.of(endTimePickerState.hour, endTimePickerState.minute)
-        // For today, end time cannot be in the future, AND it cannot be before start time (as that would mean tomorrow)
-        val isEndTimeInFuture = isToday && selectedEndTime.isAfter(LocalTime.now())
-        val isEndTimeNextDay = isToday && startTime != null && selectedEndTime.isBefore(startTime!!)
-        val isEndTimeValid = !isEndTimeInFuture && !isEndTimeNextDay
+        val curEnd = endTime ?: LocalTime.of(19, 0)
 
-        AlertDialog(
-            onDismissRequest = { showEndTimePicker = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        endTime = selectedEndTime
-                        showEndTimePicker = false
-                    },
-                    enabled = isEndTimeValid
-                ) { Text("OK") }
+        DiBadgeTimePicker(
+            initialTime = curEnd,
+            title = "Select End Time",
+            onTimeSelected = { chosenTime ->
+                endTime = chosenTime
+                showEndTimePicker = false
             },
-            dismissButton = {
-                TextButton(onClick = { showEndTimePicker = false }) { Text("Cancel") }
-            },
-            text = {
-                Column {
-                    Text("Select End Time", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 16.dp))
-                    TimePicker(state = endTimePickerState)
-                    if (!isEndTimeValid) {
-                        Text(
-                            text = if (isEndTimeNextDay) "End time cannot be before start time for today" else "Cannot select future time for today",
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                    }
-                }
-            }
+            onDismiss = { showEndTimePicker = false }
         )
     }
 

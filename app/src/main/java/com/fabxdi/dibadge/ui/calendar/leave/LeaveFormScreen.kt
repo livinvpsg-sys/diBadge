@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.fabxdi.dibadge.data.LeaveEntity
+import com.fabxdi.dibadge.ui.components.DiBadgeDateRangePicker
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.FilePickerUtils
 import java.time.Instant
@@ -642,65 +643,26 @@ fun LeaveFormScreen(
         }
     }
 
-    // Date Range Picker Dialog
+    // Date Range Picker Sheet
     if (showDateRangePicker) {
-        DatePickerDialog(
-            onDismissRequest = { showDateRangePicker = false },
-            confirmButton = {
-                TextButton(onClick = { showDateRangePicker = false }) {
-                    Text("OK")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDateRangePicker = false }) {
-                    Text("Cancel")
-                }
-            }
-        ) {
-            DateRangePicker(
-                state = dateRangePickerState,
-                title = {
-                    Text(
-                        text = "Select Range",
-                        modifier = Modifier.padding(start = 16.dp, top = 16.dp),
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                },
-                headline = {
-                    val startDateText = dateRangePickerState.selectedStartDateMillis?.let {
-                        formatMillisToDate(it)
-                    }
-                    val endDateText = dateRangePickerState.selectedEndDateMillis?.let {
-                        formatMillisToDate(it)
-                    }
-
-                    Row(
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = startDateText ?: "Start Date",
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            color = if (startDateText != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                        )
-                        Text(
-                            text = " - ",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                        )
-                        Text(
-                            text = endDateText ?: "End Date",
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            color = if (endDateText != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                        )
-                    }
-                },
-                showModeToggle = false,
-                modifier = Modifier.weight(1f)
-            )
+        val curStart = dateRangePickerState.selectedStartDateMillis?.let {
+            Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
         }
+        val curEnd = dateRangePickerState.selectedEndDateMillis?.let {
+            Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
+        }
+
+        DiBadgeDateRangePicker(
+            initialStartDate = curStart,
+            initialEndDate = curEnd,
+            onRangeSelected = { start, end ->
+                showDateRangePicker = false
+                val startMillis = start.atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli()
+                val endMillis = end.atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli()
+                dateRangePickerState.setSelection(startMillis, endMillis)
+            },
+            onDismiss = { showDateRangePicker = false }
+        )
     }
 
     if (showConfirmationDialog) {
