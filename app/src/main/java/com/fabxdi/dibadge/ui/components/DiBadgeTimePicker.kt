@@ -1,7 +1,6 @@
 package com.fabxdi.dibadge.ui.components
 
 import android.text.format.DateFormat
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
@@ -134,7 +133,8 @@ fun DiBadgeTimePicker(
                         onSelectedIndexChanged = { selectedHour24 = it },
                         modifier = Modifier.width(80.dp),
                         tealColor = tealAccent,
-                        primaryColor = primaryTextColor
+                        primaryColor = primaryTextColor,
+                        contentDescriptionLabel = "Hour"
                     )
 
                     Spacer(modifier = Modifier.width(12.dp))
@@ -161,16 +161,17 @@ fun DiBadgeTimePicker(
                         onSelectedIndexChanged = { selectedMinute = it * minuteStep },
                         modifier = Modifier.width(80.dp),
                         tealColor = tealAccent,
-                        primaryColor = primaryTextColor
+                        primaryColor = primaryTextColor,
+                        contentDescriptionLabel = "Minute"
                     )
                 } else {
                     // 12h Mode: Hours (12, 01..11)
                     val hours12List = remember { listOf("12") + (1..11).map { String.format(Locale.getDefault(), "%02d", it) } }
-                    val current12Hour = if (selectedHour24 % 12 == 0) 0 else selectedHour24 % 12
+                    val current12HourIndex = if (selectedHour24 % 12 == 0) 0 else selectedHour24 % 12
 
                     WheelPicker(
                         items = hours12List,
-                        selectedIndex = current12Hour,
+                        selectedIndex = current12HourIndex,
                         onSelectedIndexChanged = { h12Idx ->
                             val isPm = selectedHour24 >= 12
                             val hourNum = if (h12Idx == 0) 0 else h12Idx
@@ -178,7 +179,8 @@ fun DiBadgeTimePicker(
                         },
                         modifier = Modifier.width(72.dp),
                         tealColor = tealAccent,
-                        primaryColor = primaryTextColor
+                        primaryColor = primaryTextColor,
+                        contentDescriptionLabel = "Hour"
                     )
 
                     Spacer(modifier = Modifier.width(8.dp))
@@ -205,7 +207,8 @@ fun DiBadgeTimePicker(
                         onSelectedIndexChanged = { selectedMinute = it * minuteStep },
                         modifier = Modifier.width(72.dp),
                         tealColor = tealAccent,
-                        primaryColor = primaryTextColor
+                        primaryColor = primaryTextColor,
+                        contentDescriptionLabel = "Minute"
                     )
 
                     Spacer(modifier = Modifier.width(16.dp))
@@ -225,30 +228,22 @@ fun DiBadgeTimePicker(
                         isInfinite = false,
                         modifier = Modifier.width(72.dp),
                         tealColor = tealAccent,
-                        primaryColor = primaryTextColor
+                        primaryColor = primaryTextColor,
+                        contentDescriptionLabel = "AM or PM"
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 4. Bottom Row Action Buttons (Cancel on left/right, OK on right)
+            // 4. Bottom Row Action Button: OK on right (NO Cancel button!)
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = onDismiss) {
-                    Text(
-                        text = "Cancel",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = secondaryTextColor
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
                 TextButton(
                     onClick = {
                         val chosenTime = LocalTime.of(
@@ -257,7 +252,8 @@ fun DiBadgeTimePicker(
                         )
                         onTimeSelected(chosenTime)
                         onDismiss()
-                    }
+                    },
+                    modifier = Modifier.heightIn(min = 48.dp)
                 ) {
                     Text(
                         text = "OK",
@@ -279,29 +275,40 @@ fun WheelPicker(
     isInfinite: Boolean = true,
     modifier: Modifier = Modifier,
     tealColor: Color,
-    primaryColor: Color
+    primaryColor: Color,
+    contentDescriptionLabel: String = ""
 ) {
     val itemCount = items.size
     val totalCount = if (isInfinite) itemCount * 1000 else itemCount
-    val initialIndex = if (isInfinite) (totalCount / 2) - ((totalCount / 2) % itemCount) + selectedIndex else selectedIndex
+    val targetIndex = if (isInfinite) {
+        val middleBase = (totalCount / 2) - ((totalCount / 2) % itemCount)
+        val validSelected = selectedIndex.coerceIn(0, itemCount - 1)
+        middleBase + validSelected
+    } else {
+        selectedIndex.coerceIn(0, itemCount - 1)
+    }
 
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex.coerceIn(0, totalCount - 1))
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = targetIndex)
     val flingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
 
+    // Center item is the visible item closest to viewport center
     val centerIndex by remember {
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
             val visibleItems = layoutInfo.visibleItemsInfo
-            if (visibleItems.isEmpty()) initialIndex
-            else {
-                val centerOffset = layoutInfo.viewportStartOffset + layoutInfo.viewportEndOffset / 2
-                visibleItems.minByOrNull { Math.abs((it.offset + it.size / 2) - centerOffset) }?.index ?: initialIndex
+            if (visibleItems.isEmpty()) {
+                targetIndex
+            } else {
+                val viewportCenter = (layoutInfo.viewportStartOffset + layoutInfo.viewportEndOffset) / 2
+                visibleItems.minByOrNull { item ->
+                    Math.abs((item.offset + item.size / 2) - viewportCenter)
+                }?.index ?: targetIndex
             }
         }
     }
 
     LaunchedEffect(centerIndex) {
-        val actualIndex = centerIndex % itemCount
+        val actualIndex = (centerIndex % itemCount + itemCount) % itemCount
         if (actualIndex in items.indices && actualIndex != selectedIndex) {
             onSelectedIndexChanged(actualIndex)
         }
@@ -319,7 +326,7 @@ fun WheelPicker(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             items(totalCount) { index ->
-                val actualIndex = index % itemCount
+                val actualIndex = (index % itemCount + itemCount) % itemCount
                 val distance = Math.abs(index - centerIndex)
 
                 val (fontSize, alphaVal, fontW, colorVal) = when (distance) {
@@ -332,8 +339,16 @@ fun WheelPicker(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp)
+                        .clickable {
+                            // Tapping an item scrolls it to center
+                            onSelectedIndexChanged(actualIndex)
+                        }
                         .semantics {
-                            contentDescription = items[actualIndex]
+                            contentDescription = if (contentDescriptionLabel.isNotBlank()) {
+                                "$contentDescriptionLabel, ${items[actualIndex]}"
+                            } else {
+                                items[actualIndex]
+                            }
                         },
                     contentAlignment = Alignment.Center
                 ) {

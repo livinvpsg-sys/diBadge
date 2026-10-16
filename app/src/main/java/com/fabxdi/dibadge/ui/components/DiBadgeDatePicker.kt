@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -25,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
@@ -41,8 +43,7 @@ fun DiBadgeDatePicker(
     onDateSelected: (LocalDate) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val displayDate = selectedDate ?: LocalDate.now()
-    var pickerMonth by remember { mutableStateOf(YearMonth.from(displayDate)) }
+    var tempSelectedDate by remember { mutableStateOf(selectedDate ?: LocalDate.now()) }
     var showYearPicker by remember { mutableStateOf(false) }
 
     val isDark = MaterialTheme.colorScheme.background.red < 0.5f
@@ -60,23 +61,23 @@ fun DiBadgeDatePicker(
     val headlineFormatter = remember { DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault()) }
     val monthYearFormatter = remember { DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()) }
 
-    val daysInMonth = remember(pickerMonth) { pickerMonth.lengthOfMonth() }
-    val firstDayOfMonth = remember(pickerMonth) { pickerMonth.atDay(1).dayOfWeek.value % 7 }
-
-    val calendarDays = remember(daysInMonth, firstDayOfMonth) {
-        val days = mutableListOf<LocalDate?>()
-        repeat(firstDayOfMonth) { days.add(null) }
-        for (i in 1..daysInMonth) { days.add(pickerMonth.atDay(i)) }
-        while (days.size % 7 != 0) { days.add(null) }
-        days.chunked(7)
-    }
-
     val isTodayDisabled = remember(minDate, maxDate, disabledDates) {
         val today = LocalDate.now()
         (minDate != null && today.isBefore(minDate)) ||
                 (maxDate != null && today.isAfter(maxDate)) ||
                 disabledDates.contains(today)
     }
+
+    // Range of YearMonths: 1990-01 to 2100-12 (1332 months)
+    val startYearMonth = remember { YearMonth.of(1990, 1) }
+    val totalMonthsCount = 1332
+    val initialMonthIndex = remember(tempSelectedDate) {
+        val ym = YearMonth.from(tempSelectedDate)
+        ((ym.year - 1990) * 12) + (ym.monthValue - 1)
+    }
+
+    val monthListState = rememberLazyListState(initialFirstVisibleItemIndex = initialMonthIndex.coerceIn(0, totalMonthsCount - 1))
+    val coroutineScope = rememberCoroutineScope()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -104,7 +105,7 @@ fun DiBadgeDatePicker(
 
             // 2. Selected Date Line ("Fri, 16 Oct")
             Text(
-                text = displayDate.format(headlineFormatter),
+                text = tempSelectedDate.format(headlineFormatter),
                 fontSize = 26.sp,
                 fontWeight = FontWeight.Bold,
                 color = primaryTextColor
@@ -116,175 +117,220 @@ fun DiBadgeDatePicker(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 3. Month Header ("October 2026 ▼")
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { showYearPicker = !showYearPicker },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if (showYearPicker) pickerMonth.year.toString() else pickerMonth.format(monthYearFormatter),
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = primaryTextColor
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Icon(
-                    imageVector = if (showYearPicker) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
-                    contentDescription = "Toggle Year Picker",
-                    tint = primaryTextColor,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
             if (showYearPicker) {
-                // Year Picker: Horizontal scrolling line of years (1990 to 2100)
+                // Vertical Year Picker List (1990 to 2100)
                 val years = remember { (1990..2100).toList() }
-                val currentYearIndex = remember(pickerMonth.year) {
-                    years.indexOf(pickerMonth.year).coerceAtLeast(0)
+                val currentYear = tempSelectedDate.year
+                val currentYearIndex = remember(currentYear) {
+                    years.indexOf(currentYear).coerceAtLeast(0)
                 }
-                val yearListState = rememberLazyListState(initialFirstVisibleItemIndex = currentYearIndex)
+                val yearListState = rememberLazyListState(initialFirstVisibleItemIndex = (currentYearIndex - 2).coerceAtLeast(0))
 
-                LazyRow(
-                    state = yearListState,
-                    flingBehavior = rememberSnapFlingBehavior(lazyListState = yearListState),
+                // Year Picker Header
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(180.dp),
-                    contentPadding = PaddingValues(horizontal = 120.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        .clickable { showYearPicker = false },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    itemsIndexed(years) { index, yearVal ->
-                        val isSelected = yearVal == pickerMonth.year
+                    Text(
+                        text = currentYear.toString(),
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryTextColor
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropUp,
+                        contentDescription = "Close Year Picker",
+                        tint = primaryTextColor,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                LazyColumn(
+                    state = yearListState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(310.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    itemsIndexed(years) { _, yearVal ->
+                        val isSelected = yearVal == currentYear
 
                         Box(
                             modifier = Modifier
-                                .size(width = 72.dp, height = 48.dp)
+                                .fillMaxWidth()
+                                .height(48.dp)
                                 .clickable {
-                                    pickerMonth = pickerMonth.withYear(yearVal)
+                                    val newYM = YearMonth.of(yearVal, tempSelectedDate.monthValue)
+                                    val targetIdx = ((newYM.year - 1990) * 12) + (newYM.monthValue - 1)
                                     showYearPicker = false
+                                    coroutineScope.launch {
+                                        monthListState.scrollToItem(targetIdx.coerceIn(0, totalMonthsCount - 1))
+                                    }
                                 },
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = yearVal.toString(),
-                                fontSize = if (isSelected) 32.sp else 20.sp,
+                                fontSize = if (isSelected) 28.sp else 18.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) tealAccent else secondaryTextColor.copy(alpha = 0.6f)
+                                color = if (isSelected) tealAccent else secondaryTextColor.copy(alpha = 0.7f)
                             )
                         }
                     }
                 }
             } else {
-                // Weekday Row (S M T W T F S)
-                val daysOfWeek = listOf("S", "M", "T", "W", "T", "F", "S")
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    daysOfWeek.forEach { day ->
-                        Text(
-                            text = day,
-                            modifier = Modifier.weight(1f),
-                            textAlign = TextAlign.Center,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Normal,
-                            color = secondaryTextColor
-                        )
-                    }
-                }
+                // Vertical Scrollable Month List (Up and Down)
+                LazyColumn(
+                    state = monthListState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(310.dp)
+                ) {
+                    items(totalMonthsCount) { monthIndex ->
+                        val currentYearMonth = startYearMonth.plusMonths(monthIndex.toLong())
 
-                Spacer(modifier = Modifier.height(8.dp))
+                        val daysInMonth = currentYearMonth.lengthOfMonth()
+                        val firstDayOfMonth = currentYearMonth.atDay(1).dayOfWeek.value % 7
 
-                // Day Grid
-                calendarDays.forEach { week ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp)
-                    ) {
-                        week.forEach { date ->
-                            Box(
+                        val calendarDays = remember(currentYearMonth) {
+                            val days = mutableListOf<LocalDate?>()
+                            repeat(firstDayOfMonth) { days.add(null) }
+                            for (i in 1..daysInMonth) { days.add(currentYearMonth.atDay(i)) }
+                            while (days.size % 7 != 0) { days.add(null) }
+                            days.chunked(7)
+                        }
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 20.dp)
+                        ) {
+                            // Month Header
+                            Row(
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight(),
-                                contentAlignment = Alignment.Center
+                                    .fillMaxWidth()
+                                    .clickable { showYearPicker = true }
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                if (date != null) {
-                                    val isSelected = selectedDate != null && date.isEqual(selectedDate)
-                                    val isToday = date.isEqual(LocalDate.now())
+                                Text(
+                                    text = currentYearMonth.format(monthYearFormatter),
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryTextColor
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = "Toggle Year Picker",
+                                    tint = primaryTextColor,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
 
-                                    val isBeforeMin = minDate != null && date.isBefore(minDate)
-                                    val isAfterMax = maxDate != null && date.isAfter(maxDate)
-                                    val isCustomDisabled = disabledDates.contains(date)
-                                    val isDisabled = isBeforeMin || isAfterMax || isCustomDisabled
+                            Spacer(modifier = Modifier.height(8.dp))
 
-                                    val fullDateDesc = remember(date, isSelected, isToday, isDisabled) {
-                                        buildString {
-                                            append(date.format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", Locale.getDefault())))
-                                            if (isToday) append(", Today")
-                                            if (isSelected) append(", selected")
-                                            if (isDisabled) append(", Unavailable")
-                                        }
-                                    }
+                            // Weekday Header
+                            val daysOfWeek = listOf("S", "M", "T", "W", "T", "F", "S")
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                daysOfWeek.forEach { day ->
+                                    Text(
+                                        text = day,
+                                        modifier = Modifier.weight(1f),
+                                        textAlign = TextAlign.Center,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = secondaryTextColor
+                                    )
+                                }
+                            }
 
-                                    Box(
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .alpha(if (isDisabled) 0.35f else 1.0f)
-                                            .clickable(enabled = !isDisabled) {
-                                                onDateSelected(date)
-                                                onDismiss()
-                                            }
-                                            .semantics {
-                                                contentDescription = fullDateDesc
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (isSelected) {
-                                            Surface(
-                                                modifier = Modifier.fillMaxSize(),
-                                                shape = CircleShape,
-                                                color = Color.Transparent
-                                            ) {
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Days Grid
+                            calendarDays.forEach { week ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(44.dp)
+                                ) {
+                                    week.forEach { date ->
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .fillMaxHeight(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (date != null) {
+                                                val isSelected = date.isEqual(tempSelectedDate)
+                                                val isToday = date.isEqual(LocalDate.now())
+
+                                                val isBeforeMin = minDate != null && date.isBefore(minDate)
+                                                val isAfterMax = maxDate != null && date.isAfter(maxDate)
+                                                val isCustomDisabled = disabledDates.contains(date)
+                                                val isDisabled = isBeforeMin || isAfterMax || isCustomDisabled
+
                                                 Box(
                                                     modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .background(brush = tealGradient, shape = CircleShape),
+                                                        .size(40.dp)
+                                                        .alpha(if (isDisabled) 0.35f else 1.0f)
+                                                        .clickable(enabled = !isDisabled) {
+                                                            tempSelectedDate = date
+                                                        },
                                                     contentAlignment = Alignment.Center
                                                 ) {
-                                                    Text(
-                                                        text = date.dayOfMonth.toString(),
-                                                        fontSize = 15.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = Color.White
-                                                    )
+                                                    if (isSelected) {
+                                                        Surface(
+                                                            modifier = Modifier.fillMaxSize(),
+                                                            shape = CircleShape,
+                                                            color = Color.Transparent
+                                                        ) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .fillMaxSize()
+                                                                    .background(brush = tealGradient, shape = CircleShape),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Text(
+                                                                    text = date.dayOfMonth.toString(),
+                                                                    fontSize = 15.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = Color.White
+                                                                )
+                                                            }
+                                                        }
+                                                    } else if (isToday) {
+                                                        Surface(
+                                                            modifier = Modifier.fillMaxSize(),
+                                                            shape = CircleShape,
+                                                            color = Color.Transparent,
+                                                            border = BorderStroke(1.5.dp, tealAccent)
+                                                        ) {
+                                                            Box(contentAlignment = Alignment.Center) {
+                                                                Text(
+                                                                    text = date.dayOfMonth.toString(),
+                                                                    fontSize = 15.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = tealAccent
+                                                                )
+                                                            }
+                                                        }
+                                                    } else {
+                                                        Text(
+                                                            text = date.dayOfMonth.toString(),
+                                                            fontSize = 15.sp,
+                                                            fontWeight = FontWeight.Normal,
+                                                            color = primaryTextColor
+                                                        )
+                                                    }
                                                 }
                                             }
-                                        } else if (isToday) {
-                                            Surface(
-                                                modifier = Modifier.fillMaxSize(),
-                                                shape = CircleShape,
-                                                color = Color.Transparent,
-                                                border = BorderStroke(1.5.dp, tealAccent)
-                                            ) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    Text(
-                                                        text = date.dayOfMonth.toString(),
-                                                        fontSize = 15.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = tealAccent
-                                                    )
-                                                }
-                                            }
-                                        } else {
-                                            Text(
-                                                text = date.dayOfMonth.toString(),
-                                                fontSize = 15.sp,
-                                                fontWeight = FontWeight.Normal,
-                                                color = primaryTextColor
-                                            )
                                         }
                                     }
                                 }
@@ -294,39 +340,49 @@ fun DiBadgeDatePicker(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            if (!showYearPicker) {
+                Spacer(modifier = Modifier.height(16.dp))
 
-            // Bottom Actions Row: Today (left, bold teal) & Cancel (right, bold grey). NO OK button!
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(
-                    onClick = {
-                        if (!isTodayDisabled) {
-                            onDateSelected(LocalDate.now())
+                // Bottom Actions Row: Today (left, bold teal) & OK (right, bold teal)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = {
+                            if (!isTodayDisabled) {
+                                tempSelectedDate = LocalDate.now()
+                                val targetIdx = ((tempSelectedDate.year - 1990) * 12) + (tempSelectedDate.monthValue - 1)
+                                coroutineScope.launch {
+                                    monthListState.scrollToItem(targetIdx.coerceIn(0, totalMonthsCount - 1))
+                                }
+                            }
+                        },
+                        enabled = !isTodayDisabled,
+                        modifier = Modifier.alpha(if (isTodayDisabled) 0.35f else 1.0f)
+                    ) {
+                        Text(
+                            text = "Today",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = tealAccent
+                        )
+                    }
+
+                    TextButton(
+                        onClick = {
+                            onDateSelected(tempSelectedDate)
                             onDismiss()
                         }
-                    },
-                    enabled = !isTodayDisabled,
-                    modifier = Modifier.alpha(if (isTodayDisabled) 0.35f else 1.0f)
-                ) {
-                    Text(
-                        text = "Today",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = tealAccent
-                    )
-                }
-
-                TextButton(onClick = onDismiss) {
-                    Text(
-                        text = "Cancel",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = secondaryTextColor
-                    )
+                    ) {
+                        Text(
+                            text = "OK",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = tealAccent
+                        )
+                    }
                 }
             }
         }

@@ -122,7 +122,7 @@ fun DiBadgeDateRangePicker(
                         text = " – ",
                         fontSize = if (startDate == null && endDate == null) 22.sp else 26.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (startDate != null) primaryTextColor else secondaryTextColor
+                        color = if (startDate != null && endDate != null) primaryTextColor else secondaryTextColor
                     )
 
                     val endText = endDate?.format(dayMonthFormatter) ?: "End date"
@@ -362,21 +362,14 @@ fun DiBadgeDateRangePicker(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Bottom Actions: Cancel (left, bold grey) & OK (right, bold teal, disabled until both picked)
+            // Bottom Actions: OK on right (NO Cancel button!)
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = onDismiss) {
-                    Text(
-                        text = "Cancel",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = secondaryTextColor
-                    )
-                }
-
                 TextButton(
                     onClick = {
                         if (isOkEnabled) {

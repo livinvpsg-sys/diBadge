@@ -426,7 +426,7 @@ fun ReminderFormScreen(
                             Icon(
                                 imageVector = Icons.Outlined.CalendarMonth,
                                 contentDescription = "Due date",
-                                tint = primaryTextColor,
+                                tint = secondaryTextColor,
                                 modifier = Modifier.size(22.dp)
                             )
                             Spacer(modifier = Modifier.width(16.dp))
@@ -434,13 +434,13 @@ fun ReminderFormScreen(
                                 text = "Due date",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Normal,
-                                color = primaryTextColor
+                                color = secondaryTextColor
                             )
                         }
                         Text(
                             text = selectedDueDate?.format(displayDateFormatter) ?: "None",
                             fontSize = 15.sp,
-                            fontWeight = FontWeight.Normal,
+                            fontWeight = if (selectedDueDate != null) FontWeight.Medium else FontWeight.Normal,
                             color = if (selectedDueDate != null) primaryTextColor else faintColor
                         )
                     }
@@ -467,7 +467,7 @@ fun ReminderFormScreen(
                             Icon(
                                 imageVector = Icons.Outlined.Notifications,
                                 contentDescription = "Remind me",
-                                tint = primaryTextColor,
+                                tint = secondaryTextColor,
                                 modifier = Modifier.size(22.dp)
                             )
                             Spacer(modifier = Modifier.width(16.dp))
@@ -475,7 +475,7 @@ fun ReminderFormScreen(
                                 text = "Remind me",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Normal,
-                                color = primaryTextColor
+                                color = secondaryTextColor
                             )
                         }
                         val remindText = if (selectedTime != null) {
@@ -486,7 +486,7 @@ fun ReminderFormScreen(
                         Text(
                             text = remindText,
                             fontSize = 15.sp,
-                            fontWeight = FontWeight.Normal,
+                            fontWeight = if (selectedTime != null) FontWeight.Medium else FontWeight.Normal,
                             color = if (selectedTime != null) primaryTextColor else faintColor
                         )
                     }
@@ -513,7 +513,7 @@ fun ReminderFormScreen(
                             Icon(
                                 imageVector = Icons.Outlined.Repeat,
                                 contentDescription = "Repeat",
-                                tint = primaryTextColor,
+                                tint = secondaryTextColor,
                                 modifier = Modifier.size(22.dp)
                             )
                             Spacer(modifier = Modifier.width(16.dp))
@@ -522,40 +522,29 @@ fun ReminderFormScreen(
                                     text = "Repeat",
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Normal,
-                                    color = primaryTextColor
+                                    color = secondaryTextColor
                                 )
                                 if (selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") {
-                                    val untilText = if (selectedRepeat == "Custom") {
-                                        ""
-                                    } else if (selectedDueDate != null) {
+                                    val untilText = if (selectedDueDate != null) {
                                         "repeats until ${selectedDueDate!!.format(DateTimeFormatter.ofPattern("d MMM yyyy"))}"
                                     } else {
                                         "repeats forever"
                                     }
 
-                                    if (untilText.isNotBlank()) {
-                                        Text(
-                                            text = untilText,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Normal,
-                                            color = secondaryTextColor
-                                        )
-                                    }
+                                    Text(
+                                        text = untilText,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = secondaryTextColor
+                                    )
                                 }
                             }
                         }
                         Text(
-                            text = when (selectedRepeat) {
-                                "daily" -> "Daily"
-                                "weekly" -> "Weekly"
-                                "monthly" -> "Monthly"
-                                "Yearly" -> "Yearly"
-                                "Custom" -> "Custom"
-                                else -> "None"
-                            },
+                            text = formatRepeatValue(selectedRepeat),
                             fontSize = 15.sp,
-                            fontWeight = FontWeight.Normal,
-                            color = if (selectedRepeat != null && selectedRepeat != "once") primaryTextColor else faintColor
+                            fontWeight = if (selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") FontWeight.Medium else FontWeight.Normal,
+                            color = if (selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") primaryTextColor else faintColor
                         )
                     }
 
@@ -580,7 +569,7 @@ fun ReminderFormScreen(
                             Icon(
                                 imageVector = Icons.Outlined.Notifications,
                                 contentDescription = "Alarm",
-                                tint = primaryTextColor,
+                                tint = secondaryTextColor,
                                 modifier = Modifier.size(22.dp)
                             )
                             Spacer(modifier = Modifier.width(16.dp))
@@ -589,7 +578,7 @@ fun ReminderFormScreen(
                                     text = "Alarm",
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Normal,
-                                    color = primaryTextColor
+                                    color = secondaryTextColor
                                 )
                                 if (isAlarmDimmed) {
                                     Text(
@@ -638,7 +627,7 @@ fun ReminderFormScreen(
                         Icon(
                             imageVector = Icons.Outlined.AttachFile,
                             contentDescription = "Add attachment",
-                            tint = primaryTextColor,
+                            tint = secondaryTextColor,
                             modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(16.dp))
@@ -646,7 +635,7 @@ fun ReminderFormScreen(
                             text = "Add attachment",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Normal,
-                            color = primaryTextColor
+                            color = secondaryTextColor
                         )
                     }
 
@@ -736,12 +725,9 @@ fun ReminderFormScreen(
     }
 
     if (showDateRangePicker) {
-        val curStart = selectedDueDate ?: LocalDate.now()
-        val curEnd = selectedDueDate ?: LocalDate.now().plusDays(6)
-
         DiBadgeDateRangePicker(
-            initialStartDate = curStart,
-            initialEndDate = curEnd,
+            initialStartDate = null,
+            initialEndDate = null,
             minDate = LocalDate.now(),
             maxDate = selectedDueDate,
             onRangeSelected = { start, end ->
@@ -1058,5 +1044,64 @@ fun RepeatOptionsBottomSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
         }
+    }
+}
+
+fun formatOrdinal(n: Int): String {
+    val suffix = when {
+        n in 11..13 -> "th"
+        n % 10 == 1 -> "st"
+        n % 10 == 2 -> "nd"
+        n % 10 == 3 -> "rd"
+        else -> "th"
+    }
+    return "$n$suffix"
+}
+
+fun formatRepeatValue(selectedRepeat: String?): String {
+    if (selectedRepeat == null || selectedRepeat == "once" || selectedRepeat == "Does not repeat") return "None"
+    return when {
+        selectedRepeat == "daily" -> "Every day"
+        selectedRepeat.startsWith("weekly") -> {
+            if (selectedRepeat.contains(":")) {
+                val days = selectedRepeat.substringAfter(":").split(",")
+                    .mapNotNull {
+                        try { DayOfWeek.valueOf(it.trim().uppercase()) } catch (e: Exception) { null }
+                    }
+                if (days.size == 7) "Every day"
+                else if (days.size > 3) {
+                    val firstTwo = days.take(2).joinToString(", ") { it.name.lowercase().replaceFirstChar { c -> c.uppercase() }.take(3) }
+                    "$firstTwo +${days.size - 2} of week"
+                } else if (days.isNotEmpty()) {
+                    val dayStr = days.joinToString(", ") { it.name.lowercase().replaceFirstChar { c -> c.uppercase() }.take(3) }
+                    "$dayStr of week"
+                } else "Weekly"
+            } else "Weekly"
+        }
+        selectedRepeat.startsWith("monthly") -> {
+            if (selectedRepeat.contains(":")) {
+                val dayNums = selectedRepeat.substringAfter(":").split(",")
+                    .mapNotNull { it.trim().toIntOrNull() }.sorted()
+                if (dayNums.size > 3) {
+                    val firstTwo = dayNums.take(2).joinToString(", ") { formatOrdinal(it) }
+                    "$firstTwo +${dayNums.size - 2} of month"
+                } else if (dayNums.isNotEmpty()) {
+                    val numStr = dayNums.joinToString(", ") { formatOrdinal(it) }
+                    "$numStr of month"
+                } else "Monthly"
+            } else "Monthly"
+        }
+        selectedRepeat.startsWith("yearly") -> {
+            if (selectedRepeat.contains(":")) {
+                val parts = selectedRepeat.substringAfter(":").split("-")
+                if (parts.size == 2) {
+                    val m = try { Month.valueOf(parts[0].uppercase()).name.lowercase().replaceFirstChar { it.uppercase() }.take(3) } catch (e: Exception) { "Oct" }
+                    val d = parts[1].toIntOrNull() ?: 15
+                    "${formatOrdinal(d)} $m, every year"
+                } else "Yearly"
+            } else "Yearly"
+        }
+        selectedRepeat == "Custom" -> "Custom"
+        else -> selectedRepeat.lowercase().replaceFirstChar { it.uppercase() }
     }
 }
