@@ -1,11 +1,12 @@
 package com.fabxdi.dibadge.ui.my_tasks
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,14 +17,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.data.ReminderEntity
@@ -32,6 +33,7 @@ import com.fabxdi.dibadge.ui.components.DiBadgeDatePicker
 import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -172,18 +174,27 @@ fun MyTasksScreen(
         }
     }
 
+    LaunchedEffect(overdueCount) {
+        if (overdueCount == 0 && selectedTaskFilter == "Overdue") {
+            selectedTaskFilter = "Today"
+        }
+    }
+
     val assignedCount = 0
 
     val todayFilterLabel = if (uncompletedCount > 0 && selectedDate == LocalDate.now()) "Today $uncompletedCount" else "Today"
     val assignedLabel = if (assignedCount > 0) "Assigned to me $assignedCount" else "Assigned to me"
     val overdueLabel = if (overdueCount > 0) "Overdue $overdueCount" else "Overdue"
 
-    val taskFilters = remember(todayFilterLabel, assignedLabel, overdueLabel) {
-        listOf(
+    val taskFilters = remember(todayFilterLabel, assignedLabel, overdueLabel, overdueCount) {
+        val list = mutableListOf(
             "Today" to todayFilterLabel,
-            "Assigned to me" to assignedLabel,
-            "Overdue" to overdueLabel
+            "Assigned to me" to assignedLabel
         )
+        if (overdueCount > 0) {
+            list.add("Overdue" to overdueLabel)
+        }
+        list
     }
 
     var showDatePicker by remember { mutableStateOf(false) }
@@ -195,6 +206,61 @@ fun MyTasksScreen(
         taskListState.scrollToItem(0)
     }
 
+    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
+    val primaryTextColor = if (isDark) Color(0xFFFFFFFF) else Color(0xFF111318)
+    val secondaryTextColor = if (isDark) Color(0xFF8A8A8E) else Color(0xFF6B7078)
+    val cardBgColor = if (isDark) Color(0xFF2C2C2E) else Color(0xFFFFFFFF)
+
+    // Grouping tasks into 4 Time Groups
+    val anytimeTasks = remember(sortedReminders) {
+        sortedReminders.filter { it.time.isNullOrBlank() }
+    }
+    val morningTasks = remember(sortedReminders) {
+        sortedReminders.filter { reminder ->
+            if (reminder.time.isNullOrBlank()) false else {
+                val t = parseReminderTime(reminder.time)
+                t != LocalTime.MAX && t.hour in 0..11
+            }
+        }
+    }
+    val afternoonTasks = remember(sortedReminders) {
+        sortedReminders.filter { reminder ->
+            if (reminder.time.isNullOrBlank()) false else {
+                val t = parseReminderTime(reminder.time)
+                t != LocalTime.MAX && t.hour in 12..17
+            }
+        }
+    }
+    val eveningTasks = remember(sortedReminders) {
+        sortedReminders.filter { reminder ->
+            if (reminder.time.isNullOrBlank()) false else {
+                val t = parseReminderTime(reminder.time)
+                t != LocalTime.MAX && t.hour in 18..23
+            }
+        }
+    }
+
+    val timeGroups = remember(anytimeTasks, morningTasks, afternoonTasks, eveningTasks) {
+        listOf(
+            "Anytime" to anytimeTasks,
+            "Morning" to morningTasks,
+            "Afternoon" to afternoonTasks,
+            "Evening" to eveningTasks
+        ).filter { it.second.isNotEmpty() }
+    }
+
+    val totalTasksCount = sortedReminders.size
+    val doneTasksCount = remember(sortedReminders, selectedDate) {
+        val dateStr = selectedDate.toString()
+        sortedReminders.count { it.completedDates.contains(dateStr) }
+    }
+    val rawProgressFraction = if (totalTasksCount > 0) doneTasksCount.toFloat() / totalTasksCount.toFloat() else 0f
+    val animatedProgressFraction by animateFloatAsState(
+        targetValue = rawProgressFraction,
+        animationSpec = tween(durationMillis = 200),
+        label = "ProgressFraction"
+    )
+
     val dayNestedScrollConnection = remember(selectedDate, selectedTaskFilter) {
         object : NestedScrollConnection {
             override fun onPostScroll(
@@ -205,13 +271,11 @@ fun MyTasksScreen(
                 if (source == NestedScrollSource.UserInput && selectedTaskFilter == "Today") {
                     val currentTime = System.currentTimeMillis()
                     if (currentTime - lastDayTransitionTime > 400L) {
-                        // Dragging UP at bottom of list -> Next Day
                         if (available.y < -20f && !taskListState.canScrollForward) {
                             lastDayTransitionTime = currentTime
                             selectedDate = selectedDate.plusDays(1)
                             return available
                         }
-                        // Dragging DOWN at top of list -> Previous Day
                         if (available.y > 20f && !taskListState.canScrollBackward) {
                             lastDayTransitionTime = currentTime
                             selectedDate = selectedDate.minusDays(1)
@@ -257,30 +321,27 @@ fun MyTasksScreen(
         bottomBar = bottomBar,
         floatingActionButton = {
             if (selectedTaskFilter == "Today") {
-                FloatingActionButton(
-                    onClick = {
-                        editingReminder = null
-                        showReminderForm = true
-                    },
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = FloatingActionButtonDefaults.elevation(
-                        defaultElevation = 0.dp,
-                        pressedElevation = 0.dp,
-                        focusedElevation = 0.dp,
-                        hoveredElevation = 0.dp
-                    ),
-                    modifier = Modifier.border(
-                        width = 1.5.dp,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        shape = RoundedCornerShape(16.dp)
-                    )
+                Box(
+                    modifier = Modifier
+                        .padding(bottom = 16.dp, end = 4.dp)
+                        .size(52.dp)
+                        .background(
+                            brush = Brush.linearGradient(
+                                colors = listOf(Color(0xFF5CC9C0), Color(0xFF17645E))
+                            ),
+                            shape = RoundedCornerShape(16.dp)
+                        )
+                        .clickable {
+                            editingReminder = null
+                            showReminderForm = true
+                        },
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
-                        contentDescription = "Add Reminder",
-                        tint = MaterialTheme.colorScheme.onSurface
+                        contentDescription = "Add Task",
+                        tint = Color.White,
+                        modifier = Modifier.size(26.dp)
                     )
                 }
             }
@@ -340,30 +401,72 @@ fun MyTasksScreen(
                 }
             }
 
-            // 2. Date Rectangle Header ("11 October 2026, Sunday") - Small rectangle wrapping text
+            // 2. Date Header ("14 October 2026, Wednesday")
             if (selectedTaskFilter == "Today") {
                 Spacer(modifier = Modifier.height(6.dp))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
+                        .padding(horizontal = 20.dp)
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                        shape = RoundedCornerShape(6.dp),
+                        color = cardBgColor
                     ) {
                         Text(
                             text = selectedDate.format(fullDateDisplayFormatter),
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
+                                fontSize = 15.sp
                             ),
-                            color = MaterialTheme.colorScheme.onSurface,
+                            color = primaryTextColor,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // 3. Progress Line directly under date header
+                if (totalTasksCount > 0) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(4.dp)
+                                .background(
+                                    color = if (isDark) Color(0xFF3A3A3C) else Color(0xFFE3E5EA),
+                                    shape = CircleShape
+                                )
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .fillMaxWidth(fraction = animatedProgressFraction)
+                                    .background(
+                                        brush = Brush.linearGradient(
+                                            colors = listOf(Color(0xFF5CC9C0), Color(0xFF17645E))
+                                        ),
+                                        shape = CircleShape
+                                    )
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Text(
+                            text = "$doneTasksCount of $totalTasksCount done",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = secondaryTextColor
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
             }
 
             // Task Content List View
@@ -378,7 +481,7 @@ fun MyTasksScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .nestedScroll(dayNestedScrollConnection),
-                        contentPadding = PaddingValues(vertical = 4.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp),
                         verticalArrangement = if (sortedReminders.isEmpty()) Arrangement.Center else Arrangement.Top
                     ) {
                         if (sortedReminders.isEmpty()) {
@@ -404,37 +507,62 @@ fun MyTasksScreen(
                                 }
                             }
                         } else {
-                            items(sortedReminders, key = { it.id }) { reminder ->
-                                val dateStr = selectedDate.toString()
-                                val isCompleted = reminder.completedDates.contains(dateStr)
+                            timeGroups.forEach { (groupLabel, groupTasks) ->
+                                item(key = "group_header_$groupLabel") {
+                                    Text(
+                                        text = groupLabel,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = secondaryTextColor,
+                                        modifier = Modifier.padding(start = 22.dp, top = 12.dp, bottom = 6.dp)
+                                    )
+                                }
 
-                                TaskCardItem(
-                                    reminder = reminder,
-                                    isCompleted = isCompleted,
-                                    viewDate = selectedDate,
-                                    onCheckedChange = { isDone ->
-                                        reminderViewModel.toggleTaskCompletedForDate(reminder, selectedDate)
-                                        if (isDone) {
-                                            coroutineScope.launch {
-                                                val result = snackbarHostState.showSnackbar(
-                                                    message = "Task completed",
-                                                    actionLabel = "Undo",
-                                                    duration = SnackbarDuration.Short
+                                item(key = "group_block_$groupLabel") {
+                                    Surface(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 20.dp),
+                                        shape = RoundedCornerShape(14.dp),
+                                        color = cardBgColor
+                                    ) {
+                                        Column(modifier = Modifier.fillMaxWidth()) {
+                                            groupTasks.forEachIndexed { index, reminder ->
+                                                val dateStr = selectedDate.toString()
+                                                val isCompleted = reminder.completedDates.contains(dateStr)
+
+                                                TaskCardItem(
+                                                    reminder = reminder,
+                                                    isCompleted = isCompleted,
+                                                    viewDate = selectedDate,
+                                                    showDivider = index < groupTasks.lastIndex,
+                                                    onCheckedChange = { isDone ->
+                                                        reminderViewModel.toggleTaskCompletedForDate(reminder, selectedDate)
+                                                        if (isDone) {
+                                                            coroutineScope.launch {
+                                                                val result = snackbarHostState.showSnackbar(
+                                                                    message = "Task completed",
+                                                                    actionLabel = "Undo",
+                                                                    duration = SnackbarDuration.Short
+                                                                )
+                                                                if (result == SnackbarResult.ActionPerformed) {
+                                                                    reminderViewModel.toggleTaskCompletedForDate(reminder, selectedDate)
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    onStarClick = {
+                                                        reminderViewModel.toggleTaskImportant(reminder)
+                                                    },
+                                                    onClick = {
+                                                        editingReminder = reminder
+                                                        showReminderForm = true
+                                                    }
                                                 )
-                                                if (result == SnackbarResult.ActionPerformed) {
-                                                    reminderViewModel.toggleTaskCompletedForDate(reminder, selectedDate)
-                                                }
                                             }
                                         }
-                                    },
-                                    onStarClick = {
-                                        reminderViewModel.toggleTaskImportant(reminder)
-                                    },
-                                    onClick = {
-                                        editingReminder = reminder
-                                        showReminderForm = true
                                     }
-                                )
+                                }
                             }
                         }
                     }

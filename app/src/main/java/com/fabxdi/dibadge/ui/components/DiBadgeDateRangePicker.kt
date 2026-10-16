@@ -283,9 +283,13 @@ fun DiBadgeDateRangePicker(
                                                 bottomEnd = if (isEnd || dayIndex == 6) 20.dp else 0.dp
                                             )
 
+                                            val paddingStart = if (isStart) 20.dp else 0.dp
+                                            val paddingEnd = if (isEnd) 20.dp else 0.dp
+
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxSize()
+                                                    .padding(start = paddingStart, end = paddingEnd)
                                                     .background(color = inRangeBandColor, shape = shape)
                                             )
                                         }

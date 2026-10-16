@@ -6,7 +6,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Star
@@ -30,26 +29,27 @@ import com.fabxdi.dibadge.data.ToDoEntity
 import java.time.LocalDate
 import java.time.LocalTime
 
-// Color Tokens
-val RowTitleColor = Color(0xFFF5F5F5)
-val RowDetailsColor = Color(0xFF77777C)
-val RowUncompletedRingColor = Color(0xFFCFCFD2)
-val RowDoneTeal = Color(0xFF14B8A6)
-val RowDoneCheckMarkColor = Color(0xFF00201D)
-val RowOverdueRed = Color(0xFFFF8A80)
-val RowStarUnimportant = Color(0xFF3A3A3C)
-val RowDividerColor = Color(0xFF2A2A2C)
-
 @Composable
 fun TaskCardItem(
     reminder: ReminderEntity,
     isCompleted: Boolean,
     viewDate: LocalDate? = null,
     badgeText: String? = null,
+    showDivider: Boolean = true,
     onCheckedChange: (Boolean) -> Unit,
     onStarClick: () -> Unit = {},
     onClick: () -> Unit
 ) {
+    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
+    val primaryTextColor = if (isDark) Color(0xFFFFFFFF) else Color(0xFF111318)
+    val secondaryTextColor = if (isDark) Color(0xFF8A8A8E) else Color(0xFF6B7078)
+    val ringColor = if (isDark) Color(0xFFCFCFD2) else Color(0xFFB4B8C0)
+    val doneTeal = Color(0xFF14B8A6)
+    val doneCheckColor = Color(0xFF00201D)
+    val starOffColor = if (isDark) Color(0xFF5A5A5E) else Color(0xFFB4B8C0)
+    val overdueRed = if (isDark) Color(0xFFFF8A80) else Color(0xFFE0584D)
+    val dividerColor = if (isDark) Color(0xFF3A3A3C) else Color(0xFFE3E5EA)
+
     val today = LocalDate.now()
     val currentViewDate = viewDate ?: reminder.date ?: reminder.startDate ?: today
 
@@ -59,7 +59,6 @@ fun TaskCardItem(
         } else if (currentViewDate.isBefore(today)) {
             true
         } else {
-            // Today
             if (!reminder.time.isNullOrBlank()) {
                 val parsedTime = parseReminderTime(reminder.time)
                 parsedTime != LocalTime.MAX && parsedTime.isBefore(LocalTime.now())
@@ -88,22 +87,12 @@ fun TaskCardItem(
         if (reminder.time.isNullOrBlank()) {
             "Anytime"
         } else {
-            reminder.time.lowercase()
+            reminder.time
         }
     }
 
-    val ringColor by animateColorAsState(
-        targetValue = when {
-            isCompleted -> RowDoneTeal
-            isOverdue -> RowOverdueRed
-            else -> RowUncompletedRingColor
-        },
-        animationSpec = tween(durationMillis = 150),
-        label = "RingColor"
-    )
-
     val starColor by animateColorAsState(
-        targetValue = if (reminder.isImportant) RowDoneTeal else RowStarUnimportant,
+        targetValue = if (reminder.isImportant) doneTeal else starOffColor,
         animationSpec = tween(durationMillis = 150),
         label = "StarColor"
     )
@@ -126,16 +115,16 @@ fun TaskCardItem(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 66.dp)
+                .heightIn(min = 56.dp)
                 .clickable(onClick = onClick)
-                .padding(horizontal = 20.dp, vertical = 10.dp),
+                .padding(horizontal = 14.dp, vertical = 8.dp),
             contentAlignment = Alignment.CenterStart
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 1. CHECK CIRCLE (22dp, 48dp touch target, 14dp gap)
+                // 1. CHECK CIRCLE (22dp, 48dp touch target)
                 Box(
                     modifier = Modifier
                         .size(48.dp)
@@ -150,13 +139,13 @@ fun TaskCardItem(
                         Surface(
                             modifier = Modifier.size(22.dp),
                             shape = CircleShape,
-                            color = ringColor
+                            color = doneTeal
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.Check,
                                     contentDescription = null,
-                                    tint = RowDoneCheckMarkColor,
+                                    tint = doneCheckColor,
                                     modifier = Modifier.size(14.dp)
                                 )
                             }
@@ -171,9 +160,9 @@ fun TaskCardItem(
                     }
                 }
 
-                Spacer(modifier = Modifier.width(6.dp)) // 6dp + 8dp inside 48dp box = 14dp gap to text
+                Spacer(modifier = Modifier.width(4.dp))
 
-                // 2. TEXT BLOCK (Remaining width, vertically centered)
+                // 2. TEXT BLOCK (Title & Details)
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.Center
@@ -185,7 +174,7 @@ fun TaskCardItem(
                             fontWeight = FontWeight.Normal,
                             textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
                         ),
-                        color = if (isCompleted) RowDetailsColor else RowTitleColor,
+                        color = if (isCompleted) (if (isDark) Color(0xFF77777C) else Color(0xFF9AA0A8)) else primaryTextColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -198,7 +187,7 @@ fun TaskCardItem(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Normal
                             ),
-                            color = RowDetailsColor,
+                            color = secondaryTextColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -207,9 +196,9 @@ fun TaskCardItem(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // 3. STAR AND TIME COLUMN (Fixed width 56dp, items centered, 4dp apart)
+                // 3. STAR & TIME COLUMN (Fixed 56dp min width, centered)
                 Column(
-                    modifier = Modifier.width(56.dp),
+                    modifier = Modifier.widthIn(min = 56.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     // Star Icon (20dp, 48dp touch target)
@@ -233,14 +222,14 @@ fun TaskCardItem(
 
                     Spacer(modifier = Modifier.height(2.dp))
 
-                    // Time Text (12sp Regular #77777C, or #FF8A80 if overdue and not done)
+                    // Time Text (12sp Regular secondaryTextColor, or soft red if overdue and not done)
                     Text(
                         text = timeDisplay,
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Normal
                         ),
-                        color = if (isOverdue && !isCompleted) RowOverdueRed else RowDetailsColor,
+                        color = if (isOverdue && !isCompleted) overdueRed else secondaryTextColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -248,11 +237,12 @@ fun TaskCardItem(
             }
         }
 
-        // 1dp Divider under EVERY row
-        HorizontalDivider(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-            thickness = 1.dp,
-            color = RowDividerColor
-        )
+        if (showDivider) {
+            HorizontalDivider(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                thickness = 1.dp,
+                color = dividerColor
+            )
+        }
     }
 }

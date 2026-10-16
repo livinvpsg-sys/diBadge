@@ -220,8 +220,29 @@ fun ReminderFormScreen(
     val toggleOffColor = if (isDark) Color(0xFF48484A) else Color(0xFFC9CCD4)
     val errorColor = Color(0xFFFF8A80)
 
+    val hasChanges = remember(
+        title, content, selectedRepeat, selectedTime, isAlarmEnabled,
+        selectedDueDate, attachedFiles
+    ) {
+        if (reminderToEdit == null) {
+            title.trim().isNotEmpty() || content.trim().isNotEmpty() ||
+                    selectedDueDate != null || selectedTime != null ||
+                    (selectedRepeat != null && selectedRepeat != "once") || isAlarmEnabled || attachedFiles.isNotEmpty()
+        } else {
+            title.trim() != reminderToEdit.title.trim() ||
+                    content.trim() != reminderToEdit.content.trim() ||
+                    selectedDueDate != reminderToEdit.date ||
+                    selectedTime != reminderToEdit.time ||
+                    selectedRepeat != reminderToEdit.repeatType ||
+                    isAlarmEnabled != reminderToEdit.isAlarmEnabled ||
+                    attachedFiles.map { it.toString() } != reminderToEdit.attachments
+        }
+    }
+
+    val isSaveEnabled = isTitleValid && hasChanges
+
     val handleBack = {
-        if (title != (reminderToEdit?.title ?: "") || content != (reminderToEdit?.content ?: "")) {
+        if (hasChanges) {
             showUnsavedChangesDialog = true
         } else {
             onCancel()
@@ -265,7 +286,7 @@ fun ReminderFormScreen(
             TextButton(
                 onClick = {
                     triedToSave = true
-                    if (isTitleValid) {
+                    if (isSaveEnabled) {
                         onSave(
                             title.trim(),
                             content.trim(),
@@ -280,13 +301,13 @@ fun ReminderFormScreen(
                         )
                     }
                 },
-                enabled = isTitleValid
+                enabled = isSaveEnabled
             ) {
                 Text(
                     text = "Save",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (isTitleValid) tealAccent else faintColor
+                    color = if (isSaveEnabled) tealAccent else faintColor
                 )
             }
         }
@@ -478,10 +499,7 @@ fun ReminderFormScreen(
                                 color = secondaryTextColor
                             )
                         }
-                        val remindText = if (selectedTime != null) {
-                            val datePart = selectedDueDate ?: LocalDate.now()
-                            "${datePart.format(DateTimeFormatter.ofPattern("EEE, d MMM"))}, ${selectedTime!!.lowercase()}"
-                        } else "None"
+                        val remindText = selectedTime ?: "None"
 
                         Text(
                             text = remindText,
@@ -494,11 +512,20 @@ fun ReminderFormScreen(
                     HorizontalDivider(thickness = 1.dp, color = dividerColor)
 
                     // 3. Repeat Row
+                    val isRepeatDisabled = selectedDueDate == LocalDate.now()
+
+                    LaunchedEffect(isRepeatDisabled) {
+                        if (isRepeatDisabled) {
+                            selectedRepeat = "once"
+                        }
+                    }
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 56.dp)
-                            .clickable {
+                            .alpha(if (isRepeatDisabled) 0.45f else 1.0f)
+                            .clickable(enabled = !isRepeatDisabled) {
                                 keyboardController?.hide()
                                 isRepeatMenuExpanded = true
                             }
@@ -524,7 +551,14 @@ fun ReminderFormScreen(
                                     fontWeight = FontWeight.Normal,
                                     color = secondaryTextColor
                                 )
-                                if (selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") {
+                                if (isRepeatDisabled) {
+                                    Text(
+                                        text = "Not available for tasks due today",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = faintColor
+                                    )
+                                } else if (selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") {
                                     val untilText = if (selectedDueDate != null) {
                                         "repeats until ${selectedDueDate!!.format(DateTimeFormatter.ofPattern("d MMM yyyy"))}"
                                     } else {
@@ -541,10 +575,10 @@ fun ReminderFormScreen(
                             }
                         }
                         Text(
-                            text = formatRepeatValue(selectedRepeat),
+                            text = if (isRepeatDisabled) "None" else formatRepeatValue(selectedRepeat),
                             fontSize = 15.sp,
-                            fontWeight = if (selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") FontWeight.Medium else FontWeight.Normal,
-                            color = if (selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") primaryTextColor else faintColor
+                            fontWeight = if (!isRepeatDisabled && selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") FontWeight.Medium else FontWeight.Normal,
+                            color = if (!isRepeatDisabled && selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") primaryTextColor else faintColor
                         )
                     }
 
@@ -654,6 +688,38 @@ fun ReminderFormScreen(
                 }
             }
 
+            // --- CARD 4: DELETE TASK (Only in Edit task mode) ---
+            if (reminderToEdit != null) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = cardBgColor
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp)
+                            .clickable { showDeleteConfirmation = true }
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete task, button",
+                            tint = errorColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(
+                            text = "Delete task",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = errorColor
+                        )
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(32.dp))
         }
     }
@@ -732,7 +798,9 @@ fun ReminderFormScreen(
             maxDate = selectedDueDate,
             onRangeSelected = { start, end ->
                 showDateRangePicker = false
-                selectedRepeat = "Custom"
+                val startStr = start.format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))
+                val endStr = end.format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))
+                selectedRepeat = "custom:$startStr – $endStr"
                 if (selectedDueDate == null) {
                     selectedDueDate = end
                 }
@@ -799,8 +867,24 @@ fun ReminderFormScreen(
     if (showUnsavedChangesDialog) {
         AlertDialog(
             onDismissRequest = { showUnsavedChangesDialog = false },
-            title = { Text("Discard changes?") },
-            text = { Text("You have unsaved changes. Are you sure you want to discard them?") },
+            containerColor = cardBgColor,
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text(
+                    text = if (reminderToEdit == null) "New task not saved" else "Edit task not saved",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = primaryTextColor
+                )
+            },
+            text = {
+                Text(
+                    text = "If you go back now, this task will be lost.",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = secondaryTextColor
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -808,12 +892,22 @@ fun ReminderFormScreen(
                         onCancel()
                     }
                 ) {
-                    Text("Discard", color = errorColor, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "Discard",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = errorColor
+                    )
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showUnsavedChangesDialog = false }) {
-                    Text("Cancel")
+                    Text(
+                        text = "Keep editing",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = secondaryTextColor
+                    )
                 }
             }
         )
@@ -822,8 +916,24 @@ fun ReminderFormScreen(
     if (showDeleteConfirmation) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmation = false },
-            title = { Text("Delete task?") },
-            text = { Text("Are you sure you want to delete this task?") },
+            containerColor = cardBgColor,
+            shape = RoundedCornerShape(20.dp),
+            title = {
+                Text(
+                    text = "Delete this task?",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryTextColor
+                )
+            },
+            text = {
+                Text(
+                    text = "It will be removed from all dates.",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = secondaryTextColor
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -833,12 +943,22 @@ fun ReminderFormScreen(
                         }
                     }
                 ) {
-                    Text("Delete", color = errorColor, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "Delete",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = errorColor
+                    )
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirmation = false }) {
-                    Text("Cancel")
+                    Text(
+                        text = "Cancel",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = secondaryTextColor
+                    )
                 }
             }
         )
@@ -1100,6 +1220,9 @@ fun formatRepeatValue(selectedRepeat: String?): String {
                     "${formatOrdinal(d)} $m, every year"
                 } else "Yearly"
             } else "Yearly"
+        }
+        selectedRepeat.startsWith("custom:") -> {
+            selectedRepeat.substringAfter("custom:")
         }
         selectedRepeat == "Custom" -> "Custom"
         else -> selectedRepeat.lowercase().replaceFirstChar { it.uppercase() }
