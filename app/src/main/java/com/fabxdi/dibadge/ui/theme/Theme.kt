@@ -11,6 +11,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -26,14 +27,114 @@ data class DiBadgeSpacing(
     val xxl: Dp = 64.dp
 )
 
+/**
+ * Colours that have no Material 3 slot.
+ *
+ * accent: muted teal. Only for enabled Save text, status text, progress fill,
+ * ticked circles, important stars, toggle on-state, text actions, cursor and
+ * selection handles. Never for large fills, bars, cards, the + button,
+ * selected chips or the selected tab.
+ *
+ * tabInactive: unselected bottom bar items.
+ *
+ * isDark: the app's resolved theme (respects AppThemeMode), so components must
+ * use this instead of isSystemInDarkTheme().
+ */
+@Immutable
+data class DiBadgeColors(
+    val accent: Color,
+    val tabInactive: Color,
+    val isDark: Boolean
+)
+
 val LocalSpacing = staticCompositionLocalOf { DiBadgeSpacing() }
+
+val LocalDiBadgeColors = staticCompositionLocalOf {
+    DiBadgeColors(accent = DarkAccent, tabInactive = DarkTabInactive, isDark = true)
+}
 
 object DiBadgeTheme {
     val spacing: DiBadgeSpacing
         @Composable
         @ReadOnlyComposable
         get() = LocalSpacing.current
+
+    val colors: DiBadgeColors
+        @Composable
+        @ReadOnlyComposable
+        get() = LocalDiBadgeColors.current
 }
+
+private val DarkScheme = darkColorScheme(
+    // Monochrome primary: default Material components stay neutral.
+    primary = DarkOnBackground,
+    onPrimary = DarkBackground,
+    secondary = DarkOnBackground,
+    onSecondary = DarkBackground,
+    tertiary = DarkOnBackground,
+    onTertiary = DarkBackground,
+    background = DarkBackground,
+    onBackground = DarkOnBackground,
+    surface = DarkSurface,
+    onSurface = DarkOnBackground,
+    surfaceVariant = DarkSurface,
+    onSurfaceVariant = DarkOnSurfaceVariant,
+    surfaceTint = Color.Transparent, // no tonal elevation tint
+    // Snackbar: inverse of the theme. Action uses the light-theme accent.
+    inverseSurface = DarkOnBackground,
+    inverseOnSurface = DarkBackground,
+    inversePrimary = LightAccent,
+    error = DarkError,
+    onError = DarkBackground,
+    outline = DarkOutline,
+    outlineVariant = DarkOutline,
+    // Cards, sheets, dialogs, nav bar all resolve to the same surface colour.
+    surfaceContainerLowest = DarkSurface,
+    surfaceContainerLow = DarkSurface,
+    surfaceContainer = DarkSurface,
+    surfaceContainerHigh = DarkSurface,
+    surfaceContainerHighest = DarkSurface
+)
+
+private val LightScheme = lightColorScheme(
+    primary = LightOnBackground,
+    onPrimary = LightBackground,
+    secondary = LightOnBackground,
+    onSecondary = LightBackground,
+    tertiary = LightOnBackground,
+    onTertiary = LightBackground,
+    background = LightBackground,
+    onBackground = LightOnBackground,
+    surface = LightSurface,
+    onSurface = LightOnBackground,
+    surfaceVariant = LightSurface,
+    onSurfaceVariant = LightOnSurfaceVariant,
+    surfaceTint = Color.Transparent,
+    inverseSurface = LightOnBackground,
+    inverseOnSurface = LightBackground,
+    inversePrimary = DarkAccent,
+    error = LightError,
+    onError = Color.White,
+    outline = LightOutline,
+    outlineVariant = LightOutline,
+    surfaceContainerLowest = LightSurface,
+    surfaceContainerLow = LightSurface,
+    surfaceContainer = LightSurface,
+    surfaceContainerHigh = LightSurface,
+    surfaceContainerHighest = LightSurface
+)
+
+private val DarkDiBadgeColors = DiBadgeColors(
+    accent = DarkAccent,
+    tabInactive = DarkTabInactive,
+    isDark = true
+)
+
+private val LightDiBadgeColors = DiBadgeColors(
+    accent = LightAccent,
+    tabInactive = LightTabInactive,
+    isDark = false
+)
 
 @Composable
 fun DiBadgeTheme(
@@ -45,32 +146,8 @@ fun DiBadgeTheme(
     },
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) {
-        darkColorScheme(
-            primary = AccentWhite,
-            onPrimary = JetBlack,
-            background = JetBlack,
-            onBackground = AccentWhite,
-            surface = SlateSurface,
-            onSurface = AccentWhite,
-            onSurfaceVariant = MutedGray,
-            outline = CoolAsh,
-            error = ErrorRed
-        )
-    } else {
-        lightColorScheme(
-            primary = SlateCharcoal,
-            onPrimary = AccentWhite,
-            background = SoftOffWhite,
-            onBackground = SlateCharcoal,
-            surface = AccentWhite,
-            onSurface = SlateCharcoal,
-            surfaceVariant = PaperWhite,
-            onSurfaceVariant = CoolAsh,
-            outline = SoftBorder,
-            error = ErrorRed
-        )
-    }
+    val colorScheme = if (darkTheme) DarkScheme else LightScheme
+    val diBadgeColors = if (darkTheme) DarkDiBadgeColors else LightDiBadgeColors
 
     val view = LocalView.current
     if (!view.isInEditMode) {
@@ -85,7 +162,8 @@ fun DiBadgeTheme(
     }
 
     CompositionLocalProvider(
-        LocalSpacing provides DiBadgeSpacing()
+        LocalSpacing provides DiBadgeSpacing(),
+        LocalDiBadgeColors provides diBadgeColors
     ) {
         MaterialTheme(
             colorScheme = colorScheme,

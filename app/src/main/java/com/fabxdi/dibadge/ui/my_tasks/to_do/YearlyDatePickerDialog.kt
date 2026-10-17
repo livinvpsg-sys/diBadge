@@ -24,6 +24,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import java.time.Month
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -40,11 +41,13 @@ fun YearlyDatePickerDialog(
     val months = remember { Month.entries.toList() }
     val dayNumbers = remember { (1..31).toList() }
 
-    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
-    val sheetBgColor = if (isDark) Color(0xFF2C2C2E) else Color(0xFFFFFFFF)
-    val primaryTextColor = if (isDark) Color(0xFFFFFFFF) else Color(0xFF111318)
-    val secondaryTextColor = if (isDark) Color(0xFF8A8A8E) else Color(0xFF6B7078)
-    val tealAccent = if (isDark) Color(0xFF5CC9C0) else Color(0xFF17645E)
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+
+    val sheetBgColor = colors.surface
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val tealAccent = diBadgeColors.accent
 
     // Max valid days in selected month (Feb allows up to 29; Apr, Jun, Sep, Nov up to 30)
     val maxValidDays = remember(selectedMonth) {
@@ -72,8 +75,9 @@ fun YearlyDatePickerDialog(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = sheetBgColor,
+        shape = MaterialTheme.shapes.extraLarge,
         dragHandle = {
-            BottomSheetDefaults.DragHandle(color = if (isDark) Color(0xFF5A5A5E) else Color(0xFFC9CCD4))
+            BottomSheetDefaults.DragHandle(color = colors.outline)
         }
     ) {
         Column(

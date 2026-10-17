@@ -5,6 +5,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
+// Bold is reserved for selected items, section labels and screen emphasis.
+// Row titles and labels are regular. Apply FontWeight.Bold at the call site
+// when an item is selected or is a section label.
 val Typography = Typography(
     bodySmall = TextStyle(
         fontSize = 12.sp,
@@ -18,7 +21,7 @@ val Typography = Typography(
     ),
     bodyLarge = TextStyle(
         fontSize = 16.sp,
-        fontWeight = FontWeight.Bold,
+        fontWeight = FontWeight.Normal,
         letterSpacing = 0.5.sp
     ),
     titleLarge = TextStyle(

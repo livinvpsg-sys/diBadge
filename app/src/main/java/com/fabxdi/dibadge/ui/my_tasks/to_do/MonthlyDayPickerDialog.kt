@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,18 +27,21 @@ fun MonthlyDayPickerDialog(
     val selectedDayNums = remember { mutableStateListOf<Int>().apply { addAll(initialDayNumbers) } }
     val dayNumbers = remember { (1..31).toList() }
 
-    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
-    val sheetBgColor = if (isDark) Color(0xFF2C2C2E) else Color(0xFFFFFFFF)
-    val primaryTextColor = if (isDark) Color(0xFFFFFFFF) else Color(0xFF111318)
-    val secondaryTextColor = if (isDark) Color(0xFF8A8A8E) else Color(0xFF6B7078)
-    val tealAccent = if (isDark) Color(0xFF5CC9C0) else Color(0xFF17645E)
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+
+    val sheetBgColor = colors.surface
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val tealAccent = diBadgeColors.accent
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(),
         containerColor = sheetBgColor,
+        shape = MaterialTheme.shapes.extraLarge,
         dragHandle = {
-            BottomSheetDefaults.DragHandle(color = if (isDark) Color(0xFF5A5A5E) else Color(0xFFC9CCD4))
+            BottomSheetDefaults.DragHandle(color = colors.outline)
         }
     ) {
         Column(
@@ -99,7 +103,7 @@ fun MonthlyDayPickerDialog(
                 horizontalArrangement = Arrangement.End
             ) {
                 TextButton(onClick = onDismiss) {
-                    Text("Cancel", fontSize = 16.sp, fontWeight = FontWeight.Normal, color = secondaryTextColor)
+                    Text("Cancel", fontSize = 15.sp, fontWeight = FontWeight.Normal, color = secondaryTextColor)
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 TextButton(
@@ -109,7 +113,7 @@ fun MonthlyDayPickerDialog(
                     },
                     enabled = selectedDayNums.isNotEmpty()
                 ) {
-                    Text("Done", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = tealAccent)
+                    Text("Done", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = tealAccent)
                 }
             }
         }

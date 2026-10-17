@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import java.time.DayOfWeek
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -32,10 +33,21 @@ fun WeeklyDaysPickerDialog(
     )
     val selectedDays = remember { mutableStateListOf<DayOfWeek>().apply { addAll(initialDays) } }
 
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val tealAccent = diBadgeColors.accent
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(),
-        containerColor = MaterialTheme.colorScheme.surfaceVariant
+        containerColor = colors.surface,
+        shape = MaterialTheme.shapes.extraLarge,
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(color = colors.outline)
+        }
     ) {
         Column(
             modifier = Modifier
@@ -46,7 +58,7 @@ fun WeeklyDaysPickerDialog(
                 text = "Weekly",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = primaryTextColor
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -73,14 +85,14 @@ fun WeeklyDaysPickerDialog(
                             },
                         shape = CircleShape,
                         color = Color.Transparent,
-                        border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface) else null
+                        border = if (isSelected) BorderStroke(1.dp, primaryTextColor) else null
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
                                 text = chipLabel,
                                 fontSize = 15.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (isSelected) primaryTextColor else secondaryTextColor
                             )
                         }
                     }
@@ -94,7 +106,7 @@ fun WeeklyDaysPickerDialog(
                 horizontalArrangement = Arrangement.End
             ) {
                 TextButton(onClick = onDismiss) {
-                    Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Cancel", fontSize = 15.sp, fontWeight = FontWeight.Normal, color = secondaryTextColor)
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 TextButton(
@@ -104,7 +116,7 @@ fun WeeklyDaysPickerDialog(
                     },
                     enabled = selectedDays.isNotEmpty()
                 ) {
-                    Text("Done", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    Text("Done", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = tealAccent)
                 }
             }
         }

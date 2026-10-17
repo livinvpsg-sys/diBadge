@@ -3,6 +3,7 @@ package com.fabxdi.dibadge.ui.my_tasks
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,19 +19,26 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.painterResource
+import com.fabxdi.dibadge.R
 import com.fabxdi.dibadge.data.ReminderEntity
 import com.fabxdi.dibadge.data.ToDoEntity
 import com.fabxdi.dibadge.ui.components.DiBadgeDatePicker
 import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
+import com.fabxdi.dibadge.ui.theme.DiBadgeChip
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
 import kotlinx.coroutines.launch
@@ -206,10 +214,9 @@ fun MyTasksScreen(
         taskListState.scrollToItem(0)
     }
 
-    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
-    val primaryTextColor = if (isDark) Color(0xFFFFFFFF) else Color(0xFF111318)
-    val secondaryTextColor = if (isDark) Color(0xFF8A8A8E) else Color(0xFF6B7078)
-    val cardBgColor = if (isDark) Color(0xFF2C2C2E) else Color(0xFFFFFFFF)
+    val primaryTextColor = MaterialTheme.colorScheme.onBackground
+    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val cardBgColor = MaterialTheme.colorScheme.surface
 
     // Grouping tasks into 4 Time Groups
     val anytimeTasks = remember(sortedReminders) {
@@ -250,16 +257,6 @@ fun MyTasksScreen(
     }
 
     val totalTasksCount = sortedReminders.size
-    val doneTasksCount = remember(sortedReminders, selectedDate) {
-        val dateStr = selectedDate.toString()
-        sortedReminders.count { it.completedDates.contains(dateStr) }
-    }
-    val rawProgressFraction = if (totalTasksCount > 0) doneTasksCount.toFloat() / totalTasksCount.toFloat() else 0f
-    val animatedProgressFraction by animateFloatAsState(
-        targetValue = rawProgressFraction,
-        animationSpec = tween(durationMillis = 200),
-        label = "ProgressFraction"
-    )
 
     val dayNestedScrollConnection = remember(selectedDate, selectedTaskFilter) {
         object : NestedScrollConnection {
@@ -271,15 +268,17 @@ fun MyTasksScreen(
                 if (source == NestedScrollSource.UserInput && selectedTaskFilter == "Today") {
                     val currentTime = System.currentTimeMillis()
                     if (currentTime - lastDayTransitionTime > 400L) {
-                        if (available.y < -20f && !taskListState.canScrollForward) {
+                        // Swiping LEFT -> Next Day
+                        if (available.x < -25f) {
                             lastDayTransitionTime = currentTime
                             selectedDate = selectedDate.plusDays(1)
-                            return available
+                            return Offset(available.x, 0f)
                         }
-                        if (available.y > 20f && !taskListState.canScrollBackward) {
+                        // Swiping RIGHT -> Previous Day
+                        if (available.x > 25f) {
                             lastDayTransitionTime = currentTime
                             selectedDate = selectedDate.minusDays(1)
-                            return available
+                            return Offset(available.x, 0f)
                         }
                     }
                 }
@@ -288,12 +287,14 @@ fun MyTasksScreen(
         }
     }
 
+    val topBarDateFormatter = remember { DateTimeFormatter.ofPattern("d MMMM yyyy, EEE", Locale.getDefault()) }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        text = "My Tasks",
+                        text = selectedDate.format(topBarDateFormatter),
                         style = MaterialTheme.typography.titleLarge.copy(
                             fontWeight = FontWeight.Normal,
                             fontSize = 20.sp
@@ -317,32 +318,39 @@ fun MyTasksScreen(
                 )
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = MaterialTheme.colorScheme.inverseSurface,
+                    contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                    actionColor = MaterialTheme.colorScheme.inversePrimary
+                )
+            }
+        },
         bottomBar = bottomBar,
         floatingActionButton = {
             if (selectedTaskFilter == "Today") {
-                Box(
+                Surface(
+                    onClick = {
+                        editingReminder = null
+                        showReminderForm = true
+                    },
                     modifier = Modifier
                         .padding(bottom = 16.dp, end = 4.dp)
-                        .size(52.dp)
-                        .background(
-                            brush = Brush.linearGradient(
-                                colors = listOf(Color(0xFF5CC9C0), Color(0xFF17645E))
-                            ),
-                            shape = RoundedCornerShape(16.dp)
-                        )
-                        .clickable {
-                            editingReminder = null
-                            showReminderForm = true
-                        },
-                    contentAlignment = Alignment.Center
+                        .size(52.dp),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Add Task",
-                        tint = Color.White,
-                        modifier = Modifier.size(26.dp)
-                    )
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Add Task",
+                            tint = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
             }
         }
@@ -353,13 +361,14 @@ fun MyTasksScreen(
                 .padding(innerPadding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            // 1. Task Filter Pills ("Today", "Assigned to me", "Overdue")
+            // 1. Task Filter Chips ("Today", "Assigned to me", "Overdue")
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = DiBadgeTheme.spacing.medium, vertical = 6.dp)
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 6.dp)
             ) {
                 taskFilters.forEach { (filterKey, filterLabel) ->
                     val isSelected = if (filterKey == "Today") {
@@ -367,106 +376,30 @@ fun MyTasksScreen(
                     } else {
                         selectedTaskFilter == filterKey
                     }
-                    FilterChip(
+                    DiBadgeChip(
+                        text = filterLabel,
                         selected = isSelected,
                         onClick = {
                             selectedTaskFilter = filterKey
                             if (filterKey == "Today") {
                                 selectedDate = LocalDate.now()
                             }
-                        },
-                        label = {
-                            Text(
-                                text = filterLabel,
-                                fontSize = 13.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        },
-                        shape = CircleShape,
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color.Transparent,
-                            selectedLabelColor = MaterialTheme.colorScheme.onSurface,
-                            containerColor = Color.Transparent,
-                            labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            enabled = true,
-                            selected = isSelected,
-                            borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                            selectedBorderColor = MaterialTheme.colorScheme.onSurface,
-                            selectedBorderWidth = 1.5.dp
-                        )
+                        }
                     )
                 }
             }
 
-            // 2. Date Header ("14 October 2026, Wednesday")
+            // 2. Dim Divider Line below Filter Chips
             if (selectedTaskFilter == "Today") {
                 Spacer(modifier = Modifier.height(6.dp))
-                Row(
+                HorizontalDivider(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp)
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = cardBgColor
-                    ) {
-                        Text(
-                            text = selectedDate.format(fullDateDisplayFormatter),
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
-                            ),
-                            color = primaryTextColor,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // 3. Progress Line directly under date header
-                if (totalTasksCount > 0) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(4.dp)
-                                .background(
-                                    color = if (isDark) Color(0xFF3A3A3C) else Color(0xFFE3E5EA),
-                                    shape = CircleShape
-                                )
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxHeight()
-                                    .fillMaxWidth(fraction = animatedProgressFraction)
-                                    .background(
-                                        brush = Brush.linearGradient(
-                                            colors = listOf(Color(0xFF5CC9C0), Color(0xFF17645E))
-                                        ),
-                                        shape = CircleShape
-                                    )
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Text(
-                            text = "$doneTasksCount of $totalTasksCount done",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Normal,
-                            color = secondaryTextColor
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                }
+                        .padding(horizontal = 20.dp),
+                    thickness = 1.dp,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
             // Task Content List View
@@ -474,6 +407,22 @@ fun MyTasksScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .weight(1f)
+                    .pointerInput(selectedTaskFilter) {
+                        if (selectedTaskFilter == "Today") {
+                            detectHorizontalDragGestures { _, dragAmount ->
+                                val currentTime = System.currentTimeMillis()
+                                if (currentTime - lastDayTransitionTime > 350L) {
+                                    if (dragAmount < -30f) {
+                                        lastDayTransitionTime = currentTime
+                                        selectedDate = selectedDate.plusDays(1)
+                                    } else if (dragAmount > 30f) {
+                                        lastDayTransitionTime = currentTime
+                                        selectedDate = selectedDate.minusDays(1)
+                                    }
+                                }
+                            }
+                        }
+                    }
             ) {
                 if (selectedTaskFilter == "Today") {
                     LazyColumn(
@@ -486,23 +435,30 @@ fun MyTasksScreen(
                     ) {
                         if (sortedReminders.isEmpty()) {
                             item(key = "empty_state") {
-                                Box(
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .fillParentMaxHeight(0.7f),
-                                    contentAlignment = Alignment.Center
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
                                 ) {
-                                    val emptyTodayText = if (selectedDate == LocalDate.now()) {
-                                        "No tasks for today"
-                                    } else {
-                                        "No tasks for ${selectedDate.format(fullDateFormatter)}"
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_my_tasks),
+                                        contentDescription = null,
+                                        tint = secondaryTextColor.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(48.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    val emptyTitle = when {
+                                        selectedTaskFilter == "Assigned to me" -> "Nothing assigned to you"
+                                        selectedDate == LocalDate.now() -> "No tasks for today"
+                                        else -> "No tasks for this day"
                                     }
                                     Text(
-                                        text = emptyTodayText,
-                                        style = MaterialTheme.typography.bodyLarge.copy(
-                                            fontWeight = FontWeight.Normal
-                                        ),
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                        text = emptyTitle,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = secondaryTextColor
                                     )
                                 }
                             }
@@ -512,7 +468,7 @@ fun MyTasksScreen(
                                     Text(
                                         text = groupLabel,
                                         fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold,
+                                        fontWeight = FontWeight.Bold,
                                         color = secondaryTextColor,
                                         modifier = Modifier.padding(start = 22.dp, top = 12.dp, bottom = 6.dp)
                                     )
@@ -523,8 +479,10 @@ fun MyTasksScreen(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .padding(horizontal = 20.dp),
-                                        shape = RoundedCornerShape(14.dp),
-                                        color = cardBgColor
+                                        shape = MaterialTheme.shapes.medium,
+                                        color = MaterialTheme.colorScheme.surface,
+                                        tonalElevation = 0.dp,
+                                        shadowElevation = 0.dp
                                     ) {
                                         Column(modifier = Modifier.fillMaxWidth()) {
                                             groupTasks.forEachIndexed { index, reminder ->
@@ -538,18 +496,6 @@ fun MyTasksScreen(
                                                     showDivider = index < groupTasks.lastIndex,
                                                     onCheckedChange = { isDone ->
                                                         reminderViewModel.toggleTaskCompletedForDate(reminder, selectedDate)
-                                                        if (isDone) {
-                                                            coroutineScope.launch {
-                                                                val result = snackbarHostState.showSnackbar(
-                                                                    message = "Task completed",
-                                                                    actionLabel = "Undo",
-                                                                    duration = SnackbarDuration.Short
-                                                                )
-                                                                if (result == SnackbarResult.ActionPerformed) {
-                                                                    reminderViewModel.toggleTaskCompletedForDate(reminder, selectedDate)
-                                                                }
-                                                            }
-                                                        }
                                                     },
                                                     onStarClick = {
                                                         reminderViewModel.toggleTaskImportant(reminder)
@@ -592,7 +538,7 @@ fun MyTasksScreen(
                             style = MaterialTheme.typography.bodyLarge.copy(
                                 fontWeight = FontWeight.Normal
                             ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -601,8 +547,9 @@ fun MyTasksScreen(
     }
 
     if (showDatePicker) {
-        DiBadgeDatePicker(
+        MyTasksDatePicker(
             selectedDate = selectedDate,
+            allReminders = allReminders,
             onDateSelected = { chosenDate ->
                 selectedDate = chosenDate
                 showDatePicker = false

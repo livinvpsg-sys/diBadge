@@ -2,6 +2,7 @@ package com.fabxdi.dibadge.ui.components
 
 import android.text.format.DateFormat
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,6 +18,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import kotlinx.coroutines.delay
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -50,11 +52,12 @@ fun DiBadgeTimePicker(
         }
     }
 
-    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
-    val sheetBgColor = if (isDark) Color(0xFF2C2C2E) else Color(0xFFFFFFFF)
-    val primaryTextColor = if (isDark) Color(0xFFFFFFFF) else Color(0xFF111318)
-    val secondaryTextColor = if (isDark) Color(0xFF8A8A8E) else Color(0xFF6B7078)
-    val tealAccent = if (isDark) Color(0xFF5CC9C0) else Color(0xFF17645E)
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val outlineColor = MaterialTheme.colorScheme.outline
+    val primaryTextColor = MaterialTheme.colorScheme.onBackground
+    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val accentColor = DiBadgeTheme.colors.accent
+    val dragHandleColor = DiBadgeTheme.colors.tabInactive
 
     // Current clock time string
     val nowTimeFormatted = remember(nowTime, is24HourFormat) {
@@ -68,9 +71,9 @@ fun DiBadgeTimePicker(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = sheetBgColor,
+        containerColor = surfaceColor,
         dragHandle = {
-            BottomSheetDefaults.DragHandle(color = if (isDark) Color(0xFF5A5A5E) else Color(0xFFC9CCD4))
+            BottomSheetDefaults.DragHandle(color = dragHandleColor)
         }
     ) {
         Column(
@@ -112,7 +115,7 @@ fun DiBadgeTimePicker(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            HorizontalDivider(thickness = 1.dp, color = if (isDark) Color(0xFF3A3A3C) else Color(0xFFE3E5EA))
+            HorizontalDivider(thickness = 1.dp, color = outlineColor)
 
             Spacer(modifier = Modifier.height(20.dp))
 
@@ -132,7 +135,6 @@ fun DiBadgeTimePicker(
                         selectedIndex = selectedHour24,
                         onSelectedIndexChanged = { selectedHour24 = it },
                         modifier = Modifier.width(80.dp),
-                        tealColor = tealAccent,
                         primaryColor = primaryTextColor,
                         contentDescriptionLabel = "Hour"
                     )
@@ -143,7 +145,7 @@ fun DiBadgeTimePicker(
                         text = ":",
                         fontSize = 34.sp,
                         fontWeight = FontWeight.Bold,
-                        color = tealAccent,
+                        color = primaryTextColor,
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
 
@@ -160,7 +162,6 @@ fun DiBadgeTimePicker(
                         selectedIndex = selectedMinIndex,
                         onSelectedIndexChanged = { selectedMinute = it * minuteStep },
                         modifier = Modifier.width(80.dp),
-                        tealColor = tealAccent,
                         primaryColor = primaryTextColor,
                         contentDescriptionLabel = "Minute"
                     )
@@ -178,7 +179,6 @@ fun DiBadgeTimePicker(
                             selectedHour24 = if (isPm) (if (hourNum == 12) 12 else hourNum + 12) else (if (hourNum == 12) 0 else hourNum)
                         },
                         modifier = Modifier.width(72.dp),
-                        tealColor = tealAccent,
                         primaryColor = primaryTextColor,
                         contentDescriptionLabel = "Hour"
                     )
@@ -189,7 +189,7 @@ fun DiBadgeTimePicker(
                         text = ":",
                         fontSize = 34.sp,
                         fontWeight = FontWeight.Bold,
-                        color = tealAccent,
+                        color = primaryTextColor,
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
 
@@ -206,7 +206,6 @@ fun DiBadgeTimePicker(
                         selectedIndex = selectedMinIndex,
                         onSelectedIndexChanged = { selectedMinute = it * minuteStep },
                         modifier = Modifier.width(72.dp),
-                        tealColor = tealAccent,
                         primaryColor = primaryTextColor,
                         contentDescriptionLabel = "Minute"
                     )
@@ -227,7 +226,6 @@ fun DiBadgeTimePicker(
                         },
                         isInfinite = false,
                         modifier = Modifier.width(72.dp),
-                        tealColor = tealAccent,
                         primaryColor = primaryTextColor,
                         contentDescriptionLabel = "AM or PM"
                     )
@@ -236,7 +234,7 @@ fun DiBadgeTimePicker(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // 4. Bottom Row Action Button: OK on right (NO Cancel button!)
+            // 4. Bottom Row Action Button: OK on right
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -259,7 +257,7 @@ fun DiBadgeTimePicker(
                         text = "OK",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
-                        color = tealAccent
+                        color = accentColor
                     )
                 }
             }
@@ -274,7 +272,6 @@ fun WheelPicker(
     onSelectedIndexChanged: (Int) -> Unit,
     isInfinite: Boolean = true,
     modifier: Modifier = Modifier,
-    tealColor: Color,
     primaryColor: Color,
     contentDescriptionLabel: String = ""
 ) {
@@ -329,18 +326,20 @@ fun WheelPicker(
                 val actualIndex = (index % itemCount + itemCount) % itemCount
                 val distance = Math.abs(index - centerIndex)
 
-                val (fontSize, alphaVal, fontW, colorVal) = when (distance) {
-                    0 -> Tuple4(34.sp, 1.0f, FontWeight.Bold, tealColor)
-                    1 -> Tuple4(22.sp, 0.5f, FontWeight.Normal, primaryColor)
-                    else -> Tuple4(18.sp, 0.2f, FontWeight.Normal, primaryColor)
+                val (fontSize, alphaVal, fontW) = when (distance) {
+                    0 -> Tuple3(38.sp, 1.0f, FontWeight.Bold)
+                    1 -> Tuple3(22.sp, 0.5f, FontWeight.Normal)
+                    else -> Tuple3(18.sp, 0.2f, FontWeight.Normal)
                 }
 
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp)
-                        .clickable {
-                            // Tapping an item scrolls it to center
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
                             onSelectedIndexChanged(actualIndex)
                         }
                         .semantics {
@@ -356,7 +355,7 @@ fun WheelPicker(
                         text = items[actualIndex],
                         fontSize = fontSize,
                         fontWeight = fontW,
-                        color = colorVal.copy(alpha = alphaVal)
+                        color = primaryColor.copy(alpha = alphaVal)
                     )
                 }
             }
@@ -364,4 +363,4 @@ fun WheelPicker(
     }
 }
 
-private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
+private data class Tuple3<A, B, C>(val a: A, val b: B, val c: C)

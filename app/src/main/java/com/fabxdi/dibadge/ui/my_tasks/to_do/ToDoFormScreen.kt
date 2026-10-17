@@ -47,6 +47,7 @@ import com.fabxdi.dibadge.ui.components.AttachmentList
 import com.fabxdi.dibadge.ui.components.DiBadgeDatePicker
 import com.fabxdi.dibadge.ui.components.DiBadgeDateRangePicker
 import com.fabxdi.dibadge.ui.my_tasks.TaskDatePickerDialog
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
@@ -209,16 +210,18 @@ fun ReminderFormScreen(
     val isTitleValid = title.trim().isNotEmpty()
 
     // --- Theme Color Tokens ---
-    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
-    val pageBgColor = if (isDark) Color(0xFF000000) else Color(0xFFEBECF0)
-    val cardBgColor = if (isDark) Color(0xFF2C2C2E) else Color(0xFFFFFFFF)
-    val dividerColor = if (isDark) Color(0xFF3A3A3C) else Color(0xFFE3E5EA)
-    val primaryTextColor = if (isDark) Color(0xFFFFFFFF) else Color(0xFF111318)
-    val secondaryTextColor = if (isDark) Color(0xFF8A8A8E) else Color(0xFF6B7078)
-    val faintColor = if (isDark) Color(0xFF5A5A5E) else Color(0xFF9AA0A8)
-    val tealAccent = if (isDark) Color(0xFF5CC9C0) else Color(0xFF17645E)
-    val toggleOffColor = if (isDark) Color(0xFF48484A) else Color(0xFFC9CCD4)
-    val errorColor = Color(0xFFFF8A80)
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+
+    val pageBgColor = colors.background
+    val cardBgColor = colors.surface
+    val dividerColor = colors.outline
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val faintColor = colors.onSurfaceVariant.copy(alpha = 0.45f)
+    val tealAccent = diBadgeColors.accent
+    val toggleOffColor = colors.outline
+    val errorColor = colors.error
 
     val hasChanges = remember(
         title, content, selectedRepeat, selectedTime, isAlarmEnabled,
@@ -274,13 +277,15 @@ fun ReminderFormScreen(
                         tint = primaryTextColor
                     )
                 }
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (reminderToEdit == null) "New task" else "Edit task",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = primaryTextColor
-                )
+                if (reminderToEdit == null) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Add task",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = primaryTextColor
+                    )
+                }
             }
 
             TextButton(
@@ -979,18 +984,19 @@ fun DueDateBottomSheet(
     val tomorrowDate = remember { todayDate.plusDays(1) }
     val dateDisplayFormatter = remember { DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault()) }
 
-    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
-    val sheetBgColor = if (isDark) Color(0xFF2C2C2E) else Color(0xFFFFFFFF)
-    val primaryTextColor = if (isDark) Color(0xFFFFFFFF) else Color(0xFF111318)
-    val secondaryTextColor = if (isDark) Color(0xFF8A8A8E) else Color(0xFF6B7078)
-    val errorColor = Color(0xFFFF8A80)
+    val colors = MaterialTheme.colorScheme
+    val sheetBgColor = colors.surface
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val errorColor = colors.error
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(),
         containerColor = sheetBgColor,
+        shape = MaterialTheme.shapes.extraLarge,
         dragHandle = {
-            BottomSheetDefaults.DragHandle(color = if (isDark) Color(0xFF5A5A5E) else Color(0xFFC9CCD4))
+            BottomSheetDefaults.DragHandle(color = colors.outline)
         }
     ) {
         Column(
@@ -1111,17 +1117,20 @@ fun RepeatOptionsBottomSheet(
         "Custom"
     )
 
-    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
-    val sheetBgColor = if (isDark) Color(0xFF2C2C2E) else Color(0xFFFFFFFF)
-    val primaryTextColor = if (isDark) Color(0xFFFFFFFF) else Color(0xFF111318)
-    val checkColor = if (isDark) Color(0xFF5CC9C0) else Color(0xFF17645E)
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+
+    val sheetBgColor = colors.surface
+    val primaryTextColor = colors.onBackground
+    val checkColor = diBadgeColors.accent
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(),
         containerColor = sheetBgColor,
+        shape = MaterialTheme.shapes.extraLarge,
         dragHandle = {
-            BottomSheetDefaults.DragHandle(color = if (isDark) Color(0xFF5A5A5E) else Color(0xFFC9CCD4))
+            BottomSheetDefaults.DragHandle(color = colors.outline)
         }
     ) {
         Column(

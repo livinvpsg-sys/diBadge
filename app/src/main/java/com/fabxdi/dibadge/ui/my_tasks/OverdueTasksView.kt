@@ -2,7 +2,6 @@ package com.fabxdi.dibadge.ui.my_tasks
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -11,7 +10,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.data.ReminderEntity
-import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -46,7 +44,7 @@ fun OverdueTasksView(
 
                 if (!isCompleted && isReminderOnDate(reminder, currDate)) {
                     if (currDate.isBefore(todayDate)) {
-                        // Past date (including Yesterday): date is overdue!
+                        // Past date: overdue!
                         overduePairs.add(currDate to reminder)
                     } else if (currDate == todayDate && !reminder.time.isNullOrBlank()) {
                         // Today: overdue if scheduled time has passed!
@@ -61,21 +59,26 @@ fun OverdueTasksView(
             overduePairs
         }
 
+        // Group by date and sort oldest first!
         val grouped = overdueTasksWithDate.groupBy({ it.first }, { it.second })
-            .toSortedMap(Comparator { d1, d2 -> d2.compareTo(d1) })
+            .toSortedMap(Comparator { d1, d2 -> d1.compareTo(d2) })
 
-        val dateFormatter = DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.getDefault())
+        val dateFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())
 
         grouped.map { (date, tasks) ->
             val label = when (date) {
-                todayDate -> "Today"
                 todayDate.minusDays(1) -> "Yesterday"
+                todayDate -> "Today"
                 else -> date.format(dateFormatter)
             }
             val sortedTasks = tasks.sortedBy { parseReminderTime(it.time) }
             OverdueGroup(label, date, sortedTasks)
         }
     }
+
+    val primaryTextColor = MaterialTheme.colorScheme.onBackground
+    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val cardBgColor = MaterialTheme.colorScheme.surface
 
     if (overdueGroups.isEmpty()) {
         Box(
@@ -84,46 +87,57 @@ fun OverdueTasksView(
         ) {
             Text(
                 text = "No overdue tasks",
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    fontWeight = FontWeight.Normal
-                ),
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Normal,
+                color = secondaryTextColor
             )
         }
     } else {
         LazyColumn(
             modifier = modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = DiBadgeTheme.spacing.medium, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            contentPadding = PaddingValues(bottom = 96.dp),
+            verticalArrangement = Arrangement.Top
         ) {
             overdueGroups.forEach { group ->
-                // Date Section Header (small font, subtle color, no background card)
+                // Date Group Heading (12sp bold, onSurfaceVariant, 20dp left inset)
                 item(key = "header_${group.dateLabel}_${group.date}") {
                     Text(
                         text = group.dateLabel,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        ),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 2.dp)
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = secondaryTextColor,
+                        modifier = Modifier.padding(start = 22.dp, top = 14.dp, bottom = 6.dp)
                     )
                 }
 
-                // Tasks in this date group
-                items(group.tasks, key = { "task_${group.date}_${it.id}" }) { reminder ->
-                    TaskCardItem(
-                        reminder = reminder,
-                        isCompleted = false,
-                        viewDate = group.date,
-                        badgeText = "To Do",
-                        onCheckedChange = {
-                            onToggleCompleted(reminder, group.date)
-                        },
-                        onClick = {
-                            onTaskClick(reminder)
+                // Date Group Block Card (surface, shapes.medium 14dp, 20dp side margin)
+                item(key = "group_block_${group.dateLabel}_${group.date}") {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp),
+                        shape = MaterialTheme.shapes.medium,
+                        color = cardBgColor,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            group.tasks.forEachIndexed { index, reminder ->
+                                TaskCardItem(
+                                    reminder = reminder,
+                                    isCompleted = false,
+                                    viewDate = group.date,
+                                    showDivider = index < group.tasks.lastIndex,
+                                    onCheckedChange = {
+                                        onToggleCompleted(reminder, group.date)
+                                    },
+                                    onClick = {
+                                        onTaskClick(reminder)
+                                    }
+                                )
+                            }
                         }
-                    )
+                    }
                 }
             }
         }

@@ -25,7 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.data.ReminderEntity
-import com.fabxdi.dibadge.data.ToDoEntity
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import java.time.LocalDate
 import java.time.LocalTime
 
@@ -40,15 +40,16 @@ fun TaskCardItem(
     onStarClick: () -> Unit = {},
     onClick: () -> Unit
 ) {
-    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
-    val primaryTextColor = if (isDark) Color(0xFFFFFFFF) else Color(0xFF111318)
-    val secondaryTextColor = if (isDark) Color(0xFF8A8A8E) else Color(0xFF6B7078)
-    val ringColor = if (isDark) Color(0xFFCFCFD2) else Color(0xFFB4B8C0)
-    val doneTeal = Color(0xFF14B8A6)
-    val doneCheckColor = Color(0xFF00201D)
-    val starOffColor = if (isDark) Color(0xFF5A5A5E) else Color(0xFFB4B8C0)
-    val overdueRed = if (isDark) Color(0xFFFF8A80) else Color(0xFFE0584D)
-    val dividerColor = if (isDark) Color(0xFF3A3A3C) else Color(0xFFE3E5EA)
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val strokeColor = colors.onSurfaceVariant
+    val accentColor = diBadgeColors.accent
+    val doneCheckColor = colors.background
+    val overdueRed = colors.error
+    val dividerColor = colors.outline
 
     val today = LocalDate.now()
     val currentViewDate = viewDate ?: reminder.date ?: reminder.startDate ?: today
@@ -92,7 +93,7 @@ fun TaskCardItem(
     }
 
     val starColor by animateColorAsState(
-        targetValue = if (reminder.isImportant) doneTeal else starOffColor,
+        targetValue = if (reminder.isImportant) accentColor else strokeColor,
         animationSpec = tween(durationMillis = 150),
         label = "StarColor"
     )
@@ -139,7 +140,7 @@ fun TaskCardItem(
                         Surface(
                             modifier = Modifier.size(22.dp),
                             shape = CircleShape,
-                            color = doneTeal
+                            color = accentColor
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
@@ -155,7 +156,7 @@ fun TaskCardItem(
                             modifier = Modifier.size(22.dp),
                             shape = CircleShape,
                             color = Color.Transparent,
-                            border = BorderStroke(1.5.dp, ringColor)
+                            border = BorderStroke(1.5.dp, strokeColor)
                         ) {}
                     }
                 }
@@ -174,7 +175,7 @@ fun TaskCardItem(
                             fontWeight = FontWeight.Normal,
                             textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
                         ),
-                        color = if (isCompleted) (if (isDark) Color(0xFF77777C) else Color(0xFF9AA0A8)) else primaryTextColor,
+                        color = if (isCompleted) secondaryTextColor else primaryTextColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
