@@ -340,7 +340,7 @@ fun ReminderFormScreen(
                         Text(
                             text = "Save",
                             fontSize = 15.sp,
-                            fontWeight = FontWeight.Normal,
+                            fontWeight = FontWeight.SemiBold,
                             color = if (isSaveEnabled) tealAccent else tabInactiveColor
                         )
                     }
