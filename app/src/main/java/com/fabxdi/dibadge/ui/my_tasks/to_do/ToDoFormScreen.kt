@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -34,6 +35,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
@@ -72,6 +74,14 @@ fun ReminderFormScreen(
     val titleFocusRequester = remember { FocusRequester() }
     val noteFocusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    val clearFocusAndHideKeyboard = {
+        focusManager.clearFocus()
+        keyboardController?.hide()
+    }
+
+    val isEditMode = reminderToEdit != null
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -223,6 +233,7 @@ fun ReminderFormScreen(
     val tealAccent = diBadgeColors.accent
     val toggleOffColor = colors.outline
     val errorColor = colors.error
+    val tabInactiveColor = diBadgeColors.tabInactive
 
     val hasChanges = remember(
         title, content, selectedRepeat, selectedTime, isAlarmEnabled,
@@ -311,9 +322,9 @@ fun ReminderFormScreen(
             ) {
                 Text(
                     text = "Save",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isSaveEnabled) tealAccent else faintColor
+                    fontSize = if (isEditMode) 15.sp else 16.sp,
+                    fontWeight = if (isEditMode) FontWeight.Normal else FontWeight.Bold,
+                    color = if (isSaveEnabled) tealAccent else (if (isEditMode) tabInactiveColor else faintColor)
                 )
             }
         }
@@ -322,6 +333,12 @@ fun ReminderFormScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .weight(1f)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    clearFocusAndHideKeyboard()
+                }
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -351,10 +368,10 @@ fun ReminderFormScreen(
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Sentences,
                             autoCorrectEnabled = true,
-                            imeAction = ImeAction.Default
+                            imeAction = ImeAction.Next
                         ),
                         keyboardActions = KeyboardActions(
-                            onNext = null
+                            onNext = { noteFocusRequester.requestFocus() }
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -366,7 +383,7 @@ fun ReminderFormScreen(
                                         text = "Title",
                                         fontSize = 20.sp,
                                         fontWeight = FontWeight.Normal,
-                                        color = faintColor
+                                        color = if (isEditMode) secondaryTextColor else faintColor
                                     )
                                 }
                                 innerTextField()
@@ -393,9 +410,10 @@ fun ReminderFormScreen(
                             }
                         },
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 16.sp,
+                            fontSize = 17.sp,
+                            lineHeight = 25.sp,
                             fontWeight = FontWeight.Normal,
-                            color = secondaryTextColor
+                            color = if (isEditMode) primaryTextColor else secondaryTextColor
                         ),
                         cursorBrush = SolidColor(primaryTextColor),
                         maxLines = Int.MAX_VALUE,
@@ -417,9 +435,10 @@ fun ReminderFormScreen(
                                 if (content.isEmpty()) {
                                     Text(
                                         text = "Add note",
-                                        fontSize = 16.sp,
+                                        fontSize = 17.sp,
+                                        lineHeight = 25.sp,
                                         fontWeight = FontWeight.Normal,
-                                        color = faintColor
+                                        color = if (isEditMode) secondaryTextColor else faintColor
                                     )
                                 }
                                 innerTextField()
@@ -442,7 +461,7 @@ fun ReminderFormScreen(
                             .fillMaxWidth()
                             .heightIn(min = 56.dp)
                             .clickable {
-                                keyboardController?.hide()
+                                clearFocusAndHideKeyboard()
                                 isDueDateMenuExpanded = true
                             }
                             .padding(horizontal = 16.dp),
@@ -462,16 +481,16 @@ fun ReminderFormScreen(
                             Spacer(modifier = Modifier.width(16.dp))
                             Text(
                                 text = "Due date",
-                                fontSize = 16.sp,
+                                fontSize = if (isEditMode) 15.sp else 16.sp,
                                 fontWeight = FontWeight.Normal,
                                 color = secondaryTextColor
                             )
                         }
                         Text(
                             text = selectedDueDate?.format(displayDateFormatter) ?: "None",
-                            fontSize = 15.sp,
-                            fontWeight = if (selectedDueDate != null) FontWeight.Medium else FontWeight.Normal,
-                            color = if (selectedDueDate != null) primaryTextColor else faintColor
+                            fontSize = if (isEditMode) 14.sp else 15.sp,
+                            fontWeight = if (isEditMode) FontWeight.Normal else (if (selectedDueDate != null) FontWeight.Medium else FontWeight.Normal),
+                            color = if (isEditMode) tabInactiveColor else (if (selectedDueDate != null) primaryTextColor else faintColor)
                         )
                     }
 
@@ -483,7 +502,7 @@ fun ReminderFormScreen(
                             .fillMaxWidth()
                             .heightIn(min = 56.dp)
                             .clickable {
-                                keyboardController?.hide()
+                                clearFocusAndHideKeyboard()
                                 if (selectedTime != null) {
                                     showRemindMeActionSheet = true
                                 } else {
@@ -507,7 +526,7 @@ fun ReminderFormScreen(
                             Spacer(modifier = Modifier.width(16.dp))
                             Text(
                                 text = "Remind me",
-                                fontSize = 16.sp,
+                                fontSize = if (isEditMode) 15.sp else 16.sp,
                                 fontWeight = FontWeight.Normal,
                                 color = secondaryTextColor
                             )
@@ -516,9 +535,9 @@ fun ReminderFormScreen(
 
                         Text(
                             text = remindText,
-                            fontSize = 15.sp,
-                            fontWeight = if (selectedTime != null) FontWeight.Medium else FontWeight.Normal,
-                            color = if (selectedTime != null) primaryTextColor else faintColor
+                            fontSize = if (isEditMode) 14.sp else 15.sp,
+                            fontWeight = if (isEditMode) FontWeight.Normal else (if (selectedTime != null) FontWeight.Medium else FontWeight.Normal),
+                            color = if (isEditMode) tabInactiveColor else (if (selectedTime != null) primaryTextColor else faintColor)
                         )
                     }
 
@@ -537,9 +556,9 @@ fun ReminderFormScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 56.dp)
-                            .alpha(if (isRepeatDisabled) 0.45f else 1.0f)
+                            .alpha(if (isRepeatDisabled && !isEditMode) 0.45f else 1.0f)
                             .clickable(enabled = !isRepeatDisabled) {
-                                keyboardController?.hide()
+                                clearFocusAndHideKeyboard()
                                 isRepeatMenuExpanded = true
                             }
                             .padding(horizontal = 16.dp),
@@ -560,7 +579,7 @@ fun ReminderFormScreen(
                             Column {
                                 Text(
                                     text = "Repeat",
-                                    fontSize = 16.sp,
+                                    fontSize = if (isEditMode) 15.sp else 16.sp,
                                     fontWeight = FontWeight.Normal,
                                     color = secondaryTextColor
                                 )
@@ -569,7 +588,7 @@ fun ReminderFormScreen(
                                         text = "Not available when due today",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Normal,
-                                        color = faintColor
+                                        color = if (isEditMode) tabInactiveColor else faintColor
                                     )
                                 } else {
                                     val endLine = getRepeatEndLine(selectedRepeat, selectedDueDate)
@@ -578,7 +597,7 @@ fun ReminderFormScreen(
                                             text = endLine,
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Normal,
-                                            color = secondaryTextColor
+                                            color = if (isEditMode) tabInactiveColor else secondaryTextColor
                                         )
                                     }
                                 }
@@ -586,9 +605,9 @@ fun ReminderFormScreen(
                         }
                         Text(
                             text = if (isRepeatDisabled) "None" else formatRepeatValue(selectedRepeat),
-                            fontSize = 15.sp,
-                            fontWeight = if (!isRepeatDisabled && selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") FontWeight.Medium else FontWeight.Normal,
-                            color = if (!isRepeatDisabled && selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") primaryTextColor else faintColor
+                            fontSize = if (isEditMode) 14.sp else 15.sp,
+                            fontWeight = if (isEditMode) FontWeight.Normal else (if (!isRepeatDisabled && selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") FontWeight.Medium else FontWeight.Normal),
+                            color = if (isEditMode) tabInactiveColor else (if (!isRepeatDisabled && selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") primaryTextColor else faintColor)
                         )
                     }
 
@@ -601,7 +620,10 @@ fun ReminderFormScreen(
                             .fillMaxWidth()
                             .heightIn(min = 56.dp)
                             .alpha(if (isAlarmDimmed) 0.45f else 1.0f)
-                            .clickable(enabled = !isAlarmDimmed) { isAlarmEnabled = !isAlarmEnabled }
+                            .clickable(enabled = !isAlarmDimmed) {
+                                clearFocusAndHideKeyboard()
+                                isAlarmEnabled = !isAlarmEnabled
+                            }
                             .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -620,7 +642,7 @@ fun ReminderFormScreen(
                             Column {
                                 Text(
                                     text = "Alarm",
-                                    fontSize = 16.sp,
+                                    fontSize = if (isEditMode) 15.sp else 16.sp,
                                     fontWeight = FontWeight.Normal,
                                     color = secondaryTextColor
                                 )
@@ -629,7 +651,7 @@ fun ReminderFormScreen(
                                         text = "Set a remind time first",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Normal,
-                                        color = faintColor
+                                        color = if (isEditMode) tabInactiveColor else faintColor
                                     )
                                 }
                             }
@@ -637,7 +659,12 @@ fun ReminderFormScreen(
 
                         Switch(
                             checked = isAlarmEnabled && !isAlarmDimmed,
-                            onCheckedChange = { if (!isAlarmDimmed) isAlarmEnabled = it },
+                            onCheckedChange = {
+                                if (!isAlarmDimmed) {
+                                    clearFocusAndHideKeyboard()
+                                    isAlarmEnabled = it
+                                }
+                            },
                             enabled = !isAlarmDimmed,
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color.White,
@@ -665,7 +692,10 @@ fun ReminderFormScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 36.dp)
-                            .clickable { attachmentLauncher.launch(arrayOf("*/*")) },
+                            .clickable {
+                                clearFocusAndHideKeyboard()
+                                attachmentLauncher.launch(arrayOf("*/*"))
+                            },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
@@ -677,7 +707,7 @@ fun ReminderFormScreen(
                         Spacer(modifier = Modifier.width(16.dp))
                         Text(
                             text = "Add attachment",
-                            fontSize = 16.sp,
+                            fontSize = if (isEditMode) 15.sp else 16.sp,
                             fontWeight = FontWeight.Normal,
                             color = secondaryTextColor
                         )
@@ -709,7 +739,10 @@ fun ReminderFormScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 56.dp)
-                            .clickable { showDeleteConfirmation = true }
+                            .clickable {
+                                clearFocusAndHideKeyboard()
+                                showDeleteConfirmation = true
+                            }
                             .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -722,7 +755,7 @@ fun ReminderFormScreen(
                         Spacer(modifier = Modifier.width(16.dp))
                         Text(
                             text = "Delete task",
-                            fontSize = 16.sp,
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.Normal,
                             color = errorColor
                         )
