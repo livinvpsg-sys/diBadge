@@ -151,7 +151,6 @@ fun MyTasksScreen(
     }
 
     val fullDateDisplayFormatter = remember { DateTimeFormatter.ofPattern("d MMMM yyyy, EEEE", Locale.getDefault()) }
-    val fullDateFormatter = remember { DateTimeFormatter.ofPattern("MMMM d, yyyy", Locale.getDefault()) }
 
     val todayDate = remember { LocalDate.now() }
     val overdueCount = remember(allReminders, todayDate) {
@@ -449,11 +448,7 @@ fun MyTasksScreen(
                                         modifier = Modifier.size(48.dp)
                                     )
                                     Spacer(modifier = Modifier.height(12.dp))
-                                    val emptyTitle = when {
-                                        selectedTaskFilter == "Assigned to me" -> "Nothing assigned to you"
-                                        selectedDate == LocalDate.now() -> "No tasks for today"
-                                        else -> "No tasks for this day"
-                                    }
+                                    val emptyTitle = "No tasks"
                                     Text(
                                         text = emptyTitle,
                                         fontSize = 15.sp,
@@ -524,21 +519,23 @@ fun MyTasksScreen(
                         }
                     )
                 } else {
-                    Box(
+                    Column(
                         modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        val emptyAssignedText = if (selectedDate == LocalDate.now()) {
-                            "No assigned tasks for today"
-                        } else {
-                            "No assigned tasks for ${selectedDate.format(fullDateFormatter)}"
-                        }
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_my_tasks),
+                            contentDescription = null,
+                            tint = secondaryTextColor.copy(alpha = 0.5f),
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = emptyAssignedText,
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontWeight = FontWeight.Normal
-                            ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = "No tasks",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = secondaryTextColor
                         )
                     }
                 }

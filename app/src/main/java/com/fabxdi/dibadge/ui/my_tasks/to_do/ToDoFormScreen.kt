@@ -113,6 +113,7 @@ fun ReminderFormScreen(
     var showMonthlyDayPicker by remember { mutableStateOf(false) }
     var showYearlyDatePicker by remember { mutableStateOf(false) }
     var showRemindMePicker by remember { mutableStateOf(autoOpenTimePicker) }
+    var showRemindMeActionSheet by remember { mutableStateOf(false) }
 
     var isDueDateMenuExpanded by remember { mutableStateOf(false) }
     var isRepeatMenuExpanded by remember { mutableStateOf(false) }
@@ -349,10 +350,11 @@ fun ReminderFormScreen(
                         maxLines = 3,
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Sentences,
-                            imeAction = ImeAction.Next
+                            autoCorrectEnabled = true,
+                            imeAction = ImeAction.Default
                         ),
                         keyboardActions = KeyboardActions(
-                            onNext = { noteFocusRequester.requestFocus() }
+                            onNext = null
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -382,7 +384,7 @@ fun ReminderFormScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Note Input (2000 char limit, min 40dp height, grows up to 6 lines, cursor uses primaryTextColor)
+                    // Note Input (2000 char limit, min 40dp height, grows infinitely, cursor uses primaryTextColor)
                     BasicTextField(
                         value = contentValue,
                         onValueChange = { newValue ->
@@ -391,29 +393,31 @@ fun ReminderFormScreen(
                             }
                         },
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 15.sp,
+                            fontSize = 16.sp,
                             fontWeight = FontWeight.Normal,
                             color = secondaryTextColor
                         ),
                         cursorBrush = SolidColor(primaryTextColor),
-                        maxLines = 6,
+                        maxLines = Int.MAX_VALUE,
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Sentences,
-                            imeAction = ImeAction.Done
+                            autoCorrectEnabled = true,
+                            imeAction = ImeAction.Default
                         ),
                         keyboardActions = KeyboardActions(
-                            onDone = { keyboardController?.hide() }
+                            onDone = null
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 40.dp)
+                            .padding(start = 4.dp)
                             .focusRequester(noteFocusRequester),
                         decorationBox = { innerTextField ->
                             Box(contentAlignment = Alignment.TopStart) {
                                 if (content.isEmpty()) {
                                     Text(
                                         text = "Add note",
-                                        fontSize = 15.sp,
+                                        fontSize = 16.sp,
                                         fontWeight = FontWeight.Normal,
                                         color = faintColor
                                     )
@@ -480,7 +484,11 @@ fun ReminderFormScreen(
                             .heightIn(min = 56.dp)
                             .clickable {
                                 keyboardController?.hide()
-                                showRemindMePicker = true
+                                if (selectedTime != null) {
+                                    showRemindMeActionSheet = true
+                                } else {
+                                    showRemindMePicker = true
+                                }
                             }
                             .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -558,24 +566,21 @@ fun ReminderFormScreen(
                                 )
                                 if (isRepeatDisabled) {
                                     Text(
-                                        text = "Not available for tasks due today",
+                                        text = "Not available when due today",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Normal,
                                         color = faintColor
                                     )
-                                } else if (selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") {
-                                    val untilText = if (selectedDueDate != null) {
-                                        "repeats until ${selectedDueDate!!.format(DateTimeFormatter.ofPattern("d MMM yyyy"))}"
-                                    } else {
-                                        "repeats forever"
+                                } else {
+                                    val endLine = getRepeatEndLine(selectedRepeat, selectedDueDate)
+                                    if (endLine != null) {
+                                        Text(
+                                            text = endLine,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Normal,
+                                            color = secondaryTextColor
+                                        )
                                     }
-
-                                    Text(
-                                        text = untilText,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        color = secondaryTextColor
-                                    )
                                 }
                             }
                         }
@@ -729,6 +734,22 @@ fun ReminderFormScreen(
         }
     }
 
+    if (showRemindMeActionSheet) {
+        RemindMeActionBottomSheet(
+            selectedTime = selectedTime,
+            onPickTimeSelect = {
+                showRemindMeActionSheet = false
+                showRemindMePicker = true
+            },
+            onRemoveTimeSelect = {
+                selectedTime = null
+                isAlarmEnabled = false
+                showRemindMeActionSheet = false
+            },
+            onDismiss = { showRemindMeActionSheet = false }
+        )
+    }
+
     if (showRemindMePicker) {
         RemindMePickerDialog(
             dueDate = selectedDueDate,
@@ -854,7 +875,7 @@ fun ReminderFormScreen(
 
     if (isRepeatMenuExpanded) {
         RepeatOptionsBottomSheet(
-            selectedOption = selectedRepeat,
+            selectedOption = if (selectedRepeat == "daily") "Every day" else selectedRepeat,
             onOptionSelected = { option ->
                 when (option) {
                     "Custom" -> showDateRangePicker = true
@@ -862,6 +883,7 @@ fun ReminderFormScreen(
                     "Monthly" -> showMonthlyDayPicker = true
                     "Yearly" -> showYearlyDatePicker = true
                     "Does not repeat" -> selectedRepeat = "once"
+                    "Every day" -> selectedRepeat = "daily"
                     else -> selectedRepeat = option.lowercase()
                 }
             },
@@ -1110,7 +1132,7 @@ fun RepeatOptionsBottomSheet(
 ) {
     val options = listOf(
         "Does not repeat",
-        "Daily",
+        "Every day",
         "Weekly",
         "Monthly",
         "Yearly",
@@ -1197,13 +1219,22 @@ fun formatRepeatValue(selectedRepeat: String?): String {
                     .mapNotNull {
                         try { DayOfWeek.valueOf(it.trim().uppercase()) } catch (e: Exception) { null }
                     }
-                if (days.size == 7) "Every day"
-                else if (days.size > 3) {
-                    val firstTwo = days.take(2).joinToString(", ") { it.name.lowercase().replaceFirstChar { c -> c.uppercase() }.take(3) }
-                    "$firstTwo +${days.size - 2} of week"
-                } else if (days.isNotEmpty()) {
-                    val dayStr = days.joinToString(", ") { it.name.lowercase().replaceFirstChar { c -> c.uppercase() }.take(3) }
-                    "$dayStr of week"
+                    .sortedBy { if (it.value == 7) 0 else it.value } // Monday is 1, Sunday is 7; order Mon to Sun. Wait, the prompt says "week order starts on Monday". DayOfWeek value: Monday=1, Sunday=7. So default order is Monday to Sunday.
+                    
+                val orderedDays = days.sortedBy { it.value }
+                
+                if (orderedDays.size == 7) "Every day"
+                else if (orderedDays.size == 5 && orderedDays.first() == DayOfWeek.MONDAY && orderedDays.last() == DayOfWeek.FRIDAY) "Weekdays"
+                else if (orderedDays.size == 2 && orderedDays.contains(DayOfWeek.SATURDAY) && orderedDays.contains(DayOfWeek.SUNDAY)) "Weekends"
+                else if (orderedDays.size == 1) {
+                    val fullName = orderedDays.first().name.lowercase().replaceFirstChar { it.uppercase() }
+                    "Every $fullName"
+                }
+                else if (orderedDays.size in 2..3) {
+                    orderedDays.joinToString(", ") { it.name.lowercase().replaceFirstChar { c -> c.uppercase() }.take(3) }
+                }
+                else if (orderedDays.size > 3) {
+                    "${orderedDays.size} days a week"
                 } else "Weekly"
             } else "Weekly"
         }
@@ -1211,12 +1242,13 @@ fun formatRepeatValue(selectedRepeat: String?): String {
             if (selectedRepeat.contains(":")) {
                 val dayNums = selectedRepeat.substringAfter(":").split(",")
                     .mapNotNull { it.trim().toIntOrNull() }.sorted()
-                if (dayNums.size > 3) {
-                    val firstTwo = dayNums.take(2).joinToString(", ") { formatOrdinal(it) }
-                    "$firstTwo +${dayNums.size - 2} of month"
-                } else if (dayNums.isNotEmpty()) {
+                if (dayNums.size == 1) {
+                    "Monthly on ${formatOrdinal(dayNums.first())}"
+                } else if (dayNums.size in 2..3) {
                     val numStr = dayNums.joinToString(", ") { formatOrdinal(it) }
-                    "$numStr of month"
+                    "$numStr monthly"
+                } else if (dayNums.size > 3) {
+                    "${dayNums.size} dates monthly"
                 } else "Monthly"
             } else "Monthly"
         }
@@ -1226,7 +1258,7 @@ fun formatRepeatValue(selectedRepeat: String?): String {
                 if (parts.size == 2) {
                     val m = try { Month.valueOf(parts[0].uppercase()).name.lowercase().replaceFirstChar { it.uppercase() }.take(3) } catch (e: Exception) { "Oct" }
                     val d = parts[1].toIntOrNull() ?: 15
-                    "${formatOrdinal(d)} $m, every year"
+                    "Every $d $m"
                 } else "Yearly"
             } else "Yearly"
         }
@@ -1237,3 +1269,30 @@ fun formatRepeatValue(selectedRepeat: String?): String {
         else -> selectedRepeat.lowercase().replaceFirstChar { it.uppercase() }
     }
 }
+
+fun getRepeatEndLine(selectedRepeat: String?, dueDate: LocalDate?): String? {
+    if (selectedRepeat == null || selectedRepeat == "once" || selectedRepeat == "Does not repeat") {
+        return null
+    }
+    
+    if (dueDate != null && dueDate.isEqual(LocalDate.now())) {
+        return "Not available when due today"
+    }
+    
+    if (selectedRepeat.startsWith("custom:")) {
+        val rangeStr = selectedRepeat.substringAfter("custom:")
+        if (rangeStr.contains(" – ")) {
+            val endStr = rangeStr.split(" – ").last()
+            return "Until $endStr"
+        }
+        return "Until $rangeStr"
+    }
+    
+    if (dueDate != null) {
+        return "Until due date"
+    }
+    
+    return "No end date"
+}
+
+

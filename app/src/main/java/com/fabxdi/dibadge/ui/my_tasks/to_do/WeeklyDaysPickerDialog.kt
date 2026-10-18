@@ -2,6 +2,7 @@ package com.fabxdi.dibadge.ui.my_tasks.to_do
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
@@ -74,7 +75,10 @@ fun WeeklyDaysPickerDialog(
                     Surface(
                         modifier = Modifier
                             .size(38.dp)
-                            .clickable {
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
                                 if (isSelected) {
                                     if (selectedDays.size > 1) {
                                         selectedDays.remove(dayOfWeek)
@@ -105,10 +109,6 @@ fun WeeklyDaysPickerDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel", fontSize = 15.sp, fontWeight = FontWeight.Normal, color = secondaryTextColor)
-                }
-                Spacer(modifier = Modifier.width(8.dp))
                 TextButton(
                     onClick = {
                         onDaysSelected(selectedDays.toSet())
@@ -116,7 +116,7 @@ fun WeeklyDaysPickerDialog(
                     },
                     enabled = selectedDays.isNotEmpty()
                 ) {
-                    Text("Done", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = tealAccent)
+                    Text("OK", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = tealAccent)
                 }
             }
         }

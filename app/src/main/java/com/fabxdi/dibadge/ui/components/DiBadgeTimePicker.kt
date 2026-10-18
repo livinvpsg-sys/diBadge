@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import com.fabxdi.dibadge.ui.theme.disableBottomSheetDrag
 import kotlinx.coroutines.delay
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -117,16 +118,17 @@ fun DiBadgeTimePicker(
 
             HorizontalDivider(thickness = 1.dp, color = outlineColor)
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Column(modifier = Modifier.disableBottomSheetDrag()) {
+                Spacer(modifier = Modifier.height(20.dp))
 
-            // 3. Wheels Container (5 rows visible, 48dp row height = 240dp total height)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(240.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+                // 3. Wheels Container (5 rows visible, 48dp row height = 240dp total height)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(240.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                 if (is24HourFormat) {
                     // 24h Mode: Hours (00-23)
                     val hours24List = remember { (0..23).map { String.format(Locale.getDefault(), "%02d", it) } }
@@ -261,6 +263,7 @@ fun DiBadgeTimePicker(
                     )
                 }
             }
+            }
         }
     }
 }
@@ -359,8 +362,9 @@ fun WheelPicker(
                     )
                 }
             }
+            }
         }
     }
-}
+
 
 private data class Tuple3<A, B, C>(val a: A, val b: B, val c: C)

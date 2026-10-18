@@ -2,6 +2,7 @@ package com.fabxdi.dibadge.ui.my_tasks.to_do
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -71,7 +72,10 @@ fun MonthlyDayPickerDialog(
                     Surface(
                         modifier = Modifier
                             .size(38.dp)
-                            .clickable {
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
                                 if (isSelected) {
                                     if (selectedDayNums.size > 1) {
                                         selectedDayNums.remove(dayNum)
@@ -102,10 +106,6 @@ fun MonthlyDayPickerDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
-                TextButton(onClick = onDismiss) {
-                    Text("Cancel", fontSize = 15.sp, fontWeight = FontWeight.Normal, color = secondaryTextColor)
-                }
-                Spacer(modifier = Modifier.width(8.dp))
                 TextButton(
                     onClick = {
                         onDaysSelected(selectedDayNums.toSet())
@@ -113,7 +113,7 @@ fun MonthlyDayPickerDialog(
                     },
                     enabled = selectedDayNums.isNotEmpty()
                 ) {
-                    Text("Done", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = tealAccent)
+                    Text("OK", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = tealAccent)
                 }
             }
         }

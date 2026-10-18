@@ -1,5 +1,12 @@
 package com.fabxdi.dibadge.ui.theme
 
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
@@ -152,3 +159,32 @@ fun DiBadgeInfoMessage(
         modifier = modifier.padding(vertical = DiBadgeTheme.spacing.small)
     )
 }
+
+/**
+ * Disables swipe-down dismissal on the modified content by consuming
+ * all unhandled vertical drag gestures and nested scroll post-scrolls.
+ * Used for bottom sheets so they can only be dragged from their handle/header.
+ */
+fun Modifier.disableBottomSheetDrag(): Modifier = this.then(
+    Modifier
+        .nestedScroll(
+            object : NestedScrollConnection {
+                override fun onPostScroll(
+                    consumed: Offset,
+                    available: Offset,
+                    source: NestedScrollSource
+                ): Offset {
+                    return available.copy(x = 0f)
+                }
+                override suspend fun onPostFling(
+                    consumed: Velocity,
+                    available: Velocity
+                ): Velocity {
+                    return available.copy(x = 0f)
+                }
+            }
+        )
+        .pointerInput(Unit) {
+            detectVerticalDragGestures { _, _ -> }
+        }
+)

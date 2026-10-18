@@ -2,6 +2,7 @@ package com.fabxdi.dibadge.ui.my_tasks.to_do
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -120,7 +121,10 @@ fun YearlyDatePickerDialog(
                         Surface(
                             modifier = Modifier
                                 .size(width = 64.dp, height = 36.dp)
-                                .clickable { selectedMonth = month },
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) { selectedMonth = month },
                             shape = RoundedCornerShape(18.dp),
                             color = Color.Transparent,
                             border = if (isSelected) BorderStroke(1.dp, primaryTextColor) else null
@@ -159,7 +163,11 @@ fun YearlyDatePickerDialog(
                         modifier = Modifier
                             .size(38.dp)
                             .alpha(if (isEnabled) 1.0f else 0.38f)
-                            .clickable(enabled = isEnabled) { selectedDayNum = dayNum }
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                enabled = isEnabled
+                            ) { selectedDayNum = dayNum }
                             .semantics {
                                 contentDescription = "$dayNum $selectedMonthName"
                             },
@@ -181,7 +189,7 @@ fun YearlyDatePickerDialog(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // 4. Action Row: Cancel and Done plain text buttons
+            // 4. Action Row: Done plain text button
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -190,15 +198,6 @@ fun YearlyDatePickerDialog(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = onDismiss) {
-                    Text(
-                        text = "Cancel",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = secondaryTextColor
-                    )
-                }
-                Spacer(modifier = Modifier.width(28.dp))
                 TextButton(
                     onClick = {
                         onDateSelected(selectedMonth, selectedDayNum)
@@ -206,7 +205,7 @@ fun YearlyDatePickerDialog(
                     }
                 ) {
                     Text(
-                        text = "Done",
+                        text = "OK",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = tealAccent
