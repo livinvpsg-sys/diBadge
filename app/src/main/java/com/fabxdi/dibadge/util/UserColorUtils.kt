@@ -53,3 +53,49 @@ fun getGreetingName(firstName: String, nickname: String = ""): String {
         firstName.capitalizeWords()
     }
 }
+
+fun fullName(firstName: String?, middleName: String?, lastName: String?): String {
+    val fn = firstName?.trim() ?: ""
+    val mn = middleName?.trim() ?: ""
+    val ln = lastName?.trim() ?: ""
+    return listOf(fn, mn, ln)
+        .filter { it.isNotBlank() }
+        .joinToString(" ")
+        .replace(Regex("\\s+"), " ")
+}
+
+fun isValidName(name: String): Boolean {
+    val trimmed = name.trim()
+    if (trimmed.length > 40) return false
+    return trimmed.all { it.isLetter() || it.isWhitespace() || it == '\'' || it == '-' || it == '.' }
+}
+
+fun maskEmail(email: String): String {
+    if (email.isBlank() || !email.contains("@")) return email
+    val parts = email.split("@")
+    val local = parts[0]
+    val domain = parts[1]
+    val firstChar = local.take(1)
+    val maskedLocal = firstChar + "•".repeat(10)
+    return "$maskedLocal@$domain"
+}
+
+val avatarColors = listOf(
+    Color(0xFF1F6F8B),
+    Color(0xFF8B4F3C),
+    Color(0xFF6B5B95),
+    Color(0xFF4F7A5A),
+    Color(0xFF8A6D3B),
+    Color(0xFF7A4F6B),
+    Color(0xFF3F5F8F),
+    Color(0xFF5F6B73)
+)
+
+fun avatarColorFor(name: String): Color {
+    val clean = name.trim().lowercase()
+    if (clean.isEmpty()) return avatarColors[0]
+    var hash = 0
+    clean.forEachIndexed { i, char -> hash = 31 * hash + char.code + i }
+    val index = abs(hash) % avatarColors.size
+    return avatarColors[index]
+}

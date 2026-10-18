@@ -107,6 +107,7 @@ class MainActivity : ComponentActivity() {
 
                     var userNickname by remember { mutableStateOf("") }
                     var userFirstName by remember { mutableStateOf("") }
+                    var userPhotoUrl by remember { mutableStateOf("") }
 
                     DisposableEffect(user?.uid) {
                         val uid = user?.uid
@@ -118,6 +119,7 @@ class MainActivity : ComponentActivity() {
                                     if (snapshot != null && snapshot.exists()) {
                                         userNickname = snapshot.getString("nickname") ?: ""
                                         userFirstName = snapshot.getString("firstName") ?: ""
+                                        userPhotoUrl = snapshot.getString("photoUrl") ?: ""
                                     }
                                 }
                         } else null
@@ -182,6 +184,7 @@ class MainActivity : ComponentActivity() {
                             firstName = bannerGreetingName,
                             fullName = user?.displayName ?: displayName,
                             email = user?.email ?: "",
+                            photoUrl = userPhotoUrl,
                             onSettingsClick = { showSettingsDialog = true },
                             onSignOut = { authViewModel.signOut() },
                             initialReminderIdToEdit = if (reminderIdToOpenState != -1) reminderIdToOpenState else null,

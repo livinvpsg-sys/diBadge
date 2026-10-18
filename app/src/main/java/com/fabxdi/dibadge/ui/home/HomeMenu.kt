@@ -25,11 +25,14 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fabxdi.dibadge.R
+import coil.compose.AsyncImage
+import com.fabxdi.dibadge.util.avatarColorFor
 import com.fabxdi.dibadge.util.capitalizeWords
+import com.fabxdi.dibadge.R
 
 val DrawerBackgroundColor = Color(0xFF1C1C1E)
 val DrawerDividerColor = Color(0xFF2E2E30)
@@ -50,6 +53,7 @@ fun HomeMenu(
     firstName: String,
     fullName: String = firstName,
     email: String = "",
+    photoUrl: String = "",
     onCloseDrawer: () -> Unit,
     onProfileClick: () -> Unit = {},
     onMyActivityClick: () -> Unit = {},
@@ -75,10 +79,8 @@ fun HomeMenu(
         raw.capitalizeWords()
     }
     val avatarInitial = displayFullName.trim().take(1).uppercase()
-    val avatarGradient = remember {
-        Brush.linearGradient(
-            colors = listOf(Color(0xFF5CC9C0), Color(0xFF17645E))
-        )
+    val avatarBgColor = remember(firstName, fullName) {
+        avatarColorFor(firstName.ifBlank { fullName.ifBlank { "User" } })
     }
 
     val topNavGroup = listOf(
@@ -126,24 +128,31 @@ fun HomeMenu(
                     },
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Teal Gradient Avatar Circle 60dp
+                // Avatar Circle 60dp matching Profile screen photo or avatar color
                 Surface(
                     modifier = Modifier.size(60.dp),
                     shape = CircleShape,
-                    color = Color.Transparent
+                    color = avatarBgColor
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(brush = avatarGradient, shape = CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = avatarInitial,
-                            fontSize = 26.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFFEDEDED)
+                    if (photoUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = photoUrl,
+                            contentDescription = "Profile photo",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
                         )
+                    } else {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = avatarInitial,
+                                fontSize = 26.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
                     }
                 }
 
