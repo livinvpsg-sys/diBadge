@@ -59,19 +59,19 @@ fun OverdueTasksView(
             overduePairs
         }
 
-        // Group by date and sort oldest first!
+        // Group by date and sort latest date first!
         val grouped = overdueTasksWithDate.groupBy({ it.first }, { it.second })
-            .toSortedMap(Comparator { d1, d2 -> d1.compareTo(d2) })
+            .toSortedMap(Comparator { d1, d2 -> d2.compareTo(d1) })
 
         val dateFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())
 
         grouped.map { (date, tasks) ->
             val label = when (date) {
-                todayDate.minusDays(1) -> "Yesterday"
                 todayDate -> "Today"
+                todayDate.minusDays(1) -> "Yesterday"
                 else -> date.format(dateFormatter)
             }
-            val sortedTasks = tasks.sortedBy { parseReminderTime(it.time) }
+            val sortedTasks = tasks.sortedByDescending { parseReminderTime(it.time) }
             OverdueGroup(label, date, sortedTasks)
         }
     }

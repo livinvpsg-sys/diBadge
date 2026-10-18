@@ -8,6 +8,9 @@ interface ToDoDao {
     @Query("SELECT * FROM reminders")
     fun getAllReminders(): Flow<List<ToDoEntity>>
 
+    @Query("SELECT * FROM reminders")
+    suspend fun getAllRemindersList(): List<ToDoEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertReminder(reminder: ToDoEntity): Long
 
@@ -16,6 +19,9 @@ interface ToDoDao {
 
     @Delete
     suspend fun deleteReminder(reminder: ToDoEntity)
+
+    @Query("DELETE FROM reminders")
+    suspend fun deleteAllReminders()
 
     @Query("SELECT * FROM reminders WHERE id = :id")
     suspend fun getReminderById(id: Int): ToDoEntity?

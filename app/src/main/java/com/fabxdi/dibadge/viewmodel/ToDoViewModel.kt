@@ -9,6 +9,7 @@ import com.fabxdi.dibadge.data.ToDoEntity
 import com.fabxdi.dibadge.ui.my_tasks.isReminderOnDate
 import com.fabxdi.dibadge.util.AlarmScheduler
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
@@ -28,6 +29,7 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
     private val firestore = FirebaseFirestore.getInstance()
 
     private var firestoreListener: ListenerRegistration? = null
+    private var currentSyncedUserId: String? = null
 
     val allReminders: Flow<List<ToDoEntity>> = reminderDao.getAllReminders()
     val allHomeEntries: Flow<List<HomeEntryEntity>> = reminderDao.getAllHomeEntries()
@@ -43,9 +45,14 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
     private val authStateListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
         val user = firebaseAuth.currentUser
         if (user != null) {
-            setupFirestoreSync(user.uid)
+            if (currentSyncedUserId != user.uid) {
+                setupFirestoreSync(user.uid)
+            }
         } else {
             removeFirestoreSync()
+            viewModelScope.launch(Dispatchers.IO) {
+                reminderDao.deleteAllReminders()
+            }
         }
     }
 
@@ -62,28 +69,62 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun setupFirestoreSync(userId: String) {
         removeFirestoreSync()
-        firestoreListener = firestore.collection("users")
-            .document(userId)
-            .collection("tasks")
-            .addSnapshotListener { snapshot, e ->
-                if (e != null || snapshot == null) return@addSnapshotListener
-                viewModelScope.launch(Dispatchers.IO) {
-                    for (doc in snapshot.documents) {
-                        val mapData = doc.data
-                        if (mapData != null) {
-                            val entity = mapData.toToDoEntity(doc.id)
-                            if (entity != null) {
-                                reminderDao.insertReminder(entity)
+        currentSyncedUserId = userId
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val localTasks = reminderDao.getAllRemindersList()
+            for (localTask in localTasks) {
+                try {
+                    firestore.collection("users")
+                        .document(userId)
+                        .collection("tasks")
+                        .document(localTask.id.toString())
+                        .set(localTask.toFirestoreMap(), SetOptions.merge())
+                } catch (e: Exception) {
+                    // Ignore offline or firestore error
+                }
+            }
+
+            firestoreListener = firestore.collection("users")
+                .document(userId)
+                .collection("tasks")
+                .addSnapshotListener { snapshot, e ->
+                    if (e != null || snapshot == null) return@addSnapshotListener
+                    viewModelScope.launch(Dispatchers.IO) {
+                        for (change in snapshot.documentChanges) {
+                            val doc = change.document
+                            val mapData = doc.data
+                            when (change.type) {
+                                DocumentChange.Type.ADDED, DocumentChange.Type.MODIFIED -> {
+                                    val entity = mapData.toToDoEntity(doc.id)
+                                    if (entity != null) {
+                                        reminderDao.insertReminder(entity)
+                                        if (!entity.time.isNullOrBlank() && entity.isAlarmEnabled) {
+                                            alarmScheduler.schedule(entity)
+                                        }
+                                    }
+                                }
+                                DocumentChange.Type.REMOVED -> {
+                                    val idVal = (mapData["id"] as? Long)?.toInt()
+                                        ?: doc.id.toIntOrNull()
+                                    if (idVal != null) {
+                                        reminderDao.getReminderById(idVal)?.let { localEntity ->
+                                            reminderDao.deleteReminder(localEntity)
+                                            alarmScheduler.cancel(localEntity.id)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
-            }
+        }
     }
 
     private fun removeFirestoreSync() {
         firestoreListener?.remove()
         firestoreListener = null
+        currentSyncedUserId = null
     }
 
     fun saveHomeEntry(title: String, subtitle: String, initials: String) {
