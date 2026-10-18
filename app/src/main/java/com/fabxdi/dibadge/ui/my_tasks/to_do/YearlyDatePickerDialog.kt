@@ -96,6 +96,16 @@ fun YearlyDatePickerDialog(
                 modifier = Modifier.padding(horizontal = 24.dp)
             )
 
+            Spacer(modifier = Modifier.height(12.dp))
+
+            HorizontalDivider(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp),
+                thickness = 1.dp,
+                color = colors.outline
+            )
+
             Spacer(modifier = Modifier.height(16.dp))
 
             // 2. Month Strip: One single horizontal row (Jan - Dec, 64dp wide x 36dp high, 8dp gap, 24dp side padding)

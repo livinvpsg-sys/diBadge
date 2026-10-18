@@ -1,15 +1,15 @@
 package com.fabxdi.dibadge.ui.my_tasks.to_do
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -21,16 +21,16 @@ import java.time.DayOfWeek
 fun WeeklyDaysPickerDialog(
     initialDays: Set<DayOfWeek>,
     onDaysSelected: (Set<DayOfWeek>) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
 ) {
     val daysOfWeek = listOf(
-        DayOfWeek.SUNDAY to "S",
-        DayOfWeek.MONDAY to "M",
-        DayOfWeek.TUESDAY to "T",
-        DayOfWeek.WEDNESDAY to "W",
-        DayOfWeek.THURSDAY to "T",
-        DayOfWeek.FRIDAY to "F",
-        DayOfWeek.SATURDAY to "S"
+        DayOfWeek.SUNDAY to "Sunday",
+        DayOfWeek.MONDAY to "Monday",
+        DayOfWeek.TUESDAY to "Tuesday",
+        DayOfWeek.WEDNESDAY to "Wednesday",
+        DayOfWeek.THURSDAY to "Thursday",
+        DayOfWeek.FRIDAY to "Friday",
+        DayOfWeek.SATURDAY to "Saturday"
     )
     val selectedDays = remember { mutableStateListOf<DayOfWeek>().apply { addAll(initialDays) } }
 
@@ -38,12 +38,11 @@ fun WeeklyDaysPickerDialog(
     val diBadgeColors = DiBadgeTheme.colors
 
     val primaryTextColor = colors.onBackground
-    val secondaryTextColor = colors.onSurfaceVariant
     val tealAccent = diBadgeColors.accent
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(),
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = colors.surface,
         shape = MaterialTheme.shapes.extraLarge,
         dragHandle = {
@@ -53,7 +52,9 @@ fun WeeklyDaysPickerDialog(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 12.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .navigationBarsPadding()
         ) {
             Text(
                 text = "Weekly",
@@ -62,23 +63,20 @@ fun WeeklyDaysPickerDialog(
                 color = primaryTextColor
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // 7 Round Day Chips (S M T W T F S, 38dp)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                daysOfWeek.forEach { (dayOfWeek, chipLabel) ->
+            HorizontalDivider(thickness = 1.dp, color = colors.outline)
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Column(modifier = Modifier.fillMaxWidth()) {
+                daysOfWeek.forEach { (dayOfWeek, fullName) ->
                     val isSelected = selectedDays.contains(dayOfWeek)
-                    Surface(
+                    Row(
                         modifier = Modifier
-                            .size(38.dp)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
+                            .fillMaxWidth()
+                            .height(38.dp)
+                            .clickable {
                                 if (isSelected) {
                                     if (selectedDays.size > 1) {
                                         selectedDays.remove(dayOfWeek)
@@ -87,23 +85,28 @@ fun WeeklyDaysPickerDialog(
                                     selectedDays.add(dayOfWeek)
                                 }
                             },
-                        shape = CircleShape,
-                        color = Color.Transparent,
-                        border = if (isSelected) BorderStroke(1.dp, primaryTextColor) else null
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = chipLabel,
-                                fontSize = 15.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) primaryTextColor else secondaryTextColor
+                        Text(
+                            text = fullName,
+                            fontSize = 15.sp,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = primaryTextColor
+                        )
+                        if (isSelected) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Selected",
+                                tint = tealAccent,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -119,6 +122,8 @@ fun WeeklyDaysPickerDialog(
                     Text("OK", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = tealAccent)
                 }
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }

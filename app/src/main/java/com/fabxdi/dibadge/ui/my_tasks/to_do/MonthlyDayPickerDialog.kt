@@ -57,7 +57,11 @@ fun MonthlyDayPickerDialog(
                 color = primaryTextColor
             )
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            HorizontalDivider(thickness = 1.dp, color = colors.outline)
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             LazyVerticalGrid(
                 columns = GridCells.Fixed(7),

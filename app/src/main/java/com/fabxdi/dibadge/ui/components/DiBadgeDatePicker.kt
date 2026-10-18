@@ -58,13 +58,6 @@ fun DiBadgeDatePicker(
     val headlineFormatter = remember { DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault()) }
     val monthYearFormatter = remember { DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()) }
 
-    val isTodayDisabled = remember(minDate, maxDate, disabledDates) {
-        val today = LocalDate.now()
-        (minDate != null && today.isBefore(minDate)) ||
-                (maxDate != null && today.isAfter(maxDate)) ||
-                disabledDates.contains(today)
-    }
-
     // Range of YearMonths: 1990-01 to 2100-12 (1332 months)
     val startYearMonth = remember { YearMonth.of(1990, 1) }
     val totalMonthsCount = 1332
@@ -361,45 +354,6 @@ fun DiBadgeDatePicker(
                                     )
                                 )
                             )
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 5. Bottom Row (Today on left; Cancel on right)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(
-                    onClick = {
-                        if (!isTodayDisabled) {
-                            val today = LocalDate.now()
-                            tempSelectedDate = today
-                            onDateSelected(today)
-                            onDismiss()
-                        }
-                    },
-                    enabled = !isTodayDisabled
-                ) {
-                    Text(
-                        text = "Today",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isTodayDisabled) accentColor.copy(alpha = 0.45f) else accentColor
-                    )
-                }
-
-                TextButton(
-                    onClick = onDismiss
-                ) {
-                    Text(
-                        text = "Cancel",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = secondaryTextColor
                     )
                 }
             }

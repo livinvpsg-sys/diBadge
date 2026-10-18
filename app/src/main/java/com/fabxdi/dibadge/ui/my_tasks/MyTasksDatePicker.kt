@@ -61,13 +61,6 @@ fun MyTasksDatePicker(
     val headlineFormatter = remember { DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault()) }
     val monthYearFormatter = remember { DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()) }
 
-    val isTodayDisabled = remember(minDate, maxDate, disabledDates) {
-        val today = LocalDate.now()
-        (minDate != null && today.isBefore(minDate)) ||
-                (maxDate != null && today.isAfter(maxDate)) ||
-                disabledDates.contains(today)
-    }
-
     // Range of YearMonths: 1990-01 to 2100-12 (1332 months)
     val startYearMonth = remember { YearMonth.of(1990, 1) }
     val totalMonthsCount = 1332
@@ -76,12 +69,11 @@ fun MyTasksDatePicker(
         ((ym.year - 1990) * 12) + (ym.monthValue - 1)
     }
 
-    // Each month in LazyColumn has 2 items (stickyHeader + grid item), so scroll index = monthIndex * 2
-    val monthListState = rememberLazyListState(initialFirstVisibleItemIndex = (initialMonthIndex.coerceIn(0, totalMonthsCount - 1)) * 2)
+    val monthListState = rememberLazyListState(initialFirstVisibleItemIndex = initialMonthIndex.coerceIn(0, totalMonthsCount - 1))
     val coroutineScope = rememberCoroutineScope()
 
     // Year in the header control tracks top visible month in scrolling list
-    val currentTopMonthIndex by remember { derivedStateOf { monthListState.firstVisibleItemIndex / 2 } }
+    val currentTopMonthIndex by remember { derivedStateOf { monthListState.firstVisibleItemIndex } }
     val currentTopYearMonth = remember(currentTopMonthIndex) {
         startYearMonth.plusMonths(currentTopMonthIndex.coerceIn(0, totalMonthsCount - 1).toLong())
     }
@@ -218,7 +210,7 @@ fun MyTasksDatePicker(
                                         val targetIdx = ((newYM.year - 1990) * 12) + (newYM.monthValue - 1)
                                         showYearPicker = false
                                         coroutineScope.launch {
-                                            monthListState.scrollToItem(targetIdx.coerceIn(0, totalMonthsCount - 1) * 2)
+                                            monthListState.scrollToItem(targetIdx.coerceIn(0, totalMonthsCount - 1))
                                         }
                                     },
                                 contentAlignment = Alignment.Center
@@ -233,136 +225,126 @@ fun MyTasksDatePicker(
                         }
                     }
                 } else {
-                    // Vertical Scrollable Month List with Sticky Header Month Titles
+                    // Vertical Scrollable Month List (Continuous Scrolling Month Titles)
                     LazyColumn(
                         state = monthListState,
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        for (monthIndex in 0 until totalMonthsCount) {
+                        items(totalMonthsCount, key = { it }) { monthIndex ->
                             val monthYear = startYearMonth.plusMonths(monthIndex.toLong())
 
-                            // Sticky Month Title
-                            stickyHeader(key = "header_$monthIndex") {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(surfaceColor)
-                                        .padding(top = 10.dp, bottom = 6.dp)
-                                ) {
-                                    Text(
-                                        text = monthYear.format(monthYearFormatter),
-                                        fontSize = 17.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = primaryTextColor,
-                                        modifier = Modifier.semantics { heading() }
-                                    )
-                                }
+                            val daysInMonth = monthYear.lengthOfMonth()
+                            val firstDayOfMonth = monthYear.atDay(1).dayOfWeek.value % 7
+
+                            val calendarDays = remember(monthYear) {
+                                val days = mutableListOf<LocalDate?>()
+                                repeat(firstDayOfMonth) { days.add(null) }
+                                for (i in 1..daysInMonth) { days.add(monthYear.atDay(i)) }
+                                while (days.size % 7 != 0) { days.add(null) }
+                                days.chunked(7)
                             }
 
-                            // Days Grid
-                            item(key = "grid_$monthIndex") {
-                                val daysInMonth = monthYear.lengthOfMonth()
-                                val firstDayOfMonth = monthYear.atDay(1).dayOfWeek.value % 7
-
-                                val calendarDays = remember(monthYear) {
-                                    val days = mutableListOf<LocalDate?>()
-                                    repeat(firstDayOfMonth) { days.add(null) }
-                                    for (i in 1..daysInMonth) { days.add(monthYear.atDay(i)) }
-                                    while (days.size % 7 != 0) { days.add(null) }
-                                    days.chunked(7)
-                                }
-
-                                Column(
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 16.dp)
+                            ) {
+                                Text(
+                                    text = monthYear.format(monthYearFormatter),
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryTextColor,
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(bottom = 16.dp)
-                                ) {
-                                    calendarDays.forEach { week ->
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(44.dp)
-                                        ) {
-                                            week.forEach { date ->
-                                                Box(
-                                                    modifier = Modifier
-                                                        .weight(1f)
-                                                        .fillMaxHeight(),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    if (date != null) {
-                                                        val isSelected = date.isEqual(tempSelectedDate)
-                                                        val hasTask = hasTasksOnDate(allReminders, date)
+                                        .padding(top = 10.dp, bottom = 6.dp)
+                                        .semantics { heading() }
+                                )
 
-                                                        val isBeforeMin = minDate != null && date.isBefore(minDate)
-                                                        val isAfterMax = maxDate != null && date.isAfter(maxDate)
-                                                        val isCustomDisabled = disabledDates.contains(date)
-                                                        val isDisabled = isBeforeMin || isAfterMax || isCustomDisabled
+                                // Days Grid
+                                calendarDays.forEach { week ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(44.dp)
+                                    ) {
+                                        week.forEach { date ->
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .fillMaxHeight(),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (date != null) {
+                                                    val isSelected = date.isEqual(tempSelectedDate)
+                                                    val hasTask = hasTasksOnDate(allReminders, date)
 
-                                                        val fullDescription = remember(date, isSelected) {
-                                                            val fmt = DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", Locale.getDefault())
-                                                            val baseDesc = date.format(fmt)
-                                                            if (isSelected) "$baseDesc, selected" else baseDesc
-                                                        }
+                                                    val isBeforeMin = minDate != null && date.isBefore(minDate)
+                                                    val isAfterMax = maxDate != null && date.isAfter(maxDate)
+                                                    val isCustomDisabled = disabledDates.contains(date)
+                                                    val isDisabled = isBeforeMin || isAfterMax || isCustomDisabled
 
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .size(40.dp)
-                                                                .alpha(if (isDisabled) 0.45f else 1.0f)
-                                                                .semantics { contentDescription = fullDescription }
-                                                                .clickable(
-                                                                    interactionSource = remember { MutableInteractionSource() },
-                                                                    indication = null,
-                                                                    enabled = !isDisabled
-                                                                ) {
-                                                                    tempSelectedDate = date
-                                                                    onDateSelected(date)
-                                                                    onDismiss()
-                                                                },
-                                                            contentAlignment = Alignment.Center
-                                                        ) {
-                                                            if (isSelected) {
-                                                                Surface(
-                                                                    modifier = Modifier.fillMaxSize(),
-                                                                    shape = CircleShape,
-                                                                    color = Color.Transparent,
-                                                                    border = BorderStroke(1.dp, primaryTextColor)
-                                                                ) {
-                                                                    Box(contentAlignment = Alignment.Center) {
-                                                                        Text(
-                                                                            text = date.dayOfMonth.toString(),
-                                                                            fontSize = 15.sp,
-                                                                            fontWeight = FontWeight.Bold,
-                                                                            color = primaryTextColor
-                                                                        )
-                                                                    }
-                                                                }
-                                                            } else {
-                                                                Box(
-                                                                    modifier = Modifier.fillMaxSize(),
-                                                                    contentAlignment = Alignment.Center
-                                                                ) {
+                                                    val fullDescription = remember(date, isSelected) {
+                                                        val fmt = DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", Locale.getDefault())
+                                                        val baseDesc = date.format(fmt)
+                                                        if (isSelected) "$baseDesc, selected" else baseDesc
+                                                    }
+
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(40.dp)
+                                                            .alpha(if (isDisabled) 0.45f else 1.0f)
+                                                            .semantics { contentDescription = fullDescription }
+                                                            .clickable(
+                                                                interactionSource = remember { MutableInteractionSource() },
+                                                                indication = null,
+                                                                enabled = !isDisabled
+                                                            ) {
+                                                                tempSelectedDate = date
+                                                                onDateSelected(date)
+                                                                onDismiss()
+                                                            },
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        if (isSelected) {
+                                                            Surface(
+                                                                modifier = Modifier.fillMaxSize(),
+                                                                shape = CircleShape,
+                                                                color = Color.Transparent,
+                                                                border = BorderStroke(1.dp, primaryTextColor)
+                                                            ) {
+                                                                Box(contentAlignment = Alignment.Center) {
                                                                     Text(
                                                                         text = date.dayOfMonth.toString(),
                                                                         fontSize = 15.sp,
-                                                                        fontWeight = FontWeight.Normal,
+                                                                        fontWeight = FontWeight.Bold,
                                                                         color = primaryTextColor
                                                                     )
                                                                 }
                                                             }
-
-                                                            if (hasTask) {
-                                                                Box(
-                                                                    modifier = Modifier
-                                                                        .align(Alignment.BottomCenter)
-                                                                        .padding(bottom = 4.dp)
-                                                                        .size(4.dp)
-                                                                        .background(
-                                                                            color = accentColor,
-                                                                            shape = CircleShape
-                                                                        )
+                                                        } else {
+                                                            Box(
+                                                                modifier = Modifier.fillMaxSize(),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Text(
+                                                                    text = date.dayOfMonth.toString(),
+                                                                    fontSize = 15.sp,
+                                                                    fontWeight = FontWeight.Normal,
+                                                                    color = primaryTextColor
                                                                 )
                                                             }
+                                                        }
+
+                                                        if (hasTask) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .align(Alignment.BottomCenter)
+                                                                    .padding(bottom = 4.dp)
+                                                                    .size(4.dp)
+                                                                    .background(
+                                                                        color = accentColor,
+                                                                        shape = CircleShape
+                                                                    )
+                                                            )
                                                         }
                                                     }
                                                 }
@@ -388,45 +370,6 @@ fun MyTasksDatePicker(
                                     )
                                 )
                             )
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // 5. Bottom Row (Today on left; Cancel on right)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(
-                    onClick = {
-                        if (!isTodayDisabled) {
-                            val today = LocalDate.now()
-                            tempSelectedDate = today
-                            onDateSelected(today)
-                            onDismiss()
-                        }
-                    },
-                    enabled = !isTodayDisabled
-                ) {
-                    Text(
-                        text = "Today",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isTodayDisabled) accentColor.copy(alpha = 0.45f) else accentColor
-                    )
-                }
-
-                TextButton(
-                    onClick = onDismiss
-                ) {
-                    Text(
-                        text = "Cancel",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = secondaryTextColor
                     )
                 }
             }

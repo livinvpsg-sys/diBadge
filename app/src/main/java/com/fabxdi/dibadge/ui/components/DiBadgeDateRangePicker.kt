@@ -162,7 +162,7 @@ fun DiBadgeDateRangePicker(
                     Text(
                         text = startText,
                         fontSize = if (isCrossYear) 20.sp else if (effectiveStart == null && effectiveEnd == null) 22.sp else 26.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = if (effectiveStart != null) FontWeight.Bold else FontWeight.Normal,
                         color = if (effectiveStart != null) primaryTextColor else secondaryTextColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -170,13 +170,13 @@ fun DiBadgeDateRangePicker(
                     Text(
                         text = " – ",
                         fontSize = if (isCrossYear) 20.sp else if (effectiveStart == null && effectiveEnd == null) 22.sp else 26.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = if (effectiveStart != null || effectiveEnd != null) FontWeight.Bold else FontWeight.Normal,
                         color = if (effectiveStart != null && effectiveEnd != null) primaryTextColor else secondaryTextColor
                     )
                     Text(
                         text = endText,
                         fontSize = if (isCrossYear) 20.sp else if (effectiveStart == null && effectiveEnd == null) 22.sp else 26.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = if (effectiveEnd != null) FontWeight.Bold else FontWeight.Normal,
                         color = if (effectiveEnd != null) primaryTextColor else secondaryTextColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis

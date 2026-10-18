@@ -1,14 +1,20 @@
 package com.fabxdi.dibadge.ui.my_tasks.to_do
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,18 +24,21 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -37,11 +46,18 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.data.ReminderEntity
@@ -50,6 +66,7 @@ import com.fabxdi.dibadge.ui.components.DiBadgeDatePicker
 import com.fabxdi.dibadge.ui.components.DiBadgeDateRangePicker
 import com.fabxdi.dibadge.ui.my_tasks.TaskDatePickerDialog
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import com.fabxdi.dibadge.util.FilePickerUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
@@ -124,6 +141,9 @@ fun ReminderFormScreen(
     var showYearlyDatePicker by remember { mutableStateOf(false) }
     var showRemindMePicker by remember { mutableStateOf(autoOpenTimePicker) }
     var showRemindMeActionSheet by remember { mutableStateOf(false) }
+
+    var showBottomSheet by remember { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     var isDueDateMenuExpanded by remember { mutableStateOf(false) }
     var isRepeatMenuExpanded by remember { mutableStateOf(false) }
@@ -234,6 +254,7 @@ fun ReminderFormScreen(
     val toggleOffColor = colors.outline
     val errorColor = colors.error
     val tabInactiveColor = diBadgeColors.tabInactive
+    val isDark = isSystemInDarkTheme()
 
     val hasChanges = remember(
         title, content, selectedRepeat, selectedTime, isAlarmEnabled,
@@ -266,30 +287,237 @@ fun ReminderFormScreen(
 
     BackHandler(onBack = handleBack)
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(pageBgColor)
-            .windowInsetsPadding(WindowInsets.systemBars)
-    ) {
-        // 1. Top Bar
-        Row(
+    if (isEditMode) {
+        // --- EDIT TASK SCREEN LAYOUT ---
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp)
-                .padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .fillMaxSize()
+                .background(pageBgColor)
+                .windowInsetsPadding(WindowInsets.systemBars)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = handleBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = primaryTextColor
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .imePadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+            ) {
+                // 1. Top Bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    IconButton(onClick = handleBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = primaryTextColor
+                        )
+                    }
+
+                    TextButton(
+                        onClick = {
+                            triedToSave = true
+                            if (isSaveEnabled) {
+                                onSave(
+                                    title.trim(),
+                                    content.trim(),
+                                    selectedDueDate,
+                                    selectedDueDate ?: LocalDate.now(),
+                                    selectedDueDate,
+                                    selectedRepeat ?: "once",
+                                    selectedTime,
+                                    isAlarmEnabled,
+                                    attachedFiles.map { it.toString() },
+                                    reminderToEdit?.id ?: 0
+                                )
+                            }
+                        },
+                        enabled = isSaveEnabled
+                    ) {
+                        Text(
+                            text = "Save",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = if (isSaveEnabled) tealAccent else tabInactiveColor
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // 2. Summary Bar
+                TaskSummaryBar(
+                    selectedDueDate = selectedDueDate,
+                    selectedTime = selectedTime,
+                    selectedRepeat = selectedRepeat,
+                    isAlarmEnabled = isAlarmEnabled,
+                    tabInactiveColor = tabInactiveColor,
+                    cardBgColor = cardBgColor,
+                    onClick = {
+                        clearFocusAndHideKeyboard()
+                        showBottomSheet = true
+                    }
+                )
+
+                // 3. Attachment Chips Row
+                if (attachedFiles.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    AttachmentChipsRow(
+                        context = context,
+                        attachedFiles = attachedFiles,
+                        cardBgColor = cardBgColor,
+                        dividerColor = dividerColor,
+                        primaryTextColor = primaryTextColor,
+                        tabInactiveColor = tabInactiveColor,
+                        isDark = isDark
                     )
                 }
-                if (reminderToEdit == null) {
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 4. Title & Note Tile
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .heightIn(min = 120.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = cardBgColor
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(16.dp)
+                    ) {
+                        // Title Input
+                        BasicTextField(
+                            value = title,
+                            onValueChange = { if (it.length <= 120) title = it },
+                            textStyle = MaterialTheme.typography.titleLarge.copy(
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = primaryTextColor
+                            ),
+                            cursorBrush = SolidColor(primaryTextColor),
+                            maxLines = 3,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Sentences,
+                                autoCorrectEnabled = true,
+                                imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onNext = { noteFocusRequester.requestFocus() }
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(titleFocusRequester),
+                            decorationBox = { innerTextField ->
+                                Box(contentAlignment = Alignment.CenterStart) {
+                                    if (title.isEmpty()) {
+                                        Text(
+                                            text = "Title",
+                                            fontSize = 20.sp,
+                                            fontWeight = FontWeight.Normal,
+                                            color = secondaryTextColor
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            }
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        HorizontalDivider(
+                            modifier = Modifier.fillMaxWidth(),
+                            thickness = 1.dp,
+                            color = if (triedToSave && !isTitleValid) errorColor else dividerColor
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Note Input
+                        BasicTextField(
+                            value = contentValue,
+                            onValueChange = { newValue ->
+                                if (newValue.text.length <= 2000) {
+                                    contentValue = handleSmartContentValueChange(contentValue, newValue)
+                                }
+                            },
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 17.sp,
+                                lineHeight = 25.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = primaryTextColor
+                            ),
+                            cursorBrush = SolidColor(primaryTextColor),
+                            maxLines = Int.MAX_VALUE,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Sentences,
+                                autoCorrectEnabled = true,
+                                imeAction = ImeAction.Default
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onDone = null
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 40.dp)
+                                .padding(start = 4.dp)
+                                .focusRequester(noteFocusRequester),
+                            decorationBox = { innerTextField ->
+                                Box(contentAlignment = Alignment.TopStart) {
+                                    if (content.isEmpty()) {
+                                        Text(
+                                            text = "Add note",
+                                            fontSize = 17.sp,
+                                            lineHeight = 25.sp,
+                                            fontWeight = FontWeight.Normal,
+                                            color = secondaryTextColor
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+    } else {
+        // --- ADD TASK SCREEN LAYOUT ---
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(pageBgColor)
+                .windowInsetsPadding(WindowInsets.systemBars)
+        ) {
+            // 1. Top Bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = handleBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = primaryTextColor
+                        )
+                    }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Add task",
@@ -298,472 +526,413 @@ fun ReminderFormScreen(
                         color = primaryTextColor
                     )
                 }
-            }
 
-            TextButton(
-                onClick = {
-                    triedToSave = true
-                    if (isSaveEnabled) {
-                        onSave(
-                            title.trim(),
-                            content.trim(),
-                            selectedDueDate,
-                            selectedDueDate ?: LocalDate.now(),
-                            selectedDueDate,
-                            selectedRepeat ?: "once",
-                            selectedTime,
-                            isAlarmEnabled,
-                            attachedFiles.map { it.toString() },
-                            reminderToEdit?.id ?: 0
-                        )
-                    }
-                },
-                enabled = isSaveEnabled
-            ) {
-                Text(
-                    text = "Save",
-                    fontSize = if (isEditMode) 15.sp else 16.sp,
-                    fontWeight = if (isEditMode) FontWeight.Normal else FontWeight.Bold,
-                    color = if (isSaveEnabled) tealAccent else (if (isEditMode) tabInactiveColor else faintColor)
-                )
-            }
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .weight(1f)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {
-                    clearFocusAndHideKeyboard()
-                }
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // --- CARD 1: TITLE & NOTE ---
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                color = cardBgColor
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 16.dp)
-                ) {
-                    // Title Input (120 char limit, max 3 lines, cursor uses primaryTextColor)
-                    BasicTextField(
-                        value = title,
-                        onValueChange = { if (it.length <= 120) title = it },
-                        textStyle = MaterialTheme.typography.titleLarge.copy(
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = primaryTextColor
-                        ),
-                        cursorBrush = SolidColor(primaryTextColor),
-                        maxLines = 3,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Sentences,
-                            autoCorrectEnabled = true,
-                            imeAction = ImeAction.Next
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onNext = { noteFocusRequester.requestFocus() }
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .focusRequester(titleFocusRequester),
-                        decorationBox = { innerTextField ->
-                            Box(contentAlignment = Alignment.CenterStart) {
-                                if (title.isEmpty()) {
-                                    Text(
-                                        text = "Title",
-                                        fontSize = 20.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        color = if (isEditMode) secondaryTextColor else faintColor
-                                    )
-                                }
-                                innerTextField()
-                            }
+                TextButton(
+                    onClick = {
+                        triedToSave = true
+                        if (isSaveEnabled) {
+                            onSave(
+                                title.trim(),
+                                content.trim(),
+                                selectedDueDate,
+                                selectedDueDate ?: LocalDate.now(),
+                                selectedDueDate,
+                                selectedRepeat ?: "once",
+                                selectedTime,
+                                isAlarmEnabled,
+                                attachedFiles.map { it.toString() },
+                                0
+                            )
                         }
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    HorizontalDivider(
-                        modifier = Modifier.fillMaxWidth(),
-                        thickness = 1.dp,
-                        color = if (triedToSave && !isTitleValid) errorColor else dividerColor
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Note Input (2000 char limit, min 40dp height, grows infinitely, cursor uses primaryTextColor)
-                    BasicTextField(
-                        value = contentValue,
-                        onValueChange = { newValue ->
-                            if (newValue.text.length <= 2000) {
-                                contentValue = handleSmartContentValueChange(contentValue, newValue)
-                            }
-                        },
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 17.sp,
-                            lineHeight = 25.sp,
-                            fontWeight = FontWeight.Normal,
-                            color = if (isEditMode) primaryTextColor else secondaryTextColor
-                        ),
-                        cursorBrush = SolidColor(primaryTextColor),
-                        maxLines = Int.MAX_VALUE,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Sentences,
-                            autoCorrectEnabled = true,
-                            imeAction = ImeAction.Default
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onDone = null
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 40.dp)
-                            .padding(start = 4.dp)
-                            .focusRequester(noteFocusRequester),
-                        decorationBox = { innerTextField ->
-                            Box(contentAlignment = Alignment.TopStart) {
-                                if (content.isEmpty()) {
-                                    Text(
-                                        text = "Add note",
-                                        fontSize = 17.sp,
-                                        lineHeight = 25.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        color = if (isEditMode) secondaryTextColor else faintColor
-                                    )
-                                }
-                                innerTextField()
-                            }
-                        }
+                    },
+                    enabled = isSaveEnabled
+                ) {
+                    Text(
+                        text = "Save",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isSaveEnabled) tealAccent else faintColor
                     )
                 }
             }
 
-            // --- CARD 2: OPTION BLOCK (Due date, Remind me, Repeat, Alarm) ---
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                color = cardBgColor
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    // 1. Due Date Row
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 56.dp)
-                            .clickable {
-                                clearFocusAndHideKeyboard()
-                                isDueDateMenuExpanded = true
-                            }
-                            .padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.CalendarMonth,
-                                contentDescription = "Due date",
-                                tint = secondaryTextColor,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text(
-                                text = "Due date",
-                                fontSize = if (isEditMode) 15.sp else 16.sp,
-                                fontWeight = FontWeight.Normal,
-                                color = secondaryTextColor
-                            )
-                        }
-                        Text(
-                            text = selectedDueDate?.format(displayDateFormatter) ?: "None",
-                            fontSize = if (isEditMode) 14.sp else 15.sp,
-                            fontWeight = if (isEditMode) FontWeight.Normal else (if (selectedDueDate != null) FontWeight.Medium else FontWeight.Normal),
-                            color = if (isEditMode) tabInactiveColor else (if (selectedDueDate != null) primaryTextColor else faintColor)
-                        )
-                    }
-
-                    HorizontalDivider(thickness = 1.dp, color = dividerColor)
-
-                    // 2. Remind Me Row
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 56.dp)
-                            .clickable {
-                                clearFocusAndHideKeyboard()
-                                if (selectedTime != null) {
-                                    showRemindMeActionSheet = true
-                                } else {
-                                    showRemindMePicker = true
-                                }
-                            }
-                            .padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Notifications,
-                                contentDescription = "Remind me",
-                                tint = secondaryTextColor,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text(
-                                text = "Remind me",
-                                fontSize = if (isEditMode) 15.sp else 16.sp,
-                                fontWeight = FontWeight.Normal,
-                                color = secondaryTextColor
-                            )
-                        }
-                        val remindText = selectedTime ?: "None"
-
-                        Text(
-                            text = remindText,
-                            fontSize = if (isEditMode) 14.sp else 15.sp,
-                            fontWeight = if (isEditMode) FontWeight.Normal else (if (selectedTime != null) FontWeight.Medium else FontWeight.Normal),
-                            color = if (isEditMode) tabInactiveColor else (if (selectedTime != null) primaryTextColor else faintColor)
-                        )
-                    }
-
-                    HorizontalDivider(thickness = 1.dp, color = dividerColor)
-
-                    // 3. Repeat Row
-                    val isRepeatDisabled = selectedDueDate == LocalDate.now()
-
-                    LaunchedEffect(isRepeatDisabled) {
-                        if (isRepeatDisabled) {
-                            selectedRepeat = "once"
-                        }
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 56.dp)
-                            .alpha(if (isRepeatDisabled && !isEditMode) 0.45f else 1.0f)
-                            .clickable(enabled = !isRepeatDisabled) {
-                                clearFocusAndHideKeyboard()
-                                isRepeatMenuExpanded = true
-                            }
-                            .padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Repeat,
-                                contentDescription = "Repeat",
-                                tint = secondaryTextColor,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column {
-                                Text(
-                                    text = "Repeat",
-                                    fontSize = if (isEditMode) 15.sp else 16.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    color = secondaryTextColor
-                                )
-                                if (isRepeatDisabled) {
-                                    Text(
-                                        text = "Not available when due today",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        color = if (isEditMode) tabInactiveColor else faintColor
-                                    )
-                                } else {
-                                    val endLine = getRepeatEndLine(selectedRepeat, selectedDueDate)
-                                    if (endLine != null) {
-                                        Text(
-                                            text = endLine,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Normal,
-                                            color = if (isEditMode) tabInactiveColor else secondaryTextColor
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        Text(
-                            text = if (isRepeatDisabled) "None" else formatRepeatValue(selectedRepeat),
-                            fontSize = if (isEditMode) 14.sp else 15.sp,
-                            fontWeight = if (isEditMode) FontWeight.Normal else (if (!isRepeatDisabled && selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") FontWeight.Medium else FontWeight.Normal),
-                            color = if (isEditMode) tabInactiveColor else (if (!isRepeatDisabled && selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") primaryTextColor else faintColor)
-                        )
-                    }
-
-                    HorizontalDivider(thickness = 1.dp, color = dividerColor)
-
-                    // 4. Alarm Row
-                    val isAlarmDimmed = selectedTime == null
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 56.dp)
-                            .alpha(if (isAlarmDimmed) 0.45f else 1.0f)
-                            .clickable(enabled = !isAlarmDimmed) {
-                                clearFocusAndHideKeyboard()
-                                isAlarmEnabled = !isAlarmEnabled
-                            }
-                            .padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Notifications,
-                                contentDescription = "Alarm",
-                                tint = secondaryTextColor,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column {
-                                Text(
-                                    text = "Alarm",
-                                    fontSize = if (isEditMode) 15.sp else 16.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    color = secondaryTextColor
-                                )
-                                if (isAlarmDimmed) {
-                                    Text(
-                                        text = "Set a remind time first",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        color = if (isEditMode) tabInactiveColor else faintColor
-                                    )
-                                }
-                            }
-                        }
-
-                        Switch(
-                            checked = isAlarmEnabled && !isAlarmDimmed,
-                            onCheckedChange = {
-                                if (!isAlarmDimmed) {
-                                    clearFocusAndHideKeyboard()
-                                    isAlarmEnabled = it
-                                }
-                            },
-                            enabled = !isAlarmDimmed,
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = tealAccent,
-                                uncheckedThumbColor = Color.White,
-                                uncheckedTrackColor = toggleOffColor
-                            )
-                        )
-                    }
-                }
-            }
-
-            // --- CARD 3: ADD ATTACHMENT ---
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                color = cardBgColor
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 36.dp)
-                            .clickable {
-                                clearFocusAndHideKeyboard()
-                                attachmentLauncher.launch(arrayOf("*/*"))
-                            },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.AttachFile,
-                            contentDescription = "Add attachment",
-                            tint = secondaryTextColor,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text(
-                            text = "Add attachment",
-                            fontSize = if (isEditMode) 15.sp else 16.sp,
-                            fontWeight = FontWeight.Normal,
-                            color = secondaryTextColor
-                        )
-                    }
-
-                    if (attachedFiles.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        AttachmentList(
-                            context = context,
-                            attachedFiles = attachedFiles,
-                            onRemove = { index ->
-                                attachedFiles = attachedFiles.filterIndexed { i, _ -> i != index }
-                            },
-                            onAddClick = { attachmentLauncher.launch(arrayOf("*/*")) },
-                            isReadOnly = false
-                        )
-                    }
-                }
-            }
-
-            // --- CARD 4: DELETE TASK (Only in Edit task mode) ---
-            if (reminderToEdit != null) {
+                // --- CARD 1: TITLE & NOTE ---
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
                     color = cardBgColor
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 56.dp)
-                            .clickable {
-                                clearFocusAndHideKeyboard()
-                                showDeleteConfirmation = true
-                            }
-                            .padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(horizontal = 16.dp, vertical = 16.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete task, button",
-                            tint = errorColor,
-                            modifier = Modifier.size(22.dp)
+                        BasicTextField(
+                            value = title,
+                            onValueChange = { if (it.length <= 120) title = it },
+                            textStyle = MaterialTheme.typography.titleLarge.copy(
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = primaryTextColor
+                            ),
+                            cursorBrush = SolidColor(primaryTextColor),
+                            maxLines = 3,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Sentences,
+                                autoCorrectEnabled = true,
+                                imeAction = ImeAction.Default
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onNext = null
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(titleFocusRequester),
+                            decorationBox = { innerTextField ->
+                                Box(contentAlignment = Alignment.CenterStart) {
+                                    if (title.isEmpty()) {
+                                        Text(
+                                            text = "Title",
+                                            fontSize = 20.sp,
+                                            fontWeight = FontWeight.Normal,
+                                            color = faintColor
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            }
                         )
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text(
-                            text = "Delete task",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Normal,
-                            color = errorColor
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        HorizontalDivider(
+                            modifier = Modifier.fillMaxWidth(),
+                            thickness = 1.dp,
+                            color = if (triedToSave && !isTitleValid) errorColor else dividerColor
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        BasicTextField(
+                            value = contentValue,
+                            onValueChange = { newValue ->
+                                if (newValue.text.length <= 2000) {
+                                    contentValue = handleSmartContentValueChange(contentValue, newValue)
+                                }
+                            },
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 17.sp,
+                                lineHeight = 25.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = secondaryTextColor
+                            ),
+                            cursorBrush = SolidColor(primaryTextColor),
+                            maxLines = Int.MAX_VALUE,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Sentences,
+                                autoCorrectEnabled = true,
+                                imeAction = ImeAction.Default
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onDone = null
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 40.dp)
+                                .padding(start = 4.dp)
+                                .focusRequester(noteFocusRequester),
+                            decorationBox = { innerTextField ->
+                                Box(contentAlignment = Alignment.TopStart) {
+                                    if (content.isEmpty()) {
+                                        Text(
+                                            text = "Add note",
+                                            fontSize = 17.sp,
+                                            lineHeight = 25.sp,
+                                            fontWeight = FontWeight.Normal,
+                                            color = faintColor
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            }
                         )
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(32.dp))
+                // --- CARD 2: OPTION BLOCK ---
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = cardBgColor
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 56.dp)
+                                .clickable {
+                                    keyboardController?.hide()
+                                    isDueDateMenuExpanded = true
+                                }
+                                .padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.CalendarMonth,
+                                    contentDescription = "Due date",
+                                    tint = secondaryTextColor,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Text(
+                                    text = "Due date",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = secondaryTextColor
+                                )
+                            }
+                            Text(
+                                text = selectedDueDate?.format(displayDateFormatter) ?: "None",
+                                fontSize = 15.sp,
+                                fontWeight = if (selectedDueDate != null) FontWeight.Medium else FontWeight.Normal,
+                                color = if (selectedDueDate != null) primaryTextColor else faintColor
+                            )
+                        }
+
+                        HorizontalDivider(thickness = 1.dp, color = dividerColor)
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 56.dp)
+                                .clickable {
+                                    keyboardController?.hide()
+                                    if (selectedTime != null) {
+                                        showRemindMeActionSheet = true
+                                    } else {
+                                        showRemindMePicker = true
+                                    }
+                                }
+                                .padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Notifications,
+                                    contentDescription = "Remind me",
+                                    tint = secondaryTextColor,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Text(
+                                    text = "Remind me",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = secondaryTextColor
+                                )
+                            }
+                            Text(
+                                text = selectedTime ?: "None",
+                                fontSize = 15.sp,
+                                fontWeight = if (selectedTime != null) FontWeight.Medium else FontWeight.Normal,
+                                color = if (selectedTime != null) primaryTextColor else faintColor
+                            )
+                        }
+
+                        HorizontalDivider(thickness = 1.dp, color = dividerColor)
+
+                        val isRepeatDisabled = selectedDueDate == LocalDate.now()
+                        LaunchedEffect(isRepeatDisabled) {
+                            if (isRepeatDisabled) {
+                                selectedRepeat = "once"
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 56.dp)
+                                .alpha(if (isRepeatDisabled) 0.45f else 1.0f)
+                                .clickable(enabled = !isRepeatDisabled) {
+                                    keyboardController?.hide()
+                                    isRepeatMenuExpanded = true
+                                }
+                                .padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Repeat,
+                                    contentDescription = "Repeat",
+                                    tint = secondaryTextColor,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column {
+                                    Text(
+                                        text = "Repeat",
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = secondaryTextColor
+                                    )
+                                    if (isRepeatDisabled) {
+                                        Text(
+                                            text = "Not available when due today",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Normal,
+                                            color = faintColor
+                                        )
+                                    } else {
+                                        val endLine = getRepeatEndLine(selectedRepeat, selectedDueDate)
+                                        if (endLine != null) {
+                                            Text(
+                                                text = endLine,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Normal,
+                                                color = secondaryTextColor
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            Text(
+                                text = if (isRepeatDisabled) "None" else formatRepeatValue(selectedRepeat),
+                                fontSize = 15.sp,
+                                fontWeight = if (!isRepeatDisabled && selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") FontWeight.Medium else FontWeight.Normal,
+                                color = if (!isRepeatDisabled && selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") primaryTextColor else faintColor
+                            )
+                        }
+
+                        HorizontalDivider(thickness = 1.dp, color = dividerColor)
+
+                        val isAlarmDimmed = selectedTime == null
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 56.dp)
+                                .alpha(if (isAlarmDimmed) 0.45f else 1.0f)
+                                .clickable(enabled = !isAlarmDimmed) {
+                                    isAlarmEnabled = !isAlarmEnabled
+                                }
+                                .padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Notifications,
+                                    contentDescription = "Alarm",
+                                    tint = secondaryTextColor,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column {
+                                    Text(
+                                        text = "Alarm",
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = secondaryTextColor
+                                    )
+                                    if (isAlarmDimmed) {
+                                        Text(
+                                            text = "Set a remind time first",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Normal,
+                                            color = faintColor
+                                        )
+                                    }
+                                }
+                            }
+
+                            Switch(
+                                checked = isAlarmEnabled && !isAlarmDimmed,
+                                onCheckedChange = { if (!isAlarmDimmed) isAlarmEnabled = it },
+                                enabled = !isAlarmDimmed,
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = tealAccent,
+                                    uncheckedThumbColor = Color.White,
+                                    uncheckedTrackColor = toggleOffColor
+                                )
+                            )
+                        }
+                    }
+                }
+
+                // --- CARD 3: ADD ATTACHMENT ---
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = cardBgColor
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 36.dp)
+                                .clickable { attachmentLauncher.launch(arrayOf("*/*")) },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.AttachFile,
+                                contentDescription = "Add attachment",
+                                tint = secondaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = "Add attachment",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = secondaryTextColor
+                            )
+                        }
+
+                        if (attachedFiles.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            AttachmentList(
+                                context = context,
+                                attachedFiles = attachedFiles,
+                                onRemove = { index ->
+                                    attachedFiles = attachedFiles.filterIndexed { i, _ -> i != index }
+                                },
+                                onAddClick = { attachmentLauncher.launch(arrayOf("*/*")) },
+                                isReadOnly = false
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
+            }
         }
     }
 
@@ -973,23 +1142,403 @@ fun ReminderFormScreen(
         )
     }
 
+    if (showBottomSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showBottomSheet = false },
+            sheetState = sheetState,
+            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+            containerColor = cardBgColor,
+            scrimColor = Color.Black.copy(alpha = 0.45f),
+            tonalElevation = 0.dp,
+            dragHandle = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp, bottom = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(width = 32.dp, height = 4.dp)
+                            .background(
+                                color = secondaryTextColor.copy(alpha = 0.40f),
+                                shape = RoundedCornerShape(2.dp)
+                            )
+                    )
+                }
+            }
+        ) {
+            val navBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(cardBgColor)
+                    .verticalScroll(rememberScrollState())
+                    .padding(bottom = navBottomPadding + 8.dp)
+            ) {
+                // 1. Due date row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .clickable { isDueDateMenuExpanded = true }
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.CalendarMonth,
+                            contentDescription = "Due date",
+                            tint = secondaryTextColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(
+                            text = "Due date",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = secondaryTextColor
+                        )
+                    }
+                    Text(
+                        text = selectedDueDate?.format(displayDateFormatter) ?: "None",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = tabInactiveColor
+                    )
+                }
+
+                HorizontalDivider(thickness = 1.dp, color = dividerColor)
+
+                // 2. Remind me row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .clickable {
+                            if (selectedTime != null) {
+                                showRemindMeActionSheet = true
+                            } else {
+                                showRemindMePicker = true
+                            }
+                        }
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Notifications,
+                            contentDescription = "Remind me",
+                            tint = secondaryTextColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(
+                            text = "Remind me",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = secondaryTextColor
+                        )
+                    }
+                    Text(
+                        text = selectedTime ?: "None",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = tabInactiveColor
+                    )
+                }
+
+                HorizontalDivider(thickness = 1.dp, color = dividerColor)
+
+                // 3. Repeat row
+                val isRepeatDisabled = selectedDueDate == LocalDate.now()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .alpha(if (isRepeatDisabled) 0.45f else 1.0f)
+                        .clickable(enabled = !isRepeatDisabled) {
+                            isRepeatMenuExpanded = true
+                        }
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Repeat,
+                            contentDescription = "Repeat",
+                            tint = secondaryTextColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column {
+                            Text(
+                                text = "Repeat",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = secondaryTextColor
+                            )
+                            if (isRepeatDisabled) {
+                                Text(
+                                    text = "Not available when due today",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = tabInactiveColor
+                                )
+                            } else {
+                                val endLine = getRepeatEndLine(selectedRepeat, selectedDueDate)
+                                if (endLine != null) {
+                                    Text(
+                                        text = endLine,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = tabInactiveColor
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Text(
+                        text = if (isRepeatDisabled) "None" else formatRepeatValue(selectedRepeat),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = tabInactiveColor
+                    )
+                }
+
+                HorizontalDivider(thickness = 1.dp, color = dividerColor)
+
+                // 4. Alarm row
+                val isAlarmDimmed = selectedTime == null
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .alpha(if (isAlarmDimmed) 0.45f else 1.0f)
+                        .clickable(enabled = !isAlarmDimmed) {
+                            isAlarmEnabled = !isAlarmEnabled
+                        }
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Notifications,
+                            contentDescription = "Alarm",
+                            tint = secondaryTextColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column {
+                            Text(
+                                text = "Alarm",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = secondaryTextColor
+                            )
+                            if (isAlarmDimmed) {
+                                Text(
+                                    text = "Set a remind time first",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = tabInactiveColor
+                                )
+                            }
+                        }
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = if (isAlarmEnabled && !isAlarmDimmed) "On" else "Off",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = tabInactiveColor,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                        Switch(
+                            checked = isAlarmEnabled && !isAlarmDimmed,
+                            onCheckedChange = { if (!isAlarmDimmed) isAlarmEnabled = it },
+                            enabled = !isAlarmDimmed,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = tealAccent,
+                                uncheckedThumbColor = Color.White,
+                                uncheckedTrackColor = toggleOffColor
+                            )
+                        )
+                    }
+                }
+
+                // 5. Existing Attachments List (between Alarm and Add attachment)
+                if (attachedFiles.isNotEmpty()) {
+                    attachedFiles.forEachIndexed { index, uri ->
+                        HorizontalDivider(thickness = 1.dp, color = dividerColor)
+                        val fileName = remember(uri) { FilePickerUtils.getFileName(context, uri) }
+                        val fileSize = remember(uri) { getFileSize(context, uri) }
+                        val extension = remember(fileName) { fileName.substringAfterLast('.', "") }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp)
+                                .padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                FileTypeTile(
+                                    extension = extension,
+                                    sizeDp = 28.dp,
+                                    fontSizeSp = 10.sp,
+                                    isDark = isDark
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(verticalArrangement = Arrangement.Center) {
+                                    Text(
+                                        text = fileName,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = secondaryTextColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = fileSize,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = tabInactiveColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            IconButton(
+                                onClick = {
+                                    val removedUri = attachedFiles[index]
+                                    val removedIndex = index
+                                    attachedFiles = attachedFiles.filterIndexed { i, _ -> i != index }
+                                    coroutineScope.launch {
+                                        val result = snackbarHostState.showSnackbar(
+                                            message = "Attachment removed",
+                                            actionLabel = "Undo",
+                                            duration = SnackbarDuration.Short
+                                        )
+                                        if (result == SnackbarResult.ActionPerformed) {
+                                            attachedFiles = attachedFiles.toMutableList().apply {
+                                                add(removedIndex.coerceAtMost(size), removedUri)
+                                            }
+                                        }
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Remove attachment",
+                                    tint = tabInactiveColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(thickness = 1.dp, color = dividerColor)
+
+                // 6. Add attachment row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .clickable {
+                            attachmentLauncher.launch(arrayOf("*/*"))
+                        }
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.AttachFile,
+                        contentDescription = "Add attachment",
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(
+                        text = "Add attachment",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = secondaryTextColor
+                    )
+                }
+
+                HorizontalDivider(thickness = 1.dp, color = dividerColor)
+
+                // 7. Delete task row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .clickable {
+                            showBottomSheet = false
+                            showDeleteConfirmation = true
+                        }
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete task, button",
+                        tint = errorColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(
+                        text = "Delete task",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = errorColor
+                    )
+                }
+            }
+        }
+    }
+
     if (showDeleteConfirmation) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmation = false },
             containerColor = cardBgColor,
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(24.dp),
             title = {
                 Text(
-                    text = "Delete this task?",
-                    fontSize = 18.sp,
+                    text = "Delete task?",
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = primaryTextColor
                 )
             },
             text = {
                 Text(
-                    text = "It will be removed from all dates.",
-                    fontSize = 14.sp,
+                    text = "This task and its attachments will be removed. You can't undo this.",
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Normal,
                     color = secondaryTextColor
                 )
@@ -1006,7 +1555,7 @@ fun ReminderFormScreen(
                     Text(
                         text = "Delete",
                         fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                         color = errorColor
                     )
                 }
@@ -1016,8 +1565,8 @@ fun ReminderFormScreen(
                     Text(
                         text = "Cancel",
                         fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = secondaryTextColor
+                        fontWeight = FontWeight.Normal,
+                        color = primaryTextColor
                     )
                 }
             }
@@ -1326,6 +1875,298 @@ fun getRepeatEndLine(selectedRepeat: String?, dueDate: LocalDate?): String? {
     }
     
     return "No end date"
+}
+
+private fun getFileSize(context: Context, uri: Uri): String {
+    return try {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+            if (sizeIndex != -1 && cursor.moveToFirst() && !cursor.isNull(sizeIndex)) {
+                val bytes = cursor.getLong(sizeIndex)
+                when {
+                    bytes < 1024 -> "$bytes B"
+                    bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+                    else -> String.format(Locale.getDefault(), "%.1f MB", bytes / (1024.0 * 1024.0))
+                }
+            } else "File"
+        } ?: "File"
+    } catch (e: Exception) {
+        "File"
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TaskSummaryBar(
+    selectedDueDate: LocalDate?,
+    selectedTime: String?,
+    selectedRepeat: String?,
+    isAlarmEnabled: Boolean,
+    tabInactiveColor: Color,
+    cardBgColor: Color,
+    onClick: () -> Unit
+) {
+    val currentYear = LocalDate.now().year
+    val dateText = remember(selectedDueDate) {
+        if (selectedDueDate != null) {
+            val pattern = if (selectedDueDate.year == currentYear) "EEE, d MMM" else "EEE, d MMM yyyy"
+            selectedDueDate.format(DateTimeFormatter.ofPattern(pattern, Locale.getDefault()))
+        } else null
+    }
+
+    val isRepeatSet = selectedDueDate != LocalDate.now() &&
+            selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat"
+    val repeatText = if (isRepeatSet) formatRepeatValue(selectedRepeat) else null
+    val isAlarmOn = isAlarmEnabled && selectedTime != null
+
+    val hasAnyItem = dateText != null || selectedTime != null || repeatText != null
+
+    val summaryAccessibilityText = buildString {
+        if (!hasAnyItem) {
+            append("Add date, reminder…")
+        } else {
+            val parts = mutableListOf<String>()
+            if (dateText != null) parts.add("Due $dateText")
+            if (selectedTime != null) parts.add("Remind at $selectedTime")
+            if (repeatText != null) parts.add("Repeat $repeatText")
+            if (isAlarmOn) parts.add("Alarm on")
+            append(parts.joinToString(", "))
+        }
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .semantics {
+                role = Role.Button
+                contentDescription = "Task options. $summaryAccessibilityText"
+            },
+        shape = RoundedCornerShape(16.dp),
+        color = cardBgColor
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(modifier = Modifier.weight(1f)) {
+                if (!hasAnyItem) {
+                    Text(
+                        text = "Add date, reminder…",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = tabInactiveColor
+                    )
+                } else {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (dateText != null) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.CalendarMonth,
+                                    contentDescription = null,
+                                    tint = tabInactiveColor,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = dateText,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = tabInactiveColor
+                                )
+                            }
+                        }
+
+                        if (selectedTime != null) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Notifications,
+                                    contentDescription = null,
+                                    tint = tabInactiveColor,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = selectedTime,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = tabInactiveColor
+                                )
+                            }
+                        }
+
+                        if (repeatText != null) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Repeat,
+                                    contentDescription = null,
+                                    tint = tabInactiveColor,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = repeatText,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = tabInactiveColor
+                                )
+                            }
+                        }
+
+                        if (isAlarmOn) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.NotificationsActive,
+                                    contentDescription = null,
+                                    tint = tabInactiveColor,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "Alarm",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = tabInactiveColor
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = tabInactiveColor,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun FileTypeTile(
+    extension: String,
+    sizeDp: Dp,
+    fontSizeSp: TextUnit,
+    isDark: Boolean
+) {
+    val ext = extension.lowercase()
+    val (typeColor, label) = when {
+        ext == "pdf" -> (if (isDark) Color(0xFFE8837A) else Color(0xFFC4433A)) to "PDF"
+        ext in listOf("doc", "docx", "rtf", "odt") -> (if (isDark) Color(0xFF6FA3E0) else Color(0xFF2F6DB5)) to "DOC"
+        ext in listOf("xls", "xlsx", "csv", "ods") -> (if (isDark) Color(0xFF6DBB8A) else Color(0xFF2E7D4F)) to "XLS"
+        ext in listOf("ppt", "pptx", "odp") -> (if (isDark) Color(0xFFE0A35F) else Color(0xFFB8681A)) to "PPT"
+        ext in listOf("jpg", "jpeg", "png", "heic", "webp", "gif") -> {
+            val labelStr = if (ext.length <= 4) ext.uppercase() else "IMG"
+            (if (isDark) Color(0xFFB496E0) else Color(0xFF7B4FB3)) to labelStr
+        }
+        else -> {
+            val labelStr = if (ext.length in 1..4) ext.uppercase() else "FILE"
+            (if (isDark) Color(0xFF8A9199) else Color(0xFF65707A)) to labelStr
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .size(sizeDp)
+            .background(typeColor.copy(alpha = 0.15f), RoundedCornerShape(7.dp)),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            fontSize = fontSizeSp,
+            fontWeight = FontWeight.Bold,
+            color = typeColor,
+            letterSpacing = 0.02.sp
+        )
+    }
+}
+
+@Composable
+private fun AttachmentChipsRow(
+    context: Context,
+    attachedFiles: List<Uri>,
+    cardBgColor: Color,
+    dividerColor: Color,
+    primaryTextColor: Color,
+    tabInactiveColor: Color,
+    isDark: Boolean
+) {
+    if (attachedFiles.isEmpty()) return
+
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(horizontal = 0.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        items(attachedFiles) { uri ->
+            val fileName = remember(uri) { FilePickerUtils.getFileName(context, uri) }
+            val fileSize = remember(uri) { getFileSize(context, uri) }
+            val extension = remember(fileName) { fileName.substringAfterLast('.', "") }
+
+            Surface(
+                modifier = Modifier
+                    .height(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { FilePickerUtils.openFile(context, uri) },
+                shape = RoundedCornerShape(12.dp),
+                color = cardBgColor,
+                border = BorderStroke(1.dp, dividerColor)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FileTypeTile(
+                        extension = extension,
+                        sizeDp = 24.dp,
+                        fontSizeSp = 9.sp,
+                        isDark = isDark
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(
+                        modifier = Modifier.widthIn(max = 160.dp),
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = fileName,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = primaryTextColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = fileSize,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = tabInactiveColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 
