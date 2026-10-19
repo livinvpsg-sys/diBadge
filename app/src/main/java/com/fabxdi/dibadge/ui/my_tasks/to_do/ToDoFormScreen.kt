@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.Repeat
@@ -317,32 +318,46 @@ fun ReminderFormScreen(
                         )
                     }
 
-                    TextButton(
-                        onClick = {
-                            triedToSave = true
-                            if (isSaveEnabled) {
-                                onSave(
-                                    title.trim(),
-                                    content.trim(),
-                                    selectedDueDate,
-                                    selectedDueDate ?: LocalDate.now(),
-                                    selectedDueDate,
-                                    selectedRepeat ?: "once",
-                                    selectedTime,
-                                    isAlarmEnabled,
-                                    attachedFiles.map { it.toString() },
-                                    reminderToEdit?.id ?: 0
-                                )
+                    if (hasChanges) {
+                        TextButton(
+                            onClick = {
+                                triedToSave = true
+                                if (isSaveEnabled) {
+                                    onSave(
+                                        title.trim(),
+                                        content.trim(),
+                                        selectedDueDate,
+                                        selectedDueDate ?: LocalDate.now(),
+                                        selectedDueDate,
+                                        selectedRepeat ?: "once",
+                                        selectedTime,
+                                        isAlarmEnabled,
+                                        attachedFiles.map { it.toString() },
+                                        reminderToEdit?.id ?: 0
+                                    )
+                                }
+                            },
+                            enabled = isSaveEnabled
+                        ) {
+                            Text(
+                                text = "Save",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isSaveEnabled) tealAccent else tabInactiveColor
+                            )
+                        }
+                    } else {
+                        IconButton(
+                            onClick = {
+                                showDeleteConfirmation = true
                             }
-                        },
-                        enabled = isSaveEnabled
-                    ) {
-                        Text(
-                            text = "Save",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (isSaveEnabled) tealAccent else tabInactiveColor
-                        )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Delete,
+                                contentDescription = "Delete task",
+                                tint = errorColor
+                            )
+                        }
                     }
                 }
 
@@ -1487,35 +1502,6 @@ fun ReminderFormScreen(
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Normal,
                         color = secondaryTextColor
-                    )
-                }
-
-                HorizontalDivider(thickness = 1.dp, color = dividerColor)
-
-                // 7. Delete task row
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .clickable {
-                            showBottomSheet = false
-                            showDeleteConfirmation = true
-                        }
-                        .padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Delete task, button",
-                        tint = errorColor,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text(
-                        text = "Delete task",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = errorColor
                     )
                 }
             }

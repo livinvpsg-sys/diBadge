@@ -27,30 +27,18 @@ data class DiBadgeSpacing(
     val xxl: Dp = 64.dp
 )
 
-/**
- * Colours that have no Material 3 slot.
- *
- * accent: muted teal. Only for enabled Save text, status text, progress fill,
- * ticked circles, important stars, toggle on-state, text actions, cursor and
- * selection handles. Never for large fills, bars, cards, the + button,
- * selected chips or the selected tab.
- *
- * tabInactive: unselected bottom bar items.
- *
- * isDark: the app's resolved theme (respects AppThemeMode), so components must
- * use this instead of isSystemInDarkTheme().
- */
 @Immutable
 data class DiBadgeColors(
     val accent: Color,
     val tabInactive: Color,
+    val well: Color,
     val isDark: Boolean
 )
 
 val LocalSpacing = staticCompositionLocalOf { DiBadgeSpacing() }
 
 val LocalDiBadgeColors = staticCompositionLocalOf {
-    DiBadgeColors(accent = DarkAccent, tabInactive = DarkTabInactive, isDark = true)
+    DiBadgeColors(accent = DarkAccent, tabInactive = DarkTabInactive, well = Color(0xFF12161A), isDark = true)
 }
 
 object DiBadgeTheme {
@@ -66,7 +54,6 @@ object DiBadgeTheme {
 }
 
 private val DarkScheme = darkColorScheme(
-    // Monochrome primary: default Material components stay neutral.
     primary = DarkOnBackground,
     onPrimary = DarkBackground,
     secondary = DarkOnBackground,
@@ -79,8 +66,7 @@ private val DarkScheme = darkColorScheme(
     onSurface = DarkOnBackground,
     surfaceVariant = DarkSurface,
     onSurfaceVariant = DarkOnSurfaceVariant,
-    surfaceTint = Color.Transparent, // no tonal elevation tint
-    // Snackbar: inverse of the theme. Action uses the light-theme accent.
+    surfaceTint = Color.Transparent,
     inverseSurface = DarkOnBackground,
     inverseOnSurface = DarkBackground,
     inversePrimary = LightAccent,
@@ -88,7 +74,6 @@ private val DarkScheme = darkColorScheme(
     onError = DarkBackground,
     outline = DarkOutline,
     outlineVariant = DarkOutline,
-    // Cards, sheets, dialogs, nav bar all resolve to the same surface colour.
     surfaceContainerLowest = DarkSurface,
     surfaceContainerLow = DarkSurface,
     surfaceContainer = DarkSurface,
@@ -127,12 +112,14 @@ private val LightScheme = lightColorScheme(
 private val DarkDiBadgeColors = DiBadgeColors(
     accent = DarkAccent,
     tabInactive = DarkTabInactive,
+    well = Color(0xFF12161A),
     isDark = true
 )
 
 private val LightDiBadgeColors = DiBadgeColors(
     accent = LightAccent,
     tabInactive = LightTabInactive,
+    well = Color(0xFFECEFF2),
     isDark = false
 )
 

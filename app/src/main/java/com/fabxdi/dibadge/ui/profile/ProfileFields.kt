@@ -110,46 +110,44 @@ fun ProfileCardRow(
                     color = labelColor
                 )
 
-                if (value.isNotEmpty() || prefixText != null || leadingContent != null) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (leadingContent != null) {
-                            leadingContent()
-                            Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (leadingContent != null) {
+                        leadingContent()
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    if (prefixText != null) {
+                        val prefixColor = if (value.isEmpty()) {
+                            DiBadgeTheme.colors.tabInactive
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
                         }
-                        if (prefixText != null) {
-                            val prefixColor = if (value.isEmpty()) {
-                                DiBadgeTheme.colors.tabInactive
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                            Text(
-                                text = prefixText,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Normal,
-                                color = prefixColor
-                            )
-                        }
-                        BasicTextField(
-                            value = value,
-                            onValueChange = onValueChange,
-                            enabled = enabled && !readOnly,
-                            readOnly = readOnly,
-                            singleLine = singleLine,
-                            maxLines = maxLines,
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Normal,
-                                color = valueColor
-                            ),
-                            cursorBrush = SolidColor(DiBadgeTheme.colors.accent),
-                            keyboardOptions = keyboardOptions,
-                            keyboardActions = keyboardActions,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .onFocusChanged { isFocused = it.isFocused }
+                        Text(
+                            text = prefixText,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = prefixColor
                         )
                     }
+                    BasicTextField(
+                        value = value,
+                        onValueChange = onValueChange,
+                        enabled = enabled && !readOnly,
+                        readOnly = readOnly,
+                        singleLine = singleLine,
+                        maxLines = maxLines,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = valueColor
+                        ),
+                        cursorBrush = SolidColor(DiBadgeTheme.colors.accent),
+                        keyboardOptions = keyboardOptions,
+                        keyboardActions = keyboardActions,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { isFocused = it.isFocused }
+                    )
                 }
 
                 if (errorMessage != null) {

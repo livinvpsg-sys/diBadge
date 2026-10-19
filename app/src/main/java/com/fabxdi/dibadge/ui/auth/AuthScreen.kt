@@ -9,10 +9,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -27,6 +25,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -42,6 +42,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -50,23 +51,17 @@ import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import com.fabxdi.dibadge.R
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import com.fabxdi.dibadge.util.maskEmail
 import com.fabxdi.dibadge.viewmodel.AuthUiState
 import com.fabxdi.dibadge.viewmodel.AuthViewModel
+import com.fabxdi.dibadge.viewmodel.SignupVerificationState
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.Locale
 
-// Color Tokens
-val AuthBackgroundColor = Color(0xFF262624)
-val AuthTextColor = Color(0xFFFAF9F5)
-val AuthHintColor = Color(0xFFA8A69E)
-val AuthFieldLineColor = Color(0xFF5A5955)
-val AuthDividerLineColor = Color(0xFF3A3A37)
-val AuthForgotLinkColor = Color(0xFFD6D4CC)
-val AuthAccentTeal = Color(0xFF14B8A6)
-val AuthErrorColor = Color(0xFFFF8A80)
-
-// TODO: Replace with the actual Terms of Use URL
 const val TERMS_URL = "https://example.com/terms"
 
 @Composable
@@ -86,18 +81,24 @@ fun AuthScreen(
     val focusManager = LocalFocusManager.current
     val credentialManager = remember { CredentialManager.create(context) }
 
-    // System Bar Configuration (Light icons, dark background)
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+
+    val isDarkTheme = colors.background.red < 0.5f
+
+    // System Bar Configuration
     val window = (context as? ComponentActivity)?.window
     SideEffect {
         window?.let { win ->
             val insetsController = WindowCompat.getInsetsController(win, win.decorView)
-            insetsController.isAppearanceLightStatusBars = false
-            insetsController.isAppearanceLightNavigationBars = false
+            insetsController.isAppearanceLightStatusBars = !isDarkTheme
+            insetsController.isAppearanceLightNavigationBars = !isDarkTheme
         }
     }
 
     val uiState by viewModel.uiState.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
+    val signupVerifyState by viewModel.signupVerifyState.collectAsState()
 
     var isSignUpMode by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
@@ -112,13 +113,24 @@ fun AuthScreen(
     var confirmPasswordVisible by remember { mutableStateOf(false) }
     var showForgotPasswordDialog by remember { mutableStateOf(false) }
 
+    var snackbarMessage by remember { mutableStateOf<String?>(null) }
+
     LaunchedEffect(currentUser) {
-        if (currentUser != null) {
+        if (currentUser != null && !signupVerifyState.isOpen) {
             onAuthSuccess()
         }
     }
 
     val isLoading = uiState is AuthUiState.Loading
+
+    val pageBgColor = colors.background
+    val cardBgColor = colors.surface
+    val outlineColor = colors.outline
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val tabInactiveColor = diBadgeColors.tabInactive
+    val tealAccent = diBadgeColors.accent
+    val errorColor = colors.error
 
     fun triggerGoogleSignIn() {
         coroutineScope.launch {
@@ -149,7 +161,7 @@ fun AuthScreen(
                     viewModel.googleSignInError("Google Sign-In failed to retrieve token")
                 }
             } catch (e: GetCredentialCancellationException) {
-                // User cancelled - do nothing and show no error
+                // User cancelled - do nothing
             } catch (e: Exception) {
                 val msg = e.localizedMessage ?: "Google Sign-In error"
                 if (!msg.contains("cancel", ignoreCase = true)) {
@@ -159,359 +171,377 @@ fun AuthScreen(
         }
     }
 
+    val performSignupValidationAndCheck = {
+        focusManager.clearFocus()
+        val isEmailValid = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches().also { if (!it) emailError = "Enter a valid email address" }
+        val isPassValid = (password.length >= 8).also { if (!it) passwordError = "Password must be at least 8 characters" }
+        val isMatch = (confirmPassword == password).also { if (!it) confirmPasswordError = "Passwords do not match" }
+        if (isEmailValid && isPassValid && isMatch) {
+            viewModel.checkEmailAndRequestSignupCode(
+                email = email,
+                onRegistered = {
+                    emailError = "This email is already registered. Log in or use Google."
+                },
+                onCodeRequested = {},
+                onError = { msg ->
+                    if (msg.contains("registered", ignoreCase = true)) {
+                        emailError = "This email is already registered. Log in or use Google."
+                    } else {
+                        snackbarMessage = msg
+                    }
+                }
+            )
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(AuthBackgroundColor)
+            .background(pageBgColor)
             .windowInsetsPadding(WindowInsets.systemBars)
     ) {
-        // 1. Top Brand Row: Icon Mark + "diBadge" side-by-side, 72dp from top below status bar inset
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 72.dp),
-            contentAlignment = Alignment.TopCenter
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.semantics(mergeDescendants = true) {}
-            ) {
-                Image(
-                    painter = painterResource(id = R.drawable.ic_dibadge_mark),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(width = 27.dp, height = 36.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = "diBadge",
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.6).sp,
-                    color = AuthTextColor
-                )
-            }
-        }
-
-        // 2. Form Block: Vertically centered in the free space between logo and bottom row
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 115.dp, bottom = 75.dp),
-            contentAlignment = Alignment.Center
+                .imePadding()
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Column(
                 modifier = Modifier
                     .widthIn(max = 420.dp)
                     .fillMaxWidth()
-                    .imePadding()
-                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                if (isSignUpMode) {
-                    // --- SIGN UP FORM ---
-                    // Email Field
-                    UnderlineTextField(
-                        value = email,
-                        onValueChange = {
-                            email = it
-                            emailError = null
-                        },
-                        hint = "Email address",
-                        errorMessage = emailError,
-                        enabled = !isLoading,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Email,
-                            imeAction = ImeAction.Next
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    // Password Field
-                    UnderlineTextField(
-                        value = password,
-                        onValueChange = {
-                            password = it
-                            passwordError = null
-                        },
-                        hint = "Password",
-                        errorMessage = passwordError,
-                        enabled = !isLoading,
-                        isPassword = true,
-                        passwordVisible = passwordVisible,
-                        onPasswordToggle = { passwordVisible = !passwordVisible },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Password,
-                            imeAction = ImeAction.Next
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    // Confirm Password Field
-                    UnderlineTextField(
-                        value = confirmPassword,
-                        onValueChange = {
-                            confirmPassword = it
-                            confirmPasswordError = null
-                        },
-                        hint = "Confirm password",
-                        errorMessage = confirmPasswordError,
-                        enabled = !isLoading,
-                        isPassword = true,
-                        passwordVisible = confirmPasswordVisible,
-                        onPasswordToggle = { confirmPasswordVisible = !confirmPasswordVisible },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Password,
-                            imeAction = ImeAction.Done
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onDone = {
-                                focusManager.clearFocus()
-                                val isEmailValid = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches().also { if (!it) emailError = "Enter a valid email address" }
-                                val isPassValid = (password.length >= 8).also { if (!it) passwordError = "Password must be at least 8 characters" }
-                                val isMatch = (confirmPassword == password).also { if (!it) confirmPasswordError = "Passwords do not match" }
-                                if (isEmailValid && isPassValid && isMatch) {
-                                    viewModel.signUp("", email, password, confirmPassword)
-                                }
-                            }
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(32.dp))
-
-                    // "Sign up" Outlined Pill Button
-                    OutlinedButton(
-                        onClick = {
-                            focusManager.clearFocus()
-                            val isEmailValid = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches().also { if (!it) emailError = "Enter a valid email address" }
-                            val isPassValid = (password.length >= 8).also { if (!it) passwordError = "Password must be at least 8 characters" }
-                            val isMatch = (confirmPassword == password).also { if (!it) confirmPasswordError = "Passwords do not match" }
-                            if (isEmailValid && isPassValid && isMatch) {
-                                viewModel.signUp("", email, password, confirmPassword)
-                            }
-                        },
-                        enabled = !isLoading,
-                        shape = CircleShape,
-                        border = BorderStroke(1.5.dp, if (isLoading) AuthAccentTeal.copy(alpha = 0.38f) else AuthAccentTeal),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = Color.Transparent,
-                            contentColor = AuthAccentTeal,
-                            disabledContainerColor = Color.Transparent,
-                            disabledContentColor = AuthAccentTeal.copy(alpha = 0.38f)
-                        ),
-                        contentPadding = PaddingValues(horizontal = 28.dp),
-                        modifier = Modifier.height(48.dp)
+                // 1. Brand Row: Logo Mark + "diBadge" side-by-side (Centered in 240dp top band)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 160.dp)
+                        .height(240.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.semantics(mergeDescendants = true) {}
                     ) {
-                        if (isLoading) {
-                            CircularProgressIndicator(
-                                color = AuthAccentTeal,
-                                strokeWidth = 2.dp,
-                                modifier = Modifier.size(18.dp)
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_dibadge_mark),
+                            contentDescription = null,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.size(width = 34.dp, height = 41.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "diBadge",
+                            fontSize = 38.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = (-0.8).sp,
+                            color = primaryTextColor
+                        )
+                    }
+                }
+
+                // 2. Form Block (Starts at 240dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .alpha(if (isLoading) 0.5f else 1.0f),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    if (isSignUpMode) {
+                        // --- SIGN UP FORM ---
+                        // Email Tile
+                        LoginTileField(
+                            value = email,
+                            onValueChange = {
+                                email = it
+                                emailError = null
+                            },
+                            label = "Email address",
+                            errorMessage = emailError,
+                            enabled = !isLoading,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Email,
+                                imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onNext = { focusManager.moveFocus(FocusDirection.Down) }
                             )
-                        } else {
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Password Tile
+                        LoginTileField(
+                            value = password,
+                            onValueChange = {
+                                password = it
+                                passwordError = null
+                            },
+                            label = "Password",
+                            errorMessage = passwordError,
+                            enabled = !isLoading,
+                            isPassword = true,
+                            passwordVisible = passwordVisible,
+                            onPasswordToggle = { passwordVisible = !passwordVisible },
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Password,
+                                imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Confirm Password Tile
+                        LoginTileField(
+                            value = confirmPassword,
+                            onValueChange = {
+                                confirmPassword = it
+                                confirmPasswordError = null
+                            },
+                            label = "Confirm password",
+                            errorMessage = confirmPasswordError,
+                            enabled = !isLoading,
+                            isPassword = true,
+                            passwordVisible = confirmPasswordVisible,
+                            onPasswordToggle = { confirmPasswordVisible = !confirmPasswordVisible },
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Password,
+                                imeAction = ImeAction.Done
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onDone = { performSignupValidationAndCheck() }
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(28.dp))
+
+                        // Sign up Button
+                        Button(
+                            onClick = { performSignupValidationAndCheck() },
+                            enabled = !isLoading,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = primaryTextColor,
+                                contentColor = pageBgColor,
+                                disabledContainerColor = primaryTextColor.copy(alpha = 0.38f),
+                                disabledContentColor = pageBgColor.copy(alpha = 0.38f)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp)
+                        ) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    color = pageBgColor,
+                                    strokeWidth = 2.6.dp,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            } else {
+                                Text(
+                                    text = "Sign up",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = pageBgColor
+                                )
+                            }
+                        }
+                    } else {
+                        // --- LOGIN FORM ---
+                        // Email Tile
+                        LoginTileField(
+                            value = email,
+                            onValueChange = {
+                                email = it
+                                emailError = null
+                            },
+                            label = "Email address",
+                            errorMessage = emailError,
+                            enabled = !isLoading,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Email,
+                                imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                            )
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Password Tile
+                        LoginTileField(
+                            value = password,
+                            onValueChange = {
+                                password = it
+                                passwordError = null
+                            },
+                            label = "Password",
+                            errorMessage = passwordError,
+                            enabled = !isLoading,
+                            isPassword = true,
+                            passwordVisible = passwordVisible,
+                            onPasswordToggle = { passwordVisible = !passwordVisible },
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Password,
+                                imeAction = ImeAction.Done
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    focusManager.clearFocus()
+                                    val isEmailValid = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches().also { if (!it) emailError = "Enter a valid email address" }
+                                    val isPassValid = (password.length >= 8).also { if (!it) passwordError = "Password must be at least 8 characters" }
+                                    if (isEmailValid && isPassValid) {
+                                        viewModel.login(email, password)
+                                    }
+                                }
+                            )
+                        )
+
+                        // "Forgot password?" Link
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            contentAlignment = Alignment.CenterEnd
+                        ) {
                             Text(
-                                text = "Sign up",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = AuthAccentTeal
+                                text = "Forgot password?",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = secondaryTextColor,
+                                modifier = Modifier.clickable(enabled = !isLoading) { showForgotPasswordDialog = true }
                             )
                         }
-                    }
-                } else {
-                    // --- LOGIN FORM ---
-                    // Email Field
-                    UnderlineTextField(
-                        value = email,
-                        onValueChange = {
-                            email = it
-                            emailError = null
-                        },
-                        hint = "Email address",
-                        errorMessage = emailError,
-                        enabled = !isLoading,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Email,
-                            imeAction = ImeAction.Next
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                        )
-                    )
 
-                    Spacer(modifier = Modifier.height(28.dp))
+                        Spacer(modifier = Modifier.height(20.dp))
 
-                    // Password Field
-                    UnderlineTextField(
-                        value = password,
-                        onValueChange = {
-                            password = it
-                            passwordError = null
-                        },
-                        hint = "Password",
-                        errorMessage = passwordError,
-                        enabled = !isLoading,
-                        isPassword = true,
-                        passwordVisible = passwordVisible,
-                        onPasswordToggle = { passwordVisible = !passwordVisible },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Password,
-                            imeAction = ImeAction.Done
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onDone = {
+                        // Login Button
+                        Button(
+                            onClick = {
                                 focusManager.clearFocus()
                                 val isEmailValid = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches().also { if (!it) emailError = "Enter a valid email address" }
                                 val isPassValid = (password.length >= 8).also { if (!it) passwordError = "Password must be at least 8 characters" }
                                 if (isEmailValid && isPassValid) {
                                     viewModel.login(email, password)
                                 }
-                            }
-                        )
-                    )
-
-                    // "Forgot password?" Link (Medium 14sp #D6D4CC, right-aligned)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
-                        contentAlignment = Alignment.CenterEnd
-                    ) {
-                        Text(
-                            text = "Forgot password?",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = AuthForgotLinkColor,
+                            },
+                            enabled = !isLoading,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = primaryTextColor,
+                                contentColor = pageBgColor,
+                                disabledContainerColor = primaryTextColor.copy(alpha = 0.38f),
+                                disabledContentColor = pageBgColor.copy(alpha = 0.38f)
+                            ),
                             modifier = Modifier
-                                .alpha(if (isLoading) 0.38f else 1.0f)
-                                .clickable(enabled = !isLoading) { showForgotPasswordDialog = true }
+                                .fillMaxWidth()
+                                .height(52.dp)
+                        ) {
+                            if (isLoading) {
+                                CircularProgressIndicator(
+                                    color = pageBgColor,
+                                    strokeWidth = 2.6.dp,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            } else {
+                                Text(
+                                    text = "Login",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = pageBgColor
+                                )
+                            }
+                        }
+                    }
+
+                    // Global Auth Error Message
+                    if (uiState is AuthUiState.Error) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = (uiState as AuthUiState.Error).message,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = errorColor
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(28.dp))
+                    Spacer(modifier = Modifier.height(24.dp))
 
-                    // "Login" Outlined Pill Button
-                    OutlinedButton(
-                        onClick = {
-                            focusManager.clearFocus()
-                            val isEmailValid = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches().also { if (!it) emailError = "Enter a valid email address" }
-                            val isPassValid = (password.length >= 8).also { if (!it) passwordError = "Password must be at least 8 characters" }
-                            if (isEmailValid && isPassValid) {
-                                viewModel.login(email, password)
-                            }
-                        },
-                        enabled = !isLoading,
-                        shape = CircleShape,
-                        border = BorderStroke(1.5.dp, if (isLoading) AuthAccentTeal.copy(alpha = 0.38f) else AuthAccentTeal),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = Color.Transparent,
-                            contentColor = AuthAccentTeal,
-                            disabledContainerColor = Color.Transparent,
-                            disabledContentColor = AuthAccentTeal.copy(alpha = 0.38f)
-                        ),
-                        contentPadding = PaddingValues(horizontal = 28.dp),
-                        modifier = Modifier.height(48.dp)
+                    // "Or continue with" Divider
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (isLoading) {
-                            CircularProgressIndicator(
-                                color = AuthAccentTeal,
-                                strokeWidth = 2.dp,
-                                modifier = Modifier.size(18.dp)
+                        HorizontalDivider(
+                            modifier = Modifier.weight(1f),
+                            thickness = 1.dp,
+                            color = outlineColor
+                        )
+                        Text(
+                            text = "Or continue with",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = secondaryTextColor,
+                            modifier = Modifier.padding(horizontal = 12.dp)
+                        )
+                        HorizontalDivider(
+                            modifier = Modifier.weight(1f),
+                            thickness = 1.dp,
+                            color = outlineColor
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Google Tile
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .clickable(enabled = !isLoading) { triggerGoogleSignIn() },
+                        shape = RoundedCornerShape(14.dp),
+                        color = cardBgColor,
+                        border = BorderStroke(1.dp, outlineColor)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_google_logo),
+                                contentDescription = "Google Logo",
+                                modifier = Modifier.size(22.dp)
                             )
-                        } else {
+                            Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                text = "Login",
+                                text = "Google",
                                 fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = AuthAccentTeal
+                                fontWeight = FontWeight.Medium,
+                                color = primaryTextColor
                             )
                         }
                     }
-                }
 
-                // Global Auth Exception Error Message
-                if (uiState is AuthUiState.Error) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = (uiState as AuthUiState.Error).message,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = AuthErrorColor
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(28.dp))
-
-                // "Or Continue With" Divider
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    HorizontalDivider(
-                        modifier = Modifier.weight(1f),
-                        thickness = 1.dp,
-                        color = AuthDividerLineColor
-                    )
-                    Text(
-                        text = "Or Continue With",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = AuthHintColor,
-                        modifier = Modifier.padding(horizontal = 12.dp)
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.weight(1f),
-                        thickness = 1.dp,
-                        color = AuthDividerLineColor
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(28.dp))
-
-                // Google Sign-In Button (Official Logo + Label "Google", Medium 16sp #FAF9F5, 48dp high)
-                Box(
-                    modifier = Modifier
-                        .height(48.dp)
-                        .alpha(if (isLoading) 0.38f else 1.0f)
-                        .clickable(enabled = !isLoading) { triggerGoogleSignIn() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.ic_google_logo),
-                            contentDescription = "Google Logo",
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "Google",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = AuthTextColor
-                        )
-                    }
+                    Spacer(modifier = Modifier.height(32.dp))
                 }
             }
         }
 
-        // 3. Bottom Row: 28dp above bottom edge (plus navigation inset)
+        // 3. Bottom Row
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 28.dp, start = 24.dp, end = 24.dp),
+                .padding(bottom = 28.dp, start = 24.dp, end = 24.dp)
+                .navigationBarsPadding(),
             contentAlignment = Alignment.Center
         ) {
             Row(
@@ -521,11 +551,11 @@ fun AuthScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Two-Tone Bottom Link ("New here? Sign up" or "Have an account? Login")
+                // Two-Tone Link
                 Box(
                     modifier = Modifier
                         .height(48.dp)
-                        .alpha(if (isLoading) 0.38f else 1.0f)
+                        .alpha(if (isLoading) 0.5f else 1.0f)
                         .clickable(enabled = !isLoading) {
                             isSignUpMode = !isSignUpMode
                             emailError = null
@@ -543,23 +573,23 @@ fun AuthScreen(
                             text = if (isSignUpMode) "Have an account?" else "New here?",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Normal,
-                            color = AuthHintColor
+                            color = secondaryTextColor
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = if (isSignUpMode) "Login" else "Sign up",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
-                            color = AuthAccentTeal
+                            color = tealAccent
                         )
                     }
                 }
 
-                // Right Link ("Terms of Use", Regular 13sp, underlined #A8A69E)
+                // Right Link ("Terms of Use")
                 Box(
                     modifier = Modifier
                         .height(48.dp)
-                        .alpha(if (isLoading) 0.38f else 1.0f)
+                        .alpha(if (isLoading) 0.5f else 1.0f)
                         .clickable(enabled = !isLoading) {
                             try {
                                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(TERMS_URL))
@@ -573,11 +603,42 @@ fun AuthScreen(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Normal,
                         textDecoration = TextDecoration.Underline,
-                        color = AuthHintColor
+                        color = tabInactiveColor
                     )
                 }
             }
         }
+    }
+
+    // Signup Verification Code Sheet
+    if (signupVerifyState.isOpen) {
+        SignupVerificationSheet(
+            email = signupVerifyState.email,
+            verificationState = signupVerifyState,
+            onTypedCodeChange = { viewModel.updateSignupTypedCode(it) },
+            onVerifyClick = {
+                viewModel.verifySignupCode(
+                    onSuccess = {
+                        if (!signupVerifyState.isGoogleSignup) {
+                            viewModel.signUp("", email, password, confirmPassword)
+                        }
+                    }
+                )
+            },
+            onResendClick = {
+                viewModel.resendSignupCode {
+                    snackbarMessage = "New code sent"
+                }
+            },
+            onDismiss = {
+                val wasGoogle = signupVerifyState.isGoogleSignup
+                viewModel.dismissSignupVerifySheet {
+                    if (wasGoogle) {
+                        snackbarMessage = "Sign up cancelled"
+                    }
+                }
+            }
+        )
     }
 
     // Forgot Password Dialog
@@ -592,7 +653,7 @@ fun AuthScreen(
                 Text(
                     text = "Reset Password",
                     style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = primaryTextColor
                 )
             },
             text = {
@@ -600,7 +661,7 @@ fun AuthScreen(
                     Text(
                         text = "Enter your email address to receive a password reset link.",
                         fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = secondaryTextColor
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
@@ -615,7 +676,7 @@ fun AuthScreen(
                         Text(
                             text = resetMessage!!,
                             fontSize = 12.sp,
-                            color = if (isResetSuccess) AuthAccentTeal else AuthErrorColor
+                            color = if (isResetSuccess) tealAccent else errorColor
                         )
                     }
                 }
@@ -629,126 +690,364 @@ fun AuthScreen(
                         }
                     }
                 ) {
-                    Text("Send reset link", fontWeight = FontWeight.Bold)
+                    Text("Send reset link", fontWeight = FontWeight.Bold, color = tealAccent)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showForgotPasswordDialog = false }) {
-                    Text("Cancel")
+                    Text("Cancel", color = primaryTextColor)
                 }
-            }
+            },
+            containerColor = cardBgColor,
+            shape = RoundedCornerShape(24.dp)
         )
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UnderlineTextField(
+fun SignupVerificationSheet(
+    email: String,
+    verificationState: SignupVerificationState,
+    onTypedCodeChange: (String) -> Unit,
+    onVerifyClick: () -> Unit,
+    onResendClick: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val typedCode = verificationState.typedCode
+    val maskedEmail = remember(email) { maskEmail(email) }
+    val focusRequester = remember { FocusRequester() }
+
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val cardBgColor = colors.surface
+    val wellBgColor = diBadgeColors.well
+    val tealAccent = diBadgeColors.accent
+    val errorColor = colors.error
+
+    LaunchedEffect(Unit) {
+        delay(100)
+        focusRequester.requestFocus()
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        containerColor = cardBgColor,
+        scrimColor = Color.Black.copy(alpha = 0.45f),
+        tonalElevation = 0.dp,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp, bottom = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    modifier = Modifier.size(width = 32.dp, height = 4.dp),
+                    shape = RoundedCornerShape(2.dp),
+                    color = secondaryTextColor.copy(alpha = 0.40f)
+                ) {}
+            }
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .padding(horizontal = 24.dp, vertical = 12.dp)
+        ) {
+            Text(
+                text = "Verify your email",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = primaryTextColor
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            val bodyText = if (verificationState.isGoogleSignup) {
+                "We sent a 6-digit code to $maskedEmail. Enter it to finish signing up."
+            } else {
+                "We sent a 6-digit code to $maskedEmail. Enter it to create your account."
+            }
+
+            Text(
+                text = bodyText,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Normal,
+                lineHeight = 20.sp,
+                color = secondaryTextColor
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                BasicTextField(
+                    value = typedCode,
+                    onValueChange = { newValue ->
+                        if (newValue.length <= 6 && newValue.all { it.isDigit() }) {
+                            onTypedCodeChange(newValue)
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number
+                    ),
+                    modifier = Modifier
+                        .focusRequester(focusRequester)
+                        .size(1.dp)
+                        .alpha(0f)
+                )
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val hasError = verificationState.errorMessage != null
+                    for (i in 0 until 6) {
+                        val digit = typedCode.getOrNull(i)?.toString() ?: ""
+                        val isActive = typedCode.length == i && !verificationState.isLocked
+
+                        val borderColor = when {
+                            hasError -> errorColor
+                            isActive -> primaryTextColor
+                            else -> colors.outline
+                        }
+
+                        Surface(
+                            modifier = Modifier
+                                .size(width = 46.dp, height = 56.dp)
+                                .clickable { focusRequester.requestFocus() },
+                            shape = RoundedCornerShape(12.dp),
+                            color = wellBgColor,
+                            border = BorderStroke(if (isActive || hasError) 1.5.dp else 1.dp, borderColor)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = digit,
+                                    fontSize = 24.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryTextColor
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (verificationState.errorMessage != null) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = verificationState.errorMessage,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = errorColor,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(18.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                val secondsLeft = verificationState.resendSecondsLeft
+                val canResend = secondsLeft == 0 && !verificationState.isLocked
+                if (canResend) {
+                    Text(
+                        text = "Resend code",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = tealAccent,
+                        modifier = Modifier.clickable(onClick = onResendClick)
+                    )
+                } else {
+                    val timerStr = String.format(Locale.getDefault(), "0:%02d", secondsLeft)
+                    Text(
+                        text = "Resend code in $timerStr",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = secondaryTextColor
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(28.dp)
+                ) {
+                    Text(
+                        text = "Cancel",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = secondaryTextColor,
+                        modifier = Modifier.clickable(onClick = onDismiss)
+                    )
+
+                    val isVerifyEnabled = typedCode.length == 6 &&
+                            !verificationState.isVerifying &&
+                            !verificationState.isLocked
+
+                    TextButton(
+                        onClick = onVerifyClick,
+                        enabled = isVerifyEnabled,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = tealAccent,
+                            disabledContentColor = tealAccent.copy(alpha = 0.45f)
+                        )
+                    ) {
+                        if (verificationState.isVerifying) {
+                            CircularProgressIndicator(
+                                color = tealAccent,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        } else {
+                            Text(
+                                text = "Verify",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+fun LoginTileField(
     value: String,
     onValueChange: (String) -> Unit,
-    hint: String,
+    label: String,
     errorMessage: String? = null,
     enabled: Boolean = true,
     isPassword: Boolean = false,
     passwordVisible: Boolean = false,
     onPasswordToggle: () -> Unit = {},
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-    keyboardActions: KeyboardActions = KeyboardActions.Default
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    modifier: Modifier = Modifier
 ) {
     var isFocused by remember { mutableStateOf(false) }
-    var hasBeenEdited by remember { mutableStateOf(false) }
+
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+
+    val cardBgColor = colors.surface
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val accentColor = diBadgeColors.accent
+    val errorColor = colors.error
+
+    val hasTextOrFocus = value.isNotEmpty() || isFocused
+
+    val borderColor = when {
+        errorMessage != null -> errorColor
+        isFocused -> primaryTextColor
+        else -> Color.Transparent
+    }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .alpha(if (enabled) 1.0f else 0.38f)
+            .alpha(if (enabled) 1.0f else 0.5f)
     ) {
-        Box(
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp),
-            contentAlignment = Alignment.CenterStart
+                .heightIn(min = 60.dp),
+            shape = RoundedCornerShape(14.dp),
+            color = cardBgColor,
+            border = if (borderColor != Color.Transparent) BorderStroke(1.dp, borderColor) else null
         ) {
-            BasicTextField(
-                value = value,
-                onValueChange = {
-                    hasBeenEdited = true
-                    onValueChange(it)
-                },
-                enabled = enabled,
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = AuthTextColor
-                ),
-                cursorBrush = SolidColor(AuthAccentTeal),
-                visualTransformation = if (isPassword && !passwordVisible) PasswordVisualTransformation() else VisualTransformation.None,
-                keyboardOptions = keyboardOptions,
-                keyboardActions = keyboardActions,
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .onFocusChanged { focusState ->
-                        isFocused = focusState.isFocused
-                    },
-                decorationBox = { innerTextField ->
-                    Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.CenterStart
+                    .padding(top = 8.dp, bottom = 8.dp, start = 16.dp, end = 8.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        if (value.isEmpty()) {
-                            Text(
-                                text = hint,
+                        Text(
+                            text = label,
+                            fontSize = if (hasTextOrFocus) 12.sp else 16.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = if (isFocused) primaryTextColor else secondaryTextColor
+                        )
+
+                        if (hasTextOrFocus) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                        }
+
+                        BasicTextField(
+                            value = value,
+                            onValueChange = onValueChange,
+                            enabled = enabled,
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Normal,
-                                color = AuthHintColor
+                                color = primaryTextColor,
+                                letterSpacing = if (isPassword && !passwordVisible) 1.sp else TextUnit.Unspecified
+                            ),
+                            cursorBrush = SolidColor(accentColor),
+                            visualTransformation = if (isPassword && !passwordVisible) PasswordVisualTransformation() else VisualTransformation.None,
+                            keyboardOptions = keyboardOptions,
+                            keyboardActions = keyboardActions,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onFocusChanged { isFocused = it.isFocused }
+                        )
+                    }
+
+                    if (isPassword) {
+                        Box(
+                            modifier = Modifier
+                                .size(width = 44.dp, height = 44.dp)
+                                .clickable(enabled = enabled) { onPasswordToggle() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                                tint = secondaryTextColor,
+                                modifier = Modifier.size(22.dp)
                             )
                         }
-                        innerTextField()
                     }
-                }
-            )
-
-            // Password Eye Toggle
-            if (isPassword) {
-                Box(
-                    modifier = Modifier
-                        .size(width = 44.dp, height = 52.dp)
-                        .align(Alignment.CenterEnd)
-                        .clickable(enabled = enabled) { onPasswordToggle() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                        contentDescription = if (passwordVisible) "Hide password" else "Show password",
-                        tint = AuthHintColor,
-                        modifier = Modifier.size(20.dp)
-                    )
                 }
             }
         }
 
-        // Underline Indicator (1dp #5A5955 -> 2dp #14B8A6 when focused -> 2dp #FF8A80 when error)
-        HorizontalDivider(
-            modifier = Modifier.fillMaxWidth(),
-            thickness = if (errorMessage != null || isFocused) 2.dp else 1.dp,
-            color = when {
-                errorMessage != null -> AuthErrorColor
-                isFocused -> AuthAccentTeal
-                else -> AuthFieldLineColor
-            }
-        )
-
-        // Inline Error Message (Regular 12sp #FF8A80, with TalkBack error semantics)
         if (errorMessage != null) {
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = errorMessage,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Normal,
-                color = AuthErrorColor,
-                modifier = Modifier.semantics {
-                    error(errorMessage)
-                }
+                color = errorColor,
+                modifier = Modifier
+                    .padding(start = 4.dp)
+                    .semantics {
+                        error(errorMessage)
+                    }
             )
         }
     }

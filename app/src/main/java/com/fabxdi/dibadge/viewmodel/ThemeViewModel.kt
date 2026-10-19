@@ -2,13 +2,12 @@ package com.fabxdi.dibadge.viewmodel
 
 import android.app.Application
 import android.content.Context
+import androidx.core.content.edit
 import androidx.lifecycle.AndroidViewModel
 import com.fabxdi.dibadge.ui.theme.AppThemeMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-
-import androidx.core.content.edit
 
 class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
@@ -28,5 +27,10 @@ class ThemeViewModel(application: Application) : AndroidViewModel(application) {
     fun setThemeMode(mode: AppThemeMode) {
         _themeMode.value = mode
         prefs.edit { putString("theme_mode", mode.name) }
+    }
+
+    fun resetToSystem() {
+        _themeMode.value = AppThemeMode.SYSTEM
+        prefs.edit { putString("theme_mode", AppThemeMode.SYSTEM.name) }
     }
 }

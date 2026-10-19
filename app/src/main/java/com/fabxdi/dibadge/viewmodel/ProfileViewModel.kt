@@ -13,6 +13,7 @@ import androidx.lifecycle.viewModelScope
 import com.fabxdi.dibadge.util.UsernameFormatResult
 import com.fabxdi.dibadge.util.cleanAndFormatUsernameInput
 import com.fabxdi.dibadge.util.fullName
+import com.fabxdi.dibadge.util.generateBadgeNumber
 import com.fabxdi.dibadge.util.generateUsernameSuggestions
 import com.fabxdi.dibadge.util.isValidName
 import com.fabxdi.dibadge.util.validateUsernameFormat
@@ -35,16 +36,18 @@ import java.io.IOException
 import java.util.UUID
 
 data class UserProfileData(
+    val badgeNumber: String = "",
     val firstName: String = "",
     val middleName: String = "",
     val lastName: String = "",
     val username: String = "",
     val nickname: String = "",
     val role: String = "",
-    val company: String = "",
+    val organization: String = "",
     val email: String = "",
     val phone: String = "",
     val phoneCountryCode: String = "+65",
+    val country: String = "",
     val birthday: String = "",
     val bio: String = "",
     val photoUrl: String = "",
@@ -140,28 +143,40 @@ class ProfileViewModel : ViewModel() {
                         }
                     }
 
+                    var badgeNo = doc.getString("badgeNumber") ?: ""
+                    if (badgeNo.isBlank()) {
+                        badgeNo = generateBadgeNumber()
+                        try {
+                            firestore.collection("users").document(user.uid)
+                                .set(mapOf("badgeNumber" to badgeNo), SetOptions.merge())
+                        } catch (e: Exception) {}
+                    }
+
                     val un = doc.getString("username") ?: ""
                     val nn = doc.getString("nickname") ?: ""
                     val roleVal = doc.getString("role") ?: ""
-                    val companyVal = doc.getString("company") ?: ""
+                    val orgVal = doc.getString("organization") ?: doc.getString("company") ?: ""
                     val ph = doc.getString("phone") ?: ""
                     val phCc = doc.getString("phoneCountryCode") ?: "+65"
+                    val countryVal = doc.getString("country") ?: ""
                     val bd = doc.getString("birthday") ?: ""
                     val bioText = doc.getString("bio") ?: ""
                     val photo = doc.getString("photoUrl") ?: ""
                     val sig = doc.getString("signatureUrl") ?: ""
 
                     val loaded = UserProfileData(
+                        badgeNumber = badgeNo,
                         firstName = fn,
                         middleName = mn,
                         lastName = ln,
                         username = un,
                         nickname = nn,
                         role = roleVal,
-                        company = companyVal,
+                        organization = orgVal,
                         email = emailVal,
                         phone = ph,
                         phoneCountryCode = phCc,
+                        country = countryVal,
                         birthday = bd,
                         bio = bioText,
                         photoUrl = photo,
@@ -174,7 +189,14 @@ class ProfileViewModel : ViewModel() {
                     val fn = parts.getOrNull(0) ?: ""
                     val ln = parts.getOrNull(1) ?: ""
 
+                    val badgeNo = generateBadgeNumber()
+                    try {
+                        firestore.collection("users").document(user.uid)
+                            .set(mapOf("badgeNumber" to badgeNo), SetOptions.merge())
+                    } catch (e: Exception) {}
+
                     val loaded = UserProfileData(
+                        badgeNumber = badgeNo,
                         firstName = fn,
                         middleName = "",
                         lastName = ln,
@@ -191,6 +213,7 @@ class ProfileViewModel : ViewModel() {
                 val ln = parts.getOrNull(1) ?: ""
 
                 val loaded = UserProfileData(
+                    badgeNumber = "",
                     firstName = fn,
                     middleName = "",
                     lastName = ln,
@@ -208,7 +231,23 @@ class ProfileViewModel : ViewModel() {
     }
 
     fun hasChanges(): Boolean {
-        return _profileData.value != initialProfileData
+        val curr = _profileData.value
+        val init = initialProfileData
+        return curr.firstName.trim() != init.firstName.trim() ||
+                curr.middleName.trim() != init.middleName.trim() ||
+                curr.lastName.trim() != init.lastName.trim() ||
+                curr.username.trim().lowercase() != init.username.trim().lowercase() ||
+                curr.nickname.trim() != init.nickname.trim() ||
+                curr.role.trim() != init.role.trim() ||
+                curr.organization.trim() != init.organization.trim() ||
+                curr.email.trim() != init.email.trim() ||
+                curr.phone.trim() != init.phone.trim() ||
+                curr.phoneCountryCode.trim() != init.phoneCountryCode.trim() ||
+                curr.country.trim().uppercase() != init.country.trim().uppercase() ||
+                curr.birthday.trim() != init.birthday.trim() ||
+                curr.bio.trim() != init.bio.trim() ||
+                curr.photoUrl.trim() != init.photoUrl.trim() ||
+                curr.signatureUrl.trim() != init.signatureUrl.trim()
     }
 
     fun isSaveEnabled(): Boolean {
@@ -356,8 +395,8 @@ class ProfileViewModel : ViewModel() {
         _profileData.value = _profileData.value.copy(role = value.take(60))
     }
 
-    fun updateCompany(value: String) {
-        _profileData.value = _profileData.value.copy(company = value.take(60))
+    fun updateOrganization(value: String) {
+        _profileData.value = _profileData.value.copy(organization = value.take(60))
     }
 
     fun updatePhone(value: String) {
@@ -366,6 +405,10 @@ class ProfileViewModel : ViewModel() {
 
     fun updatePhoneCountryCode(code: String) {
         _profileData.value = _profileData.value.copy(phoneCountryCode = code)
+    }
+
+    fun updateCountry(isoCode: String) {
+        _profileData.value = _profileData.value.copy(country = isoCode.trim().uppercase())
     }
 
     fun updateBirthday(value: String) {
@@ -554,16 +597,13 @@ class ProfileViewModel : ViewModel() {
                 scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 85, baos)
                 val data = baos.toByteArray()
 
-                // Save locally first for instant local display
                 val localFile = File(context.filesDir, "profile_photo.jpg")
                 localFile.writeBytes(data)
                 val localUriStr = "file://${localFile.absolutePath}?v=${System.currentTimeMillis()}"
 
-                // Instantly update State and initialProfileData so UI reflects immediately
                 _profileData.value = _profileData.value.copy(photoUrl = localUriStr)
                 initialProfileData = initialProfileData.copy(photoUrl = localUriStr)
 
-                // Save to Firestore immediately
                 firestore.collection("users")
                     .document(user.uid)
                     .set(mapOf("photoUrl" to localUriStr, "updatedAt" to System.currentTimeMillis()), SetOptions.merge())
@@ -572,7 +612,6 @@ class ProfileViewModel : ViewModel() {
                 _isUploadingPhoto.value = false
                 onComplete(true, localUriStr)
 
-                // Background upload to Firebase Storage
                 try {
                     val storageRef = storage.reference.child("users/${user.uid}/profile_photo.jpg")
                     storageRef.putBytes(data).await()
@@ -714,7 +753,6 @@ class ProfileViewModel : ViewModel() {
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Upload signature and photo if needed
                 val finalSignatureUrl = uploadSignatureIfNeeded(user.uid, current.signatureUrl)
                 val finalPhotoUrl = uploadPhotoIfNeeded(user.uid, current.photoUrl)
 
@@ -760,9 +798,10 @@ class ProfileViewModel : ViewModel() {
                         "displayName" to combinedDisplayName,
                         "nickname" to current.nickname.trim(),
                         "role" to current.role.trim(),
-                        "company" to current.company.trim(),
+                        "organization" to current.organization.trim(),
                         "phone" to current.phone.trim(),
                         "phoneCountryCode" to current.phoneCountryCode.trim(),
+                        "country" to current.country.trim().uppercase(),
                         "birthday" to current.birthday.trim(),
                         "bio" to current.bio.trim(),
                         "photoUrl" to finalPhotoUrl,
@@ -787,9 +826,10 @@ class ProfileViewModel : ViewModel() {
                     username = newUsernameLower,
                     nickname = current.nickname.trim(),
                     role = current.role.trim(),
-                    company = current.company.trim(),
+                    organization = current.organization.trim(),
                     phone = current.phone.trim(),
                     phoneCountryCode = current.phoneCountryCode.trim(),
+                    country = current.country.trim().uppercase(),
                     photoUrl = finalPhotoUrl,
                     signatureUrl = finalSignatureUrl
                 )

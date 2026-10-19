@@ -14,8 +14,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,6 +31,9 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -36,8 +41,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.fabxdi.dibadge.util.CountryData
 import com.fabxdi.dibadge.util.avatarColorFor
 import com.fabxdi.dibadge.util.capitalizeWords
+import com.fabxdi.dibadge.util.formatBadgeNumber
 import com.fabxdi.dibadge.util.isValidName
 import com.fabxdi.dibadge.viewmodel.ProfileViewModel
 import com.fabxdi.dibadge.viewmodel.UserProfileData
@@ -204,6 +211,90 @@ fun ProfileNameCard(
 }
 
 @Composable
+fun BadgeNumberRow(
+    badgeNumber: String,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    onCopyClick: () -> Unit
+) {
+    val formattedBadge = remember(badgeNumber) { formatBadgeNumber(badgeNumber) }
+    val spellOut = remember(badgeNumber) {
+        badgeNumber.uppercase().map { "$it " }.joinToString("").trim()
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 60.dp)
+            .clickable(enabled = badgeNumber.isNotBlank()) { onCopyClick() }
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+            .semantics {
+                contentDescription = if (badgeNumber.isNotBlank()) {
+                    "Badge number, $spellOut. Double tap to copy."
+                } else {
+                    "Badge number loading"
+                }
+            },
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = "Badge number",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = secondaryTextColor
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                if (badgeNumber.isNotBlank()) {
+                    Text(
+                        text = formattedBadge,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Normal,
+                        letterSpacing = 1.5.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = primaryTextColor
+                    )
+                } else {
+                    Surface(
+                        modifier = Modifier
+                            .width(100.dp)
+                            .height(16.dp)
+                            .padding(vertical = 2.dp),
+                        shape = RoundedCornerShape(4.dp),
+                        color = secondaryTextColor.copy(alpha = 0.25f)
+                    ) {}
+                }
+            }
+
+            if (badgeNumber.isNotBlank()) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clickable { onCopyClick() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.ContentCopy,
+                        contentDescription = "Copy badge number",
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun ProfileUsernameCard(
     profileData: UserProfileData,
     viewModel: ProfileViewModel,
@@ -216,7 +307,8 @@ fun ProfileUsernameCard(
     tabInactiveColor: Color,
     tealAccent: Color,
     errorColor: Color,
-    focusManager: FocusManager
+    focusManager: FocusManager,
+    onCopyBadgeNumberClick: (String) -> Unit = {}
 ) {
     val isUsernameLocked = viewModel.isUsernameLocked()
 
@@ -226,6 +318,15 @@ fun ProfileUsernameCard(
         color = cardBgColor
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
+            BadgeNumberRow(
+                badgeNumber = profileData.badgeNumber,
+                primaryTextColor = primaryTextColor,
+                secondaryTextColor = secondaryTextColor,
+                onCopyClick = { onCopyBadgeNumberClick(profileData.badgeNumber) }
+            )
+
+            HorizontalDivider(thickness = 1.dp, color = dividerColor)
+
             if (isUsernameLocked) {
                 ProfileCardRow(
                     label = "Username",
@@ -413,9 +514,9 @@ fun ProfileWorkCard(
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             ProfileCardRow(
-                label = "Company",
-                value = profileData.company,
-                onValueChange = { viewModel.updateCompany(it) },
+                label = "Organization",
+                value = profileData.organization,
+                onValueChange = { viewModel.updateOrganization(it) },
                 enabled = !isSaving,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
@@ -444,7 +545,8 @@ fun ProfileContactCard(
     dividerColor: Color,
     secondaryTextColor: Color,
     focusManager: FocusManager,
-    onShowCountrySheet: () -> Unit,
+    onShowPhoneCountrySheet: () -> Unit,
+    onShowCountryPickerSheet: () -> Unit,
     onShowDatePickerDialog: () -> Unit
 ) {
     Surface(
@@ -478,7 +580,7 @@ fun ProfileContactCard(
                 leadingContent = {
                     CountryChip(
                         code = profileData.phoneCountryCode.ifBlank { "+65" },
-                        onClick = { if (!isSaving) onShowCountrySheet() }
+                        onClick = { if (!isSaving) onShowPhoneCountrySheet() }
                     )
                 },
                 keyboardOptions = KeyboardOptions(
@@ -486,6 +588,30 @@ fun ProfileContactCard(
                     imeAction = ImeAction.Next
                 ),
                 keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
+            )
+
+            HorizontalDivider(thickness = 1.dp, color = dividerColor)
+
+            // Country Row (under Phone, above Birthday)
+            val countryDisplayName = remember(profileData.country) {
+                CountryData.getCountryDisplayName(profileData.country)
+            }
+
+            ProfileCardRow(
+                label = "Country",
+                value = countryDisplayName,
+                onValueChange = {},
+                readOnly = true,
+                enabled = !isSaving,
+                onFieldClick = { if (!isSaving) onShowCountryPickerSheet() },
+                trailingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (countryDisplayName.isNotBlank()) "Country, $countryDisplayName. Double tap to change." else "Select Country",
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             )
 
             HorizontalDivider(thickness = 1.dp, color = dividerColor)

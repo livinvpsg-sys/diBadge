@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -22,8 +23,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -64,7 +67,8 @@ fun ProfileScreen(
     var showSignatureDialog by remember { mutableStateOf(false) }
     var showVerifyEmailFirstDialog by remember { mutableStateOf(false) }
     var showUsernameConfirmDialog by remember { mutableStateOf(false) }
-    var showCountrySheet by remember { mutableStateOf(false) }
+    var showPhoneCountrySheet by remember { mutableStateOf(false) }
+    var showCountryPickerSheet by remember { mutableStateOf(false) }
 
     var savedSignatureMode by remember { mutableStateOf("draw") }
     var savedTypedName by remember { mutableStateOf("") }
@@ -85,7 +89,6 @@ fun ProfileScreen(
 
     BackHandler(onBack = handleBack)
 
-    // Camera launcher
     val takePhotoLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture(),
         onResult = { success ->
@@ -96,7 +99,6 @@ fun ProfileScreen(
         }
     )
 
-    // Camera permission launcher
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = { granted ->
@@ -111,7 +113,6 @@ fun ProfileScreen(
         }
     )
 
-    // Gallery picker launcher
     val galleryPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
         onResult = { uri ->
@@ -163,13 +164,24 @@ fun ProfileScreen(
         )
     }
 
+    val clipboardManager = LocalClipboardManager.current
+
+    val handleCopyBadgeNumber: (String) -> Unit = { code ->
+        if (code.isNotBlank()) {
+            val cleanCode = code.replace(" ", "").trim().uppercase()
+            clipboardManager.setText(AnnotatedString(cleanCode))
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                snackbarMessage = "Badge number copied"
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(pageBgColor)
             .windowInsetsPadding(WindowInsets.systemBars)
     ) {
-        // 1. Top Bar ("Profile" 20sp regular, Back Arrow, "Save" 16sp bold)
         TopAppBar(
             title = {
                 Text(
@@ -203,7 +215,7 @@ fun ProfileScreen(
                             strokeWidth = 2.dp,
                             modifier = Modifier.size(18.dp)
                         )
-                    } else {
+                    } else if (hasChanges) {
                         TextButton(
                             onClick = {
                                 focusManager.clearFocus()
@@ -233,7 +245,6 @@ fun ProfileScreen(
             )
         )
 
-        // 2. Main Scrollable Content
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -288,7 +299,7 @@ fun ProfileScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // CARD 2: Username & Nickname
+                    // CARD 2: Badge Number, Username & Nickname
                     ProfileUsernameCard(
                         profileData = profileData,
                         viewModel = viewModel,
@@ -301,7 +312,8 @@ fun ProfileScreen(
                         tabInactiveColor = tabInactiveColor,
                         tealAccent = tealAccent,
                         errorColor = errorColor,
-                        focusManager = focusManager
+                        focusManager = focusManager,
+                        onCopyBadgeNumberClick = handleCopyBadgeNumber
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -320,7 +332,7 @@ fun ProfileScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // CARD 4: Email, Phone, Birthday (after Bio)
+                    // CARD 4: Email, Phone, Country, Birthday (after Bio)
                     ProfileContactCard(
                         profileData = profileData,
                         viewModel = viewModel,
@@ -329,13 +341,14 @@ fun ProfileScreen(
                         dividerColor = dividerColor,
                         secondaryTextColor = secondaryTextColor,
                         focusManager = focusManager,
-                        onShowCountrySheet = { showCountrySheet = true },
+                        onShowPhoneCountrySheet = { showPhoneCountrySheet = true },
+                        onShowCountryPickerSheet = { showCountryPickerSheet = true },
                         onShowDatePickerDialog = { showDatePickerDialog = true }
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // CARD 5: Work (Role, Company) (after Email & Phone)
+                    // CARD 5: Work (Organization, Role)
                     ProfileWorkCard(
                         profileData = profileData,
                         viewModel = viewModel,
@@ -469,75 +482,34 @@ fun ProfileScreen(
         )
     }
 
-    if (showCountrySheet) {
-        val countryCodes = listOf(
-            "🇸🇬 Singapore" to "+65",
-            "🇺🇸 United States" to "+1",
-            "🇬🇧 United Kingdom" to "+44",
-            "🇮🇳 India" to "+91",
-            "🇦🇺 Australia" to "+61",
-            "🇨🇦 Canada" to "+1",
-            "🇩🇪 Germany" to "+49",
-            "🇫🇷 France" to "+33",
-            "🇯🇵 Japan" to "+81",
-            "🇲🇾 Malaysia" to "+60"
-        )
-
-        AlertDialog(
-            onDismissRequest = { showCountrySheet = false },
-            title = {
-                Text(
-                    text = "Select Country Code",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = primaryTextColor
-                )
+    // Phone Country Code Sheet
+    if (showPhoneCountrySheet) {
+        CountryPickerSheet(
+            selectedDialCode = profileData.phoneCountryCode.ifBlank { "+65" },
+            showDialCode = true,
+            onCountrySelected = { country ->
+                viewModel.updatePhoneCountryCode(country.dialCode)
             },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    countryCodes.forEach { (countryName, code) ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp)
-                                .clickable {
-                                    viewModel.updatePhoneCountryCode(code)
-                                    showCountrySheet = false
-                                }
-                                .padding(horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = countryName,
-                                fontSize = 15.sp,
-                                color = primaryTextColor
-                            )
-                            Text(
-                                text = code,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = tealAccent
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showCountrySheet = false }) {
-                    Text("Cancel", color = primaryTextColor)
-                }
-            },
-            containerColor = cardBgColor,
-            shape = RoundedCornerShape(24.dp)
+            onDismiss = { showPhoneCountrySheet = false }
         )
     }
 
-    // 1. Choose Photo Sheet
+    // Residence Country Sheet
+    if (showCountryPickerSheet) {
+        CountryPickerSheet(
+            selectedIsoCode = profileData.country,
+            showDialCode = false,
+            onCountrySelected = { country ->
+                viewModel.updateCountry(country.isoCode)
+            },
+            onClearCountryClick = {
+                viewModel.updateCountry("")
+            },
+            onDismiss = { showCountryPickerSheet = false }
+        )
+    }
+
+    // Choose Photo Sheet
     if (showChoosePhotoSheet) {
         ChoosePhotoSheet(
             onTakePhotoClick = {
@@ -560,7 +532,7 @@ fun ProfileScreen(
         )
     }
 
-    // 2. Photo Viewer
+    // Photo Viewer
     if (showPhotoViewer && profileData.photoUrl.isNotBlank()) {
         ProfilePhotoViewer(
             photoUrl = profileData.photoUrl,
@@ -581,7 +553,7 @@ fun ProfileScreen(
         )
     }
 
-    // 3. Crop Screen
+    // Crop Screen
     val activeCropUri = cropImageUri
     if (activeCropUri != null) {
         ProfilePhotoCropScreen(

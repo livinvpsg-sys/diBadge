@@ -12,6 +12,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import com.google.firebase.firestore.FirebaseFirestore
+import com.fabxdi.dibadge.util.capitalizeWords
+import com.fabxdi.dibadge.util.fullName
 import com.fabxdi.dibadge.util.getGreetingName
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -107,6 +109,8 @@ class MainActivity : ComponentActivity() {
 
                     var userNickname by remember { mutableStateOf("") }
                     var userFirstName by remember { mutableStateOf("") }
+                    var userMiddleName by remember { mutableStateOf("") }
+                    var userLastName by remember { mutableStateOf("") }
                     var userPhotoUrl by remember { mutableStateOf("") }
 
                     DisposableEffect(user?.uid) {
@@ -119,6 +123,8 @@ class MainActivity : ComponentActivity() {
                                     if (snapshot != null && snapshot.exists()) {
                                         userNickname = snapshot.getString("nickname") ?: ""
                                         userFirstName = snapshot.getString("firstName") ?: ""
+                                        userMiddleName = snapshot.getString("middleName") ?: ""
+                                        userLastName = snapshot.getString("lastName") ?: ""
                                         userPhotoUrl = snapshot.getString("photoUrl") ?: ""
                                     }
                                 }
@@ -127,6 +133,11 @@ class MainActivity : ComponentActivity() {
                         onDispose {
                             listener?.remove()
                         }
+                    }
+
+                    val computedFullName = remember(userFirstName, userMiddleName, userLastName, displayName) {
+                        val fn = fullName(userFirstName, userMiddleName, userLastName)
+                        if (fn.isNotBlank()) fn.capitalizeWords() else displayName
                     }
 
                     val bannerGreetingName = remember(userFirstName, userNickname, displayName) {
@@ -181,12 +192,15 @@ class MainActivity : ComponentActivity() {
                             },
                             reminderCount = todayRemindersCount,
                             notificationCount = 0,
-                            firstName = bannerGreetingName,
-                            fullName = user?.displayName ?: displayName,
+                            firstName = if (userFirstName.isNotBlank()) userFirstName else displayName,
+                            fullName = computedFullName,
                             email = user?.email ?: "",
                             photoUrl = userPhotoUrl,
                             onSettingsClick = { showSettingsDialog = true },
-                            onSignOut = { authViewModel.signOut() },
+                            onSignOut = {
+                                themeViewModel.resetToSystem()
+                                authViewModel.signOut()
+                            },
                             initialReminderIdToEdit = if (reminderIdToOpenState != -1) reminderIdToOpenState else null,
                             openSnoozeTimePicker = openSnoozeTimePickerState,
                             onSnoozeHandled = {
