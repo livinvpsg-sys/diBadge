@@ -38,7 +38,7 @@ fun RemindMeActionBottomSheet(
                 .padding(bottom = 24.dp)
         ) {
             ListItem(
-                headlineContent = { Text("Pick time", color = primaryTextColor) },
+                headlineContent = { Text("Pick time & date", color = primaryTextColor) },
                 leadingContent = { Icon(Icons.Outlined.Notifications, contentDescription = null, tint = primaryTextColor) },
                 modifier = Modifier.clickable { onPickTimeSelect() },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -46,7 +46,7 @@ fun RemindMeActionBottomSheet(
 
             if (selectedTime != null) {
                 ListItem(
-                    headlineContent = { Text("Remove time", color = colors.error) },
+                    headlineContent = { Text("Remove", color = colors.error) },
                     leadingContent = { Icon(Icons.Default.Delete, contentDescription = null, tint = colors.error) },
                     modifier = Modifier.clickable { onRemoveTimeSelect() },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)

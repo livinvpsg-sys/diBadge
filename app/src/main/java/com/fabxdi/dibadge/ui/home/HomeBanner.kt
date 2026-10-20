@@ -5,28 +5,26 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.QrCodeScanner
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.fabxdi.dibadge.ui.components.DiBadgeSearchBar
-import com.fabxdi.dibadge.ui.theme.BadgeRed
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.getGreetingName
 import java.time.LocalTime
 
@@ -34,17 +32,25 @@ import java.time.LocalTime
 fun HomeBanner(
     firstName: String,
     nickname: String = "",
-    notificationCount: Int,
-    reminderCount: Int,
-    searchQuery: String,
-    onSearchQueryChange: (String) -> Unit,
-    onReminderClick: () -> Unit,
-    onMenuClick: () -> Unit,
-    onQrClick: () -> Unit,
+    notificationCount: Int = 0,
+    reminderCount: Int = 0,
+    searchQuery: String = "",
+    onSearchQueryChange: (String) -> Unit = {},
+    onReminderClick: () -> Unit = {},
+    onMenuClick: () -> Unit = {},
+    onQrClick: () -> Unit = {},
     selectedCount: Int = 0,
     onDeleteClick: () -> Unit = {},
     onClearSelection: () -> Unit = {}
 ) {
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val cardBgColor = colors.surface
+    val accentColor = diBadgeColors.accent
+
     val greetingMessage = remember {
         val now = LocalTime.now()
         when (now.hour) {
@@ -54,218 +60,207 @@ fun HomeBanner(
         }
     }
 
+    val greetingName = remember(firstName, nickname) { getGreetingName(firstName, nickname) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
+            .background(colors.background)
             .statusBarsPadding()
-            .padding(horizontal = 24.dp, vertical = 8.dp)
+            .padding(horizontal = 20.dp, vertical = 8.dp)
     ) {
         if (selectedCount > 0) {
             Row(
-                modifier = Modifier.fillMaxWidth().height(48.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onClearSelection) {
-                        Icon(Icons.Default.Close, contentDescription = "Clear Selection")
+                        Icon(Icons.Default.Close, contentDescription = "Clear Selection", tint = primaryTextColor)
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "$selectedCount selected",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onBackground
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryTextColor
                     )
                 }
                 IconButton(onClick = onDeleteClick) {
                     Icon(
                         imageVector = Icons.Default.Delete,
                         contentDescription = "Delete",
-                        tint = MaterialTheme.colorScheme.error
+                        tint = colors.error
                     )
                 }
             }
         } else {
+            // Line 1 & Three-Dot Button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                val greetingName = remember(firstName, nickname) { getGreetingName(firstName, nickname) }
                 Text(
-                    text = if (notificationCount > 0 || reminderCount > 0) "Hi $greetingName you have" else "Hi $greetingName,",
-                    style = if (notificationCount > 0 || reminderCount > 0) {
-                        MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Normal)
-                    } else {
-                        MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Normal,
-                            fontSize = 18.sp,
-                            lineHeight = 20.sp
-                        )
-                    },
-                    color = MaterialTheme.colorScheme.onBackground,
+                    text = "Hi $greetingName,",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryTextColor,
                     modifier = Modifier.weight(1f)
                 )
-                IconButton(
-                    onClick = onMenuClick,
-                    modifier = Modifier.offset(x = 12.dp)
+
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clickable { onMenuClick() },
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Menu",
-                        tint = MaterialTheme.colorScheme.onBackground
+                        imageVector = Icons.Outlined.MoreVert,
+                        contentDescription = "Open sliding menu",
+                        tint = primaryTextColor,
+                        modifier = Modifier.size(24.dp)
                     )
                 }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Line 2: Tasks due today OR Time-of-day greeting
+            if (reminderCount > 0) {
+                val taskWord = if (reminderCount == 1) "task" else "tasks"
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clickable { onReminderClick() }
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = "You have $reminderCount $taskWord to do today"
+                        }
+                ) {
+                    Text(
+                        text = "You have",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = secondaryTextColor
+                    )
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Surface(
+                        shape = CircleShape,
+                        color = Color.Transparent,
+                        border = BorderStroke(1.dp, primaryTextColor),
+                        modifier = Modifier
+                            .height(26.dp)
+                            .widthIn(min = 26.dp)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.padding(horizontal = 6.dp)
+                        ) {
+                            Text(
+                                text = if (reminderCount >= 100) "99+" else reminderCount.toString(),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = primaryTextColor
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Text(
+                        text = "$taskWord to do today",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = secondaryTextColor
+                    )
+                }
+            } else {
+                Text(
+                    text = greetingMessage,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = secondaryTextColor
+                )
             }
         }
 
-        if (selectedCount == 0) {
-            Column(
-                modifier = Modifier.padding(top = 2.dp)
-            ) {
-                if (notificationCount > 0 || reminderCount > 0) {
-                    if (reminderCount > 0) {
-                        TaskCountRow(reminderCount = reminderCount)
-                    }
-                    if (notificationCount > 0) {
-                        if (reminderCount > 0) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                        }
-                        Text(
-                            text = "$notificationCount badge notification",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 18.sp,
-                                lineHeight = 20.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-                } else {
-                    Text(
-                        text = greetingMessage,
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Normal,
-                            fontSize = 18.sp,
-                            lineHeight = 20.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
-                }
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Search Tile + QR Button
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            DiBadgeSearchBar(
-                query = searchQuery,
-                onQueryChange = onSearchQueryChange,
-                placeholder = "Search..",
-                modifier = Modifier.weight(1f)
-            )
-            
-            IconButton(onClick = onQrClick) {
-                Icon(
-                    imageVector = Icons.Default.QrCodeScanner,
-                    contentDescription = "Scan QR",
-                    tint = MaterialTheme.colorScheme.onBackground
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-    }
-}
-
-@Composable
-fun BadgeInfo(label: String, count: Int) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Surface(
-            color = BadgeRed,
-            shape = CircleShape,
-            modifier = Modifier.size(18.dp)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    text = count.toString(),
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    ),
-                    color = Color.White
-                )
-            }
-        }
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onBackground
-        )
-    }
-}
-
-@Composable
-fun TaskCountRow(
-    reminderCount: Int,
-    modifier: Modifier = Modifier
-) {
-    val countText = remember(reminderCount) {
-        if (reminderCount >= 100) "99+" else reminderCount.toString()
-    }
-    val labelText = remember(reminderCount) {
-        if (reminderCount == 1) "task to do" else "tasks to do"
-    }
-    val accessibilityDescription = "$reminderCount $labelText"
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.semantics(mergeDescendants = true) {
-            contentDescription = accessibilityDescription
-        }
-    ) {
-        // Circle/Pill filled with bottom bar color, dark outline in light theme & light outline in dark theme
-        Surface(
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-            border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.onBackground),
-            modifier = Modifier
-                .height(28.dp)
-                .widthIn(min = 28.dp)
-        ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.padding(horizontal = 8.dp)
+            // Search Tile (52dp high, surface fill, 14dp corners, no outline)
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                color = cardBgColor
             ) {
-                Text(
-                    text = countText,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    ),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Search,
+                        contentDescription = "Search icon",
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (searchQuery.isEmpty()) {
+                            Text(
+                                text = "Search",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = secondaryTextColor
+                            )
+                        }
+                        BasicTextField(
+                            value = searchQuery,
+                            onValueChange = onSearchQueryChange,
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = primaryTextColor
+                            ),
+                            cursorBrush = SolidColor(accentColor),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // QR Tile (52dp square, surface fill, 14dp corners, no outline)
+            Surface(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clickable { onQrClick() },
+                shape = RoundedCornerShape(14.dp),
+                color = cardBgColor
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Outlined.QrCodeScanner,
+                        contentDescription = "QR Options",
+                        tint = primaryTextColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
         }
-
-        Spacer(modifier = Modifier.width(10.dp))
-
-        // Text
-        Text(
-            text = labelText,
-            style = MaterialTheme.typography.titleLarge.copy(
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Normal
-            ),
-            color = MaterialTheme.colorScheme.onBackground
-        )
     }
 }

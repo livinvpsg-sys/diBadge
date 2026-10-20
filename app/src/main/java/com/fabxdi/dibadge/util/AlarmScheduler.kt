@@ -40,7 +40,7 @@ class AlarmScheduler(private val context: Context) {
 
         val localTime = parseFlexibleTime(reminder.time) ?: return
 
-        val targetDate = reminder.date ?: reminder.startDate ?: LocalDate.now()
+        val targetDate = reminder.remindDate ?: reminder.date ?: reminder.startDate ?: LocalDate.now()
         val scheduledDateTime = targetDate.atTime(localTime)
 
         // Ensure triggerAtMillis is at least 2 seconds in the future if set for today

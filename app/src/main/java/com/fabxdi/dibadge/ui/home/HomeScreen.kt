@@ -5,6 +5,7 @@ import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -22,35 +23,32 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.R
+import com.fabxdi.dibadge.data.HomeEntryEntity
 import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
+import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
+import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatScreen
 import com.fabxdi.dibadge.ui.my_activity.MyActivityScreen
 import com.fabxdi.dibadge.ui.my_tasks.MyTasksScreen
-import com.fabxdi.dibadge.ui.profile.ProfileScreen
-import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
 import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
-import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatScreen
+import com.fabxdi.dibadge.ui.profile.ProfileScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
-import com.fabxdi.dibadge.ui.theme.TealGreen
-import com.fabxdi.dibadge.viewmodel.ToDoViewModel
 import com.fabxdi.dibadge.viewmodel.LeaveOvertimeViewModel
-import com.fabxdi.dibadge.data.HomeEntryEntity
+import com.fabxdi.dibadge.viewmodel.ToDoViewModel
 import kotlinx.coroutines.launch
-import kotlin.collections.minus
-import kotlin.collections.plus
 
 enum class HomeTab(
     val label: String,
     @DrawableRes val iconRes: Int
 ) {
-    Home("diBadge", R.drawable.ic_dibadge_mark),
+    Home("diBadge", R.drawable.ic_dibadge_nav),
     Connections("Connections", R.drawable.ic_connections),
     MyTasks("My Tasks", R.drawable.ic_my_tasks),
-    Note("Inbox", R.drawable.ic_note)
+    Note("Inbox", R.drawable.ic_inbox)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -79,7 +77,8 @@ fun MainDashboard(
     val focusManager = LocalFocusManager.current
     var homeSearchQuery by remember { mutableStateOf("") }
     var showQrScanner by remember { mutableStateOf(false) }
-    var showAddEntryDialog by remember { mutableStateOf(false) }
+    var showQrSheet by remember { mutableStateOf(false) }
+    var showNewGroupSheet by remember { mutableStateOf(false) }
     var selectedEntries by remember { mutableStateOf(setOf<HomeEntryEntity>()) }
     var showDeleteEntryDialog by remember { mutableStateOf(false) }
     var selectedEntryForChat by remember { mutableStateOf<HomeEntryEntity?>(null) }
@@ -116,7 +115,7 @@ fun MainDashboard(
 
     if (showReminderForm) {
         ReminderFormScreen(
-            onSave = { title, content, date, start, end, repeat, time, isAlarm, attachments, id ->
+            onSave = { title, content, date, start, end, repeat, time, isAlarm, attachments, id, remindDate ->
                 viewModel.saveReminder(
                     title,
                     content,
@@ -127,7 +126,8 @@ fun MainDashboard(
                     time,
                     isAlarm,
                     attachments,
-                    id
+                    id,
+                    remindDate
                 )
                 showReminderForm = false
             },
@@ -219,7 +219,7 @@ fun MainDashboard(
                                 onSearchQueryChange = { homeSearchQuery = it },
                                 onReminderClick = onReminderClick,
                                 onMenuClick = { scope.launch { drawerState.open() } },
-                                onQrClick = { showQrScanner = true },
+                                onQrClick = { showQrSheet = true },
                                 selectedCount = selectedEntries.size,
                                 onDeleteClick = { showDeleteEntryDialog = true },
                                 onClearSelection = { selectedEntries = emptySet() }
@@ -228,16 +228,22 @@ fun MainDashboard(
                     },
                     bottomBar = { AppBottomBar(selectedTab, onTabSelected) },
                     floatingActionButton = {
-                        FloatingActionButton(
-                            onClick = { showAddEntryDialog = true },
-                            containerColor = MaterialTheme.colorScheme.surface,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                            shape = RoundedCornerShape(16.dp)
+                        Surface(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clickable { showNewGroupSheet = true },
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Action"
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "New group",
+                                    tint = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
                     }
                 ) { innerPadding ->
@@ -249,27 +255,9 @@ fun MainDashboard(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null
                             ) {
-                                if (isFabExpanded) {
-                                    isFabExpanded = false
-                                } else {
-                                    focusManager.clearFocus()
-                                }
+                                focusManager.clearFocus()
                             }
                     ) {
-                        // Overlay to detect clicks and close the FAB menu
-                        if (isFabExpanded) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null
-                                    ) {
-                                        isFabExpanded = false
-                                    }
-                            )
-                        }
-
                         when (selectedTab) {
                             HomeTab.Home -> {
                                 val homeEntries by viewModel.allHomeEntries.collectAsState(initial = emptyList())
@@ -281,9 +269,34 @@ fun MainDashboard(
                                 }
 
                                 if (filteredEntries.isEmpty()) {
-                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        val message = if (homeSearchQuery.isEmpty()) "No entries yet" else "No matches found"
-                                        Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (homeSearchQuery.isEmpty()) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Text(
+                                                    text = "No chat groups yet",
+                                                    fontSize = 17.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = MaterialTheme.colorScheme.onBackground
+                                                )
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = "Tap + to create your first group",
+                                                    fontSize = 16.sp,
+                                                    fontWeight = FontWeight.Normal,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        } else {
+                                            Text(
+                                                text = "No matches found",
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.Normal,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
                                     }
                                 } else {
                                     LazyColumn(
@@ -324,13 +337,21 @@ fun MainDashboard(
         }
     }
 
-    if (showAddEntryDialog) {
-        HomeEntryDialog(
-            onDismiss = { showAddEntryDialog = false },
+    if (showNewGroupSheet) {
+        NewGroupBottomSheet(
+            onDismiss = { showNewGroupSheet = false },
             onConfirm = { title, subtitle ->
                 viewModel.saveHomeEntry(title, subtitle, firstName.take(1))
-                showAddEntryDialog = false
+                showNewGroupSheet = false
             }
+        )
+    }
+
+    if (showQrSheet) {
+        QrButtonSheet(
+            onScanQrClick = { showQrScanner = true },
+            onMyQrClick = { showQrScanner = true },
+            onDismiss = { showQrSheet = false }
         )
     }
 
@@ -369,48 +390,11 @@ fun MainDashboard(
         QrScannerDialog(
             onDismiss = { showQrScanner = false },
             onResult = { result ->
-                // Handle scanned QR result
                 homeSearchQuery = result
             }
         )
     }
 }
-
-@Composable
-fun HomeFabPill(
-    label: String,
-    onClick: () -> Unit
-) {
-    ExtendedFloatingActionButton(
-        onClick = onClick,
-        containerColor = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = CircleShape,
-        modifier = Modifier.height(40.dp)
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge
-        )
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun MainDashboardPreview() {
-    DiBadgeTheme(darkTheme = false) {
-        MainDashboard(
-            selectedTab = HomeTab.Home,
-            onTabSelected = {},
-            onCalendarTabClick = {},
-            reminderCount = 2,
-            notificationCount = 5
-        )
-    }
-}
-
-val NavIconSize = 24.dp
-val NavIconSizeSelected = 32.dp
 
 @Composable
 fun AppBottomBar(
@@ -419,31 +403,36 @@ fun AppBottomBar(
 ) {
     NavigationBar(
         containerColor = MaterialTheme.colorScheme.surface,
-        tonalElevation = NavigationBarDefaults.Elevation
+        tonalElevation = 0.dp
     ) {
         HomeTab.entries.forEach { tab ->
             val isSelected = selectedTab == tab
 
-            // Animate icon size transition (200ms ease-out)
-            val animatedIconSize by animateDpAsState(
-                targetValue = if (isSelected) NavIconSizeSelected else NavIconSize,
+            val iconSize by animateDpAsState(
+                targetValue = if (isSelected) 28.dp else 22.dp,
                 animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
-                label = "NavIconSize"
+                label = "bottomBarIconSize"
             )
-
-            val iconTint = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
 
             NavigationBarItem(
                 selected = isSelected,
                 onClick = { onTabSelected(tab) },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.onSurface,
-                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                    indicatorColor = Color.Transparent,
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-                ),
-                alwaysShowLabel = true,
+                icon = {
+                    if (tab == HomeTab.Home && isSelected) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_dibadge_mark),
+                            contentDescription = tab.label,
+                            tint = Color.Unspecified,
+                            modifier = Modifier.size(iconSize)
+                        )
+                    } else {
+                        Icon(
+                            painter = painterResource(id = tab.iconRes),
+                            contentDescription = tab.label,
+                            modifier = Modifier.size(iconSize)
+                        )
+                    }
+                },
                 label = {
                     Text(
                         text = tab.label,
@@ -452,57 +441,13 @@ fun AppBottomBar(
                         )
                     )
                 },
-                icon = {
-                    // Fixed 32dp container box keeps labels on exact same baseline (no layout jumps)
-                    Box(
-                        modifier = Modifier.size(NavIconSizeSelected),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        when (tab) {
-                            HomeTab.Home -> {
-                                if (isSelected) {
-                                    Icon(
-                                        painter = painterResource(id = R.drawable.ic_dibadge_nav),
-                                        contentDescription = tab.label,
-                                        tint = Color.Unspecified,
-                                        modifier = Modifier.size(animatedIconSize)
-                                    )
-                                } else {
-                                    Icon(
-                                        painter = painterResource(id = R.drawable.ic_dibadge_nav),
-                                        contentDescription = tab.label,
-                                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
-                                        modifier = Modifier.size(animatedIconSize)
-                                    )
-                                }
-                            }
-                            HomeTab.Connections -> {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_connections),
-                                    contentDescription = tab.label,
-                                    tint = iconTint,
-                                    modifier = Modifier.size(animatedIconSize)
-                                )
-                            }
-                            HomeTab.MyTasks -> {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_my_tasks),
-                                    contentDescription = tab.label,
-                                    tint = iconTint,
-                                    modifier = Modifier.size(animatedIconSize)
-                                )
-                            }
-                            HomeTab.Note -> {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_inbox),
-                                    contentDescription = tab.label,
-                                    tint = iconTint,
-                                    modifier = Modifier.size(animatedIconSize)
-                                )
-                            }
-                        }
-                    }
-                }
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.onBackground,
+                    selectedTextColor = MaterialTheme.colorScheme.onBackground,
+                    indicatorColor = Color.Transparent,
+                    unselectedIconColor = DiBadgeTheme.colors.tabInactive,
+                    unselectedTextColor = DiBadgeTheme.colors.tabInactive
+                )
             )
         }
     }

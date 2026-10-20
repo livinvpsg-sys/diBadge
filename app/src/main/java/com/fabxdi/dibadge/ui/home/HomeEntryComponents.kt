@@ -12,103 +12,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.data.HomeEntryEntity
 import com.fabxdi.dibadge.util.UserColorUtils
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-
-@Composable
-fun HomeEntryDialog(
-    onDismiss: () -> Unit,
-    onConfirm: (String, String) -> Unit
-) {
-    var title by remember { mutableStateOf("") }
-    var subtitle by remember { mutableStateOf("") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { 
-            Text(
-                text = "New Group",
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.Normal
-                )
-            ) 
-        },
-        text = {
-            Column {
-                TextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    placeholder = { 
-                        Text(
-                            text = "Name",
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 13.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        ) 
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent
-                    )
-                )
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 4.dp),
-                    thickness = 1.dp,
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                )
-                TextField(
-                    value = subtitle,
-                    onValueChange = { subtitle = it },
-                    placeholder = { 
-                        Text(
-                            text = "Details",
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontWeight = FontWeight.Normal,
-                                fontSize = 13.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        ) 
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent
-                    )
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { 
-                    if (title.isNotBlank()) {
-                        onConfirm(title, subtitle)
-                    }
-                },
-                enabled = title.isNotBlank()
-            ) {
-                Text("OK")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
-}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -118,9 +28,13 @@ fun HomeEntryCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
-    val timeFormatter = remember { DateTimeFormatter.ofPattern("hh:mm a", Locale.getDefault()) }
+    val colors = MaterialTheme.colorScheme
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+
+    val timeFormatter = remember { DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()) }
     
-    // Generate a consistent color based on the group id (immutable across name changes)
+    // Stable color hash for group ID
     val avatarColor = remember(entry.id) {
         UserColorUtils.getColorForName(entry.id.toString())
     }
@@ -132,43 +46,52 @@ fun HomeEntryCard(
                 onClick = onClick,
                 onLongClick = onLongClick
             ),
-        color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f) else Color.Transparent
+        color = if (isSelected) primaryTextColor.copy(alpha = 0.10f) else Color.Transparent
     ) {
         Row(
             modifier = Modifier
-                .padding(vertical = 12.dp, horizontal = 24.dp)
-                .fillMaxWidth(),
+                .padding(horizontal = 20.dp, vertical = 10.dp)
+                .fillMaxWidth()
+                .heightIn(min = 48.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Left: Initials in Circle
+            // Left: 44dp Avatar Circle
             Surface(
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(44.dp),
                 shape = CircleShape,
                 color = avatarColor
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
                         text = entry.title.take(1).uppercase(),
-                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Normal),
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(14.dp))
 
-            // Middle: Title and Subtitle
+            // Middle: Name and Last Message / Description
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = entry.title,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Normal),
-                    color = MaterialTheme.colorScheme.onBackground
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = primaryTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 if (entry.subtitle.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(3.dp))
                     Text(
                         text = entry.subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = secondaryTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -178,14 +101,15 @@ fun HomeEntryCard(
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
                     contentDescription = "Selected",
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = primaryTextColor,
                     modifier = Modifier.size(24.dp)
                 )
             } else {
                 Text(
                     text = entry.timestamp.format(timeFormatter),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = secondaryTextColor
                 )
             }
         }

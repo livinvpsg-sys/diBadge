@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -83,7 +84,7 @@ import java.util.Locale
 @Composable
 fun ReminderFormScreen(
     reminderToEdit: ReminderEntity? = null,
-    onSave: (String, String, LocalDate?, LocalDate?, LocalDate?, String, String?, Boolean, List<String>, Int) -> Unit,
+    onSave: (String, String, LocalDate?, LocalDate?, LocalDate?, String, String?, Boolean, List<String>, Int, LocalDate?) -> Unit,
     onDelete: (ReminderEntity) -> Unit,
     onCancel: () -> Unit,
     autoOpenTimePicker: Boolean = false
@@ -127,9 +128,29 @@ fun ReminderFormScreen(
 
     var selectedRepeat by remember { mutableStateOf<String?>(reminderToEdit?.repeatType) }
     var selectedTime by remember { mutableStateOf<String?>(reminderToEdit?.time) }
+    var selectedRemindDate by remember { mutableStateOf<LocalDate?>(reminderToEdit?.remindDate) }
     var selectedDueDate by remember { mutableStateOf<LocalDate?>(reminderToEdit?.date) }
     var isAlarmEnabled by remember { mutableStateOf(reminderToEdit?.isAlarmEnabled ?: false) }
     val isImportant = reminderToEdit?.isImportant ?: false
+
+    LaunchedEffect(selectedRepeat) {
+        if (selectedRepeat != null && selectedRepeat != "once" && selectedRemindDate != null) {
+            selectedRemindDate = null
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar("Reminder date removed because the task repeats")
+            }
+        }
+    }
+
+    LaunchedEffect(selectedDueDate) {
+        val remDate = selectedRemindDate
+        if (selectedDueDate != null && remDate != null && selectedDueDate!!.isBefore(remDate)) {
+            selectedRemindDate = null
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar("Reminder date reset to the due date")
+            }
+        }
+    }
 
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var showUnsavedChangesDialog by remember { mutableStateOf(false) }
@@ -258,18 +279,19 @@ fun ReminderFormScreen(
     val isDark = isSystemInDarkTheme()
 
     val hasChanges = remember(
-        title, content, selectedRepeat, selectedTime, isAlarmEnabled,
+        title, content, selectedRepeat, selectedTime, selectedRemindDate, isAlarmEnabled,
         selectedDueDate, attachedFiles
     ) {
         if (reminderToEdit == null) {
             title.trim().isNotEmpty() || content.trim().isNotEmpty() ||
-                    selectedDueDate != null || selectedTime != null ||
+                    selectedDueDate != null || selectedTime != null || selectedRemindDate != null ||
                     (selectedRepeat != null && selectedRepeat != "once") || isAlarmEnabled || attachedFiles.isNotEmpty()
         } else {
             title.trim() != reminderToEdit.title.trim() ||
                     content.trim() != reminderToEdit.content.trim() ||
                     selectedDueDate != reminderToEdit.date ||
                     selectedTime != reminderToEdit.time ||
+                    selectedRemindDate != reminderToEdit.remindDate ||
                     selectedRepeat != reminderToEdit.repeatType ||
                     isAlarmEnabled != reminderToEdit.isAlarmEnabled ||
                     attachedFiles.map { it.toString() } != reminderToEdit.attachments
@@ -327,13 +349,14 @@ fun ReminderFormScreen(
                                         title.trim(),
                                         content.trim(),
                                         selectedDueDate,
-                                        selectedDueDate ?: LocalDate.now(),
+                                        selectedDueDate ?: selectedRemindDate ?: LocalDate.now(),
                                         selectedDueDate,
                                         selectedRepeat ?: "once",
                                         selectedTime,
                                         isAlarmEnabled,
                                         attachedFiles.map { it.toString() },
-                                        reminderToEdit?.id ?: 0
+                                        reminderToEdit?.id ?: 0,
+                                        selectedRemindDate
                                     )
                                 }
                             },
@@ -550,13 +573,14 @@ fun ReminderFormScreen(
                                 title.trim(),
                                 content.trim(),
                                 selectedDueDate,
-                                selectedDueDate ?: LocalDate.now(),
+                                selectedDueDate ?: selectedRemindDate ?: LocalDate.now(),
                                 selectedDueDate,
                                 selectedRepeat ?: "once",
                                 selectedTime,
                                 isAlarmEnabled,
                                 attachedFiles.map { it.toString() },
-                                0
+                                0,
+                                selectedRemindDate
                             )
                         }
                     },
@@ -729,6 +753,22 @@ fun ReminderFormScreen(
 
                         HorizontalDivider(thickness = 1.dp, color = dividerColor)
 
+                        val formattedRemindMeText = remember(selectedTime, selectedRemindDate) {
+                            if (selectedTime == null) "None"
+                            else if (selectedRemindDate != null) {
+                                val today = LocalDate.now()
+                                val tomorrow = today.plusDays(1)
+                                val dateText = when {
+                                    selectedRemindDate!!.isEqual(today) -> "Today, ${selectedRemindDate!!.format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))}"
+                                    selectedRemindDate!!.isEqual(tomorrow) -> "Tomorrow, ${selectedRemindDate!!.format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))}"
+                                    else -> selectedRemindDate!!.format(DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault()))
+                                }
+                                "$dateText, $selectedTime"
+                            } else {
+                                selectedTime!!
+                            }
+                        }
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -764,7 +804,7 @@ fun ReminderFormScreen(
                                 )
                             }
                             Text(
-                                text = selectedTime ?: "None",
+                                text = formattedRemindMeText,
                                 fontSize = 15.sp,
                                 fontWeight = if (selectedTime != null) FontWeight.Medium else FontWeight.Normal,
                                 color = if (selectedTime != null) primaryTextColor else faintColor
@@ -804,32 +844,12 @@ fun ReminderFormScreen(
                                     modifier = Modifier.size(22.dp)
                                 )
                                 Spacer(modifier = Modifier.width(16.dp))
-                                Column {
-                                    Text(
-                                        text = "Repeat",
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        color = secondaryTextColor
-                                    )
-                                    if (isRepeatDisabled) {
-                                        Text(
-                                            text = "Not available when due today",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Normal,
-                                            color = faintColor
-                                        )
-                                    } else {
-                                        val endLine = getRepeatEndLine(selectedRepeat, selectedDueDate)
-                                        if (endLine != null) {
-                                            Text(
-                                                text = endLine,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Normal,
-                                                color = secondaryTextColor
-                                            )
-                                        }
-                                    }
-                                }
+                                Text(
+                                    text = "Repeat",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = secondaryTextColor
+                                )
                             }
                             Text(
                                 text = if (isRepeatDisabled) "None" else formatRepeatValue(selectedRepeat),
@@ -865,22 +885,12 @@ fun ReminderFormScreen(
                                     modifier = Modifier.size(22.dp)
                                 )
                                 Spacer(modifier = Modifier.width(16.dp))
-                                Column {
-                                    Text(
-                                        text = "Alarm",
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        color = secondaryTextColor
-                                    )
-                                    if (isAlarmDimmed) {
-                                        Text(
-                                            text = "Set a remind time first",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Normal,
-                                            color = faintColor
-                                        )
-                                    }
-                                }
+                                Text(
+                                    text = "Alarm",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = secondaryTextColor
+                                )
                             }
 
                             Switch(
@@ -960,6 +970,7 @@ fun ReminderFormScreen(
             },
             onRemoveTimeSelect = {
                 selectedTime = null
+                selectedRemindDate = null
                 isAlarmEnabled = false
                 showRemindMeActionSheet = false
             },
@@ -968,12 +979,41 @@ fun ReminderFormScreen(
     }
 
     if (showRemindMePicker) {
-        RemindMePickerDialog(
+        val is24HourFormat = DateFormat.is24HourFormat(context)
+        val parsedTime = try {
+            if (selectedTime != null) {
+                if (is24HourFormat) LocalTime.parse(selectedTime, DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault()))
+                else LocalTime.parse(selectedTime, DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()))
+            } else null
+        } catch (e: Exception) { null }
+
+        RemindMePickerSheet(
+            initialTime = parsedTime,
+            initialDate = selectedRemindDate,
             dueDate = selectedDueDate,
-            initialTime = selectedTime,
-            onConfirm = { timeStr ->
-                selectedTime = timeStr
-                showRemindMePicker = false
+            isRepeating = selectedRepeat != null && selectedRepeat != "once",
+            onConfirm = { chosenTime, chosenDate ->
+                val formattedTime = if (is24HourFormat) {
+                    chosenTime.format(DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault()))
+                } else {
+                    chosenTime.format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()))
+                }
+
+                val effectiveRemindDate = chosenDate ?: selectedDueDate ?: LocalDate.now()
+                val isToday = effectiveRemindDate.isEqual(LocalDate.now())
+
+                if (isToday && chosenTime.isBefore(LocalTime.now())) {
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar("Pick a time later than now")
+                    }
+                } else {
+                    selectedTime = formattedTime
+                    selectedRemindDate = chosenDate
+                    showRemindMePicker = false
+                }
+            },
+            onResetCustomDate = {
+                selectedRemindDate = null
             },
             onDismiss = { showRemindMePicker = false }
         )
@@ -1158,6 +1198,22 @@ fun ReminderFormScreen(
     }
 
     if (showBottomSheet) {
+        val formattedRemindMeText = remember(selectedTime, selectedRemindDate) {
+            if (selectedTime == null) "None"
+            else if (selectedRemindDate != null) {
+                val today = LocalDate.now()
+                val tomorrow = today.plusDays(1)
+                val dateText = when {
+                    selectedRemindDate!!.isEqual(today) -> "Today, ${selectedRemindDate!!.format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))}"
+                    selectedRemindDate!!.isEqual(tomorrow) -> "Tomorrow, ${selectedRemindDate!!.format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))}"
+                    else -> selectedRemindDate!!.format(DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault()))
+                }
+                "$dateText, $selectedTime"
+            } else {
+                selectedTime!!
+            }
+        }
+
         ModalBottomSheet(
             onDismissRequest = { showBottomSheet = false },
             sheetState = sheetState,
@@ -1222,9 +1278,9 @@ fun ReminderFormScreen(
                     }
                     Text(
                         text = selectedDueDate?.format(displayDateFormatter) ?: "None",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = tabInactiveColor
+                        fontSize = 15.sp,
+                        fontWeight = if (selectedDueDate != null) FontWeight.Medium else FontWeight.Normal,
+                        color = if (selectedDueDate != null) primaryTextColor else tabInactiveColor
                     )
                 }
 
@@ -1265,10 +1321,10 @@ fun ReminderFormScreen(
                         )
                     }
                     Text(
-                        text = selectedTime ?: "None",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = tabInactiveColor
+                        text = formattedRemindMeText,
+                        fontSize = 15.sp,
+                        fontWeight = if (selectedTime != null) FontWeight.Medium else FontWeight.Normal,
+                        color = if (selectedTime != null) primaryTextColor else tabInactiveColor
                     )
                 }
 
@@ -1299,38 +1355,18 @@ fun ReminderFormScreen(
                             modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(16.dp))
-                        Column {
-                            Text(
-                                text = "Repeat",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Normal,
-                                color = secondaryTextColor
-                            )
-                            if (isRepeatDisabled) {
-                                Text(
-                                    text = "Not available when due today",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    color = tabInactiveColor
-                                )
-                            } else {
-                                val endLine = getRepeatEndLine(selectedRepeat, selectedDueDate)
-                                if (endLine != null) {
-                                    Text(
-                                        text = endLine,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        color = tabInactiveColor
-                                    )
-                                }
-                            }
-                        }
+                        Text(
+                            text = "Repeat",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = secondaryTextColor
+                        )
                     }
                     Text(
                         text = if (isRepeatDisabled) "None" else formatRepeatValue(selectedRepeat),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = tabInactiveColor
+                        fontSize = 15.sp,
+                        fontWeight = if (!isRepeatDisabled && selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") FontWeight.Medium else FontWeight.Normal,
+                        color = if (!isRepeatDisabled && selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") primaryTextColor else tabInactiveColor
                     )
                 }
 
@@ -1361,22 +1397,12 @@ fun ReminderFormScreen(
                             modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(16.dp))
-                        Column {
-                            Text(
-                                text = "Alarm",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Normal,
-                                color = secondaryTextColor
-                            )
-                            if (isAlarmDimmed) {
-                                Text(
-                                    text = "Set a remind time first",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    color = tabInactiveColor
-                                )
-                            }
-                        }
+                        Text(
+                            text = "Alarm",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = secondaryTextColor
+                        )
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {

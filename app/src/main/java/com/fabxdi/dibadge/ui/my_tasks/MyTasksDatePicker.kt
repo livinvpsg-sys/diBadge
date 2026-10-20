@@ -275,6 +275,7 @@ fun MyTasksDatePicker(
                                             ) {
                                                 if (date != null) {
                                                     val isSelected = date.isEqual(tempSelectedDate)
+                                                    val isToday = date.isEqual(LocalDate.now())
                                                     val hasTask = hasTasksOnDate(allReminders, date)
 
                                                     val isBeforeMin = minDate != null && date.isBefore(minDate)
@@ -282,10 +283,12 @@ fun MyTasksDatePicker(
                                                     val isCustomDisabled = disabledDates.contains(date)
                                                     val isDisabled = isBeforeMin || isAfterMax || isCustomDisabled
 
-                                                    val fullDescription = remember(date, isSelected) {
+                                                    val fullDescription = remember(date, isSelected, isToday) {
                                                         val fmt = DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", Locale.getDefault())
-                                                        val baseDesc = date.format(fmt)
-                                                        if (isSelected) "$baseDesc, selected" else baseDesc
+                                                        var baseDesc = date.format(fmt)
+                                                        if (isSelected) baseDesc += ", selected"
+                                                        if (isToday) baseDesc += ", today"
+                                                        baseDesc
                                                     }
 
                                                     Box(
@@ -304,7 +307,22 @@ fun MyTasksDatePicker(
                                                             },
                                                         contentAlignment = Alignment.Center
                                                     ) {
-                                                        if (isSelected) {
+                                                        if (isToday && !isSelected) {
+                                                            Surface(
+                                                                modifier = Modifier.fillMaxSize(),
+                                                                shape = CircleShape,
+                                                                color = primaryTextColor.copy(alpha = 0.14f)
+                                                            ) {
+                                                                Box(contentAlignment = Alignment.Center) {
+                                                                    Text(
+                                                                        text = date.dayOfMonth.toString(),
+                                                                        fontSize = 15.sp,
+                                                                        fontWeight = FontWeight.Normal,
+                                                                        color = primaryTextColor
+                                                                    )
+                                                                }
+                                                            }
+                                                        } else if (isSelected) {
                                                             Surface(
                                                                 modifier = Modifier.fillMaxSize(),
                                                                 shape = CircleShape,

@@ -155,7 +155,8 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
         time: String?,
         isAlarmEnabled: Boolean,
         attachments: List<String> = emptyList(),
-        id: Int = 0
+        id: Int = 0,
+        remindDate: LocalDate? = null
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             var reminder = ToDoEntity(
@@ -168,7 +169,8 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
                 repeatType = repeatType,
                 time = time,
                 isAlarmEnabled = isAlarmEnabled,
-                attachments = attachments
+                attachments = attachments,
+                remindDate = remindDate
             )
 
             val finalId = if (id == 0) {
@@ -278,6 +280,7 @@ fun ToDoEntity.toFirestoreMap(): Map<String, Any?> {
         "attachments" to attachments,
         "completedDates" to completedDates,
         "isImportant" to isImportant,
+        "remindDate" to remindDate?.toString(),
         "updatedAt" to System.currentTimeMillis()
     )
 }
@@ -295,6 +298,7 @@ fun Map<String, Any?>.toToDoEntity(documentId: String): ToDoEntity? {
     val attachmentsVal = (this["attachments"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
     val completedDatesVal = (this["completedDates"] as? List<*>)?.mapNotNull { it as? String } ?: emptyList()
     val isImportantVal = this["isImportant"] as? Boolean ?: false
+    val remindDateVal = (this["remindDate"] as? String)?.let { try { LocalDate.parse(it) } catch (e: Exception) { null } }
 
     return ToDoEntity(
         id = idVal,
@@ -308,7 +312,8 @@ fun Map<String, Any?>.toToDoEntity(documentId: String): ToDoEntity? {
         isAlarmEnabled = isAlarmEnabledVal,
         attachments = attachmentsVal,
         completedDates = completedDatesVal,
-        isImportant = isImportantVal
+        isImportant = isImportantVal,
+        remindDate = remindDateVal
     )
 }
 

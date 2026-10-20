@@ -393,16 +393,19 @@ fun DiBadgeDateRangePicker(
                                                         }
                                                     }
 
+                                                    val isToday = date.isEqual(LocalDate.now())
+
                                                     // Day Circle / Cell
-                                                    val fullDescription = remember(date, isStart, isEnd) {
+                                                    val fullDescription = remember(date, isStart, isEnd, isToday) {
                                                         val fmt = DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", Locale.getDefault())
-                                                        val baseDesc = date.format(fmt)
+                                                        var baseDesc = date.format(fmt)
                                                         when {
-                                                            isStart && isEnd -> "$baseDesc, start and end of range"
-                                                            isStart -> "$baseDesc, start of range"
-                                                            isEnd -> "$baseDesc, end of range"
-                                                            else -> baseDesc
+                                                            isStart && isEnd -> baseDesc += ", start and end of range"
+                                                            isStart -> baseDesc += ", start of range"
+                                                            isEnd -> baseDesc += ", end of range"
                                                         }
+                                                        if (isToday) baseDesc += ", today"
+                                                        baseDesc
                                                     }
 
                                                     Box(
@@ -441,6 +444,22 @@ fun DiBadgeDateRangePicker(
                                                                         text = date.dayOfMonth.toString(),
                                                                         fontSize = 15.sp,
                                                                         fontWeight = FontWeight.Bold,
+                                                                        color = primaryTextColor
+                                                                    )
+                                                                }
+                                                            }
+                                                        } else if (isToday) {
+                                                            // Today inside/outside range: draw dim grey filled circle over range band
+                                                            Surface(
+                                                                modifier = Modifier.fillMaxSize(),
+                                                                shape = CircleShape,
+                                                                color = primaryTextColor.copy(alpha = 0.14f)
+                                                            ) {
+                                                                Box(contentAlignment = Alignment.Center) {
+                                                                    Text(
+                                                                        text = date.dayOfMonth.toString(),
+                                                                        fontSize = 15.sp,
+                                                                        fontWeight = FontWeight.Normal,
                                                                         color = primaryTextColor
                                                                     )
                                                                 }

@@ -115,7 +115,7 @@ fun MyTasksScreen(
         ReminderFormScreen(
             reminderToEdit = editingReminder,
             autoOpenTimePicker = shouldOpenSnooze,
-            onSave = { title, content, date, start, end, repeat, time, isAlarm, attachments, id ->
+            onSave = { title, content, date, start, end, repeat, time, isAlarm, attachments, id, remindDate ->
                 reminderViewModel.saveReminder(
                     title,
                     content,
@@ -126,7 +126,8 @@ fun MyTasksScreen(
                     time,
                     isAlarm,
                     attachments,
-                    id
+                    id,
+                    remindDate
                 )
                 showReminderForm = false
                 editingReminder = null
@@ -219,7 +220,12 @@ fun MyTasksScreen(
 
     // Grouping tasks into 4 Time Groups
     val anytimeTasks = remember(sortedReminders) {
-        sortedReminders.filter { it.time.isNullOrBlank() }
+        sortedReminders.filter { reminder ->
+            if (reminder.time.isNullOrBlank()) true else {
+                val t = parseReminderTime(reminder.time)
+                t == LocalTime.MAX
+            }
+        }
     }
     val morningTasks = remember(sortedReminders) {
         sortedReminders.filter { reminder ->
@@ -286,7 +292,7 @@ fun MyTasksScreen(
         }
     }
 
-    val topBarDateFormatter = remember { DateTimeFormatter.ofPattern("d MMMM yyyy, EEE", Locale.getDefault()) }
+    val topBarDateFormatter = remember { DateTimeFormatter.ofPattern("d MMM yyyy, EEEE", Locale.getDefault()) }
 
     Scaffold(
         topBar = {
@@ -549,6 +555,7 @@ fun MyTasksScreen(
             allReminders = allReminders,
             onDateSelected = { chosenDate ->
                 selectedDate = chosenDate
+                selectedTaskFilter = "Today"
                 showDatePicker = false
             },
             onDismiss = { showDatePicker = false }

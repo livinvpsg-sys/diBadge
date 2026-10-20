@@ -20,9 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.ui.theme.disableBottomSheetDrag
-import kotlinx.coroutines.delay
 import java.time.LocalTime
-import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -44,30 +42,12 @@ fun DiBadgeTimePicker(
     var selectedHour24 by remember { mutableIntStateOf(startLocalTime.hour) }
     var selectedMinute by remember { mutableIntStateOf((startLocalTime.minute / minuteStep) * minuteStep) }
 
-    // Live Clock for "Now" header
-    var nowTime by remember { mutableStateOf(LocalTime.now()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            nowTime = LocalTime.now()
-            delay(1000L * 60)
-        }
-    }
-
     val surfaceColor = MaterialTheme.colorScheme.surface
     val outlineColor = MaterialTheme.colorScheme.outline
     val primaryTextColor = MaterialTheme.colorScheme.onBackground
     val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
     val accentColor = DiBadgeTheme.colors.accent
     val dragHandleColor = DiBadgeTheme.colors.tabInactive
-
-    // Current clock time string
-    val nowTimeFormatted = remember(nowTime, is24HourFormat) {
-        if (is24HourFormat) {
-            nowTime.format(DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault()))
-        } else {
-            nowTime.format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()))
-        }
-    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -83,45 +63,21 @@ fun DiBadgeTimePicker(
                 .padding(horizontal = 24.dp, vertical = 8.dp)
                 .navigationBarsPadding()
         ) {
-            // 1. Title ("Select time")
+            // Title ("Select time")
             Text(
                 text = title,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Normal,
-                color = secondaryTextColor
+                color = secondaryTextColor,
+                modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
             )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // 2. Top Line: Current Clock Time + "Now"
-            Row(
-                verticalAlignment = Alignment.Bottom,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = nowTimeFormatted,
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = primaryTextColor
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Now",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = secondaryTextColor,
-                    modifier = Modifier.padding(bottom = 2.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
 
             HorizontalDivider(thickness = 1.dp, color = outlineColor)
 
             Column(modifier = Modifier.disableBottomSheetDrag()) {
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-                // 3. Wheels Container (5 rows visible, 48dp row height = 240dp total height)
+                // Wheels Container
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -129,140 +85,134 @@ fun DiBadgeTimePicker(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                if (is24HourFormat) {
-                    // 24h Mode: Hours (00-23)
-                    val hours24List = remember { (0..23).map { String.format(Locale.getDefault(), "%02d", it) } }
-                    WheelPicker(
-                        items = hours24List,
-                        selectedIndex = selectedHour24,
-                        onSelectedIndexChanged = { selectedHour24 = it },
-                        modifier = Modifier.width(80.dp),
-                        primaryColor = primaryTextColor,
-                        contentDescriptionLabel = "Hour"
-                    )
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    Text(
-                        text = ":",
-                        fontSize = 34.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = primaryTextColor,
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    // Minutes (00-59 in steps)
-                    val minutesList = remember(minuteStep) {
-                        (0..59 step minuteStep).map { String.format(Locale.getDefault(), "%02d", it) }
-                    }
-                    val selectedMinIndex = (selectedMinute / minuteStep).coerceIn(0, minutesList.lastIndex)
-
-                    WheelPicker(
-                        items = minutesList,
-                        selectedIndex = selectedMinIndex,
-                        onSelectedIndexChanged = { selectedMinute = it * minuteStep },
-                        modifier = Modifier.width(80.dp),
-                        primaryColor = primaryTextColor,
-                        contentDescriptionLabel = "Minute"
-                    )
-                } else {
-                    // 12h Mode: Hours (12, 01..11)
-                    val hours12List = remember { listOf("12") + (1..11).map { String.format(Locale.getDefault(), "%02d", it) } }
-                    val current12HourIndex = if (selectedHour24 % 12 == 0) 0 else selectedHour24 % 12
-
-                    WheelPicker(
-                        items = hours12List,
-                        selectedIndex = current12HourIndex,
-                        onSelectedIndexChanged = { h12Idx ->
-                            val isPm = selectedHour24 >= 12
-                            val hourNum = if (h12Idx == 0) 0 else h12Idx
-                            selectedHour24 = if (isPm) (if (hourNum == 12) 12 else hourNum + 12) else (if (hourNum == 12) 0 else hourNum)
-                        },
-                        modifier = Modifier.width(72.dp),
-                        primaryColor = primaryTextColor,
-                        contentDescriptionLabel = "Hour"
-                    )
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    Text(
-                        text = ":",
-                        fontSize = 34.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = primaryTextColor,
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    // Minutes (00-59)
-                    val minutesList = remember(minuteStep) {
-                        (0..59 step minuteStep).map { String.format(Locale.getDefault(), "%02d", it) }
-                    }
-                    val selectedMinIndex = (selectedMinute / minuteStep).coerceIn(0, minutesList.lastIndex)
-
-                    WheelPicker(
-                        items = minutesList,
-                        selectedIndex = selectedMinIndex,
-                        onSelectedIndexChanged = { selectedMinute = it * minuteStep },
-                        modifier = Modifier.width(72.dp),
-                        primaryColor = primaryTextColor,
-                        contentDescriptionLabel = "Minute"
-                    )
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    // AM / PM Wheel
-                    val amPmList = remember { listOf("AM", "PM") }
-                    val currentAmPmIdx = if (selectedHour24 >= 12) 1 else 0
-
-                    WheelPicker(
-                        items = amPmList,
-                        selectedIndex = currentAmPmIdx,
-                        onSelectedIndexChanged = { amPmIdx ->
-                            val isPm = amPmIdx == 1
-                            val h12 = selectedHour24 % 12
-                            selectedHour24 = if (isPm) h12 + 12 else h12
-                        },
-                        isInfinite = false,
-                        modifier = Modifier.width(72.dp),
-                        primaryColor = primaryTextColor,
-                        contentDescriptionLabel = "AM or PM"
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // 4. Bottom Row Action Button: OK on right
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(
-                    onClick = {
-                        val chosenTime = LocalTime.of(
-                            selectedHour24.coerceIn(0, 23),
-                            selectedMinute.coerceIn(0, 59)
+                    if (is24HourFormat) {
+                        val hours24List = remember { (0..23).map { String.format(Locale.getDefault(), "%02d", it) } }
+                        WheelPicker(
+                            items = hours24List,
+                            selectedIndex = selectedHour24,
+                            onSelectedIndexChanged = { selectedHour24 = it },
+                            modifier = Modifier.width(80.dp),
+                            primaryColor = primaryTextColor,
+                            contentDescriptionLabel = "Hour"
                         )
-                        onTimeSelected(chosenTime)
-                        onDismiss()
-                    },
-                    modifier = Modifier.heightIn(min = 48.dp)
-                ) {
-                    Text(
-                        text = "OK",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = accentColor
-                    )
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Text(
+                            text = ":",
+                            fontSize = 34.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryTextColor,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        val minutesList = remember(minuteStep) {
+                            (0..59 step minuteStep).map { String.format(Locale.getDefault(), "%02d", it) }
+                        }
+                        val selectedMinIndex = (selectedMinute / minuteStep).coerceIn(0, minutesList.lastIndex)
+
+                        WheelPicker(
+                            items = minutesList,
+                            selectedIndex = selectedMinIndex,
+                            onSelectedIndexChanged = { selectedMinute = it * minuteStep },
+                            modifier = Modifier.width(80.dp),
+                            primaryColor = primaryTextColor,
+                            contentDescriptionLabel = "Minute"
+                        )
+                    } else {
+                        val hours12List = remember { listOf("12") + (1..11).map { String.format(Locale.getDefault(), "%02d", it) } }
+                        val current12HourIndex = if (selectedHour24 % 12 == 0) 0 else selectedHour24 % 12
+
+                        WheelPicker(
+                            items = hours12List,
+                            selectedIndex = current12HourIndex,
+                            onSelectedIndexChanged = { h12Idx ->
+                                val isPm = selectedHour24 >= 12
+                                val hourNum = if (h12Idx == 0) 0 else h12Idx
+                                selectedHour24 = if (isPm) (if (hourNum == 12) 12 else hourNum + 12) else (if (hourNum == 12) 0 else hourNum)
+                            },
+                            modifier = Modifier.width(72.dp),
+                            primaryColor = primaryTextColor,
+                            contentDescriptionLabel = "Hour"
+                        )
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Text(
+                            text = ":",
+                            fontSize = 34.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryTextColor,
+                            modifier = Modifier.padding(bottom = 4.dp)
+                        )
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        val minutesList = remember(minuteStep) {
+                            (0..59 step minuteStep).map { String.format(Locale.getDefault(), "%02d", it) }
+                        }
+                        val selectedMinIndex = (selectedMinute / minuteStep).coerceIn(0, minutesList.lastIndex)
+
+                        WheelPicker(
+                            items = minutesList,
+                            selectedIndex = selectedMinIndex,
+                            onSelectedIndexChanged = { selectedMinute = it * minuteStep },
+                            modifier = Modifier.width(72.dp),
+                            primaryColor = primaryTextColor,
+                            contentDescriptionLabel = "Minute"
+                        )
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        val amPmList = remember { listOf("AM", "PM") }
+                        val currentAmPmIdx = if (selectedHour24 >= 12) 1 else 0
+
+                        WheelPicker(
+                            items = amPmList,
+                            selectedIndex = currentAmPmIdx,
+                            onSelectedIndexChanged = { amPmIdx ->
+                                val isPm = amPmIdx == 1
+                                val h12 = selectedHour24 % 12
+                                selectedHour24 = if (isPm) h12 + 12 else h12
+                            },
+                            isInfinite = false,
+                            modifier = Modifier.width(72.dp),
+                            primaryColor = primaryTextColor,
+                            contentDescriptionLabel = "AM or PM"
+                        )
+                    }
                 }
-            }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = {
+                            val chosenTime = LocalTime.of(
+                                selectedHour24.coerceIn(0, 23),
+                                selectedMinute.coerceIn(0, 59)
+                            )
+                            onTimeSelected(chosenTime)
+                            onDismiss()
+                        },
+                        modifier = Modifier.heightIn(min = 48.dp)
+                    ) {
+                        Text(
+                            text = "OK",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = accentColor
+                        )
+                    }
+                }
             }
         }
     }
@@ -291,7 +241,6 @@ fun WheelPicker(
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = targetIndex)
     val flingBehavior = rememberSnapFlingBehavior(lazyListState = listState)
 
-    // Center item is the visible item closest to viewport center
     val centerIndex by remember {
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
@@ -362,9 +311,8 @@ fun WheelPicker(
                     )
                 }
             }
-            }
         }
     }
-
+}
 
 private data class Tuple3<A, B, C>(val a: A, val b: B, val c: C)

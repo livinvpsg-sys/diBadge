@@ -13,25 +13,33 @@ fun hasTasksOnDate(allReminders: List<ReminderEntity>, targetDate: LocalDate): B
 }
 
 fun isReminderOnDate(reminder: ReminderEntity, targetDate: LocalDate): Boolean {
+    // 1. Match custom remindDate
+    if (reminder.remindDate != null && targetDate.isEqual(reminder.remindDate)) {
+        return true
+    }
+
+    // 2. Match due date
+    if (reminder.date != null && targetDate.isEqual(reminder.date)) {
+        return true
+    }
+
     val repeat = reminder.repeatType.lowercase()
-    val baseStart = reminder.startDate ?: reminder.date ?: LocalDate.now()
+
+    // 3. Non-repeating task ("once" or blank)
+    if (repeat == "once" || repeat.isBlank()) {
+        val taskStart = reminder.startDate ?: reminder.date ?: reminder.remindDate ?: LocalDate.now()
+        return targetDate.isEqual(taskStart)
+    }
+
+    // 4. Repeating task ("daily", "weekly", "monthly", "yearly", "custom")
+    val baseStart = reminder.startDate ?: reminder.date ?: reminder.remindDate ?: LocalDate.now()
     val endDate = reminder.endDate ?: reminder.date
 
-    // 1. Check if targetDate is BEFORE the start date
     if (targetDate.isBefore(baseStart)) return false
-
-    // 2. Check if targetDate is AFTER the end date (if an end date / due date is set)
     if (endDate != null && targetDate.isAfter(endDate)) return false
 
-    // 3. Match repeat interval
     return when {
-        repeat == "once" || repeat.isBlank() -> {
-            val dueDate = reminder.date ?: baseStart
-            targetDate == dueDate
-        }
-        repeat == "daily" -> {
-            true // Repeats every day from baseStart up to endDate (or indefinitely if endDate == null)
-        }
+        repeat == "daily" -> true
         repeat.startsWith("weekly") -> {
             val selectedDays = if (reminder.repeatType.contains(":")) {
                 reminder.repeatType.substringAfter(":").split(",")
@@ -71,22 +79,28 @@ fun isReminderOnDate(reminder: ReminderEntity, targetDate: LocalDate): Boolean {
             }
             targetDate.month == targetMonth && targetDate.dayOfMonth == targetDayOfMonth
         }
-        repeat == "custom" -> {
-            true
-        }
-        else -> targetDate == (reminder.date ?: baseStart)
+        repeat == "custom" -> true
+        else -> false
     }
 }
 
 fun parseReminderTime(timeStr: String?): LocalTime {
     if (timeStr.isNullOrBlank()) return LocalTime.MAX
-    return try {
-        LocalTime.parse(timeStr, DateTimeFormatter.ofPattern("hh:mm a", Locale.getDefault()))
-    } catch (e: Exception) {
+    val clean = timeStr.trim().uppercase()
+    val formatters = listOf(
+        DateTimeFormatter.ofPattern("h:mm a", Locale.US),
+        DateTimeFormatter.ofPattern("hh:mm a", Locale.US),
+        DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()),
+        DateTimeFormatter.ofPattern("hh:mm a", Locale.getDefault()),
+        DateTimeFormatter.ofPattern("H:mm", Locale.US),
+        DateTimeFormatter.ofPattern("HH:mm", Locale.US),
+        DateTimeFormatter.ofPattern("H:mm", Locale.getDefault()),
+        DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())
+    )
+    for (fmt in formatters) {
         try {
-            LocalTime.parse(timeStr.uppercase(), DateTimeFormatter.ofPattern("hh:mm a", Locale.getDefault()))
-        } catch (e2: Exception) {
-            LocalTime.MAX
-        }
+            return LocalTime.parse(clean, fmt)
+        } catch (_: Exception) {}
     }
+    return LocalTime.MAX
 }
