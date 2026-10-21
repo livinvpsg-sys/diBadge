@@ -637,10 +637,15 @@ fun ProfileScreen(
     }
 
     if (showSignatureDialog) {
-        SignatureDialog(
+        val initialFullName = remember(profileData.firstName, profileData.lastName) {
+            "${profileData.firstName} ${profileData.lastName}".trim()
+        }
+
+        SignatureBottomSheet(
             initialMode = savedSignatureMode,
-            initialTypedName = savedTypedName,
+            initialTypedName = savedTypedName.ifBlank { initialFullName },
             initialStrokes = savedStrokes,
+            existingSignatureUrl = profileData.signatureUrl,
             onDismiss = { showSignatureDialog = false },
             onSignatureSaved = { sigDataUrl, mode, typedNameVal, strokesList ->
                 showSignatureDialog = false

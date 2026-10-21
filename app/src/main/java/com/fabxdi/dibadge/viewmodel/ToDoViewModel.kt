@@ -9,7 +9,6 @@ import com.fabxdi.dibadge.data.ToDoEntity
 import com.fabxdi.dibadge.ui.my_tasks.isReminderOnDate
 import com.fabxdi.dibadge.util.AlarmScheduler
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
@@ -20,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import java.time.LocalDate
 
 class ToDoViewModel(application: Application) : AndroidViewModel(application) {
@@ -72,47 +72,42 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
         currentSyncedUserId = userId
 
         viewModelScope.launch(Dispatchers.IO) {
-            val localTasks = reminderDao.getAllRemindersList()
-            for (localTask in localTasks) {
-                try {
-                    firestore.collection("users")
-                        .document(userId)
-                        .collection("tasks")
-                        .document(localTask.id.toString())
-                        .set(localTask.toFirestoreMap(), SetOptions.merge())
-                } catch (e: Exception) {
-                    // Ignore offline or firestore error
+            try {
+                // 1. Initial fetch from Firestore to restore all user tasks permanently
+                val querySnapshot = firestore.collection("users")
+                    .document(userId)
+                    .collection("tasks")
+                    .get()
+                    .await()
+
+                for (doc in querySnapshot.documents) {
+                    val mapData = doc.data ?: continue
+                    val entity = mapData.toToDoEntity(doc.id)
+                    if (entity != null) {
+                        reminderDao.insertReminder(entity)
+                        if (!entity.time.isNullOrBlank() && entity.isAlarmEnabled) {
+                            alarmScheduler.schedule(entity)
+                        }
+                    }
                 }
+            } catch (e: Exception) {
+                // Ignore offline error - local Room DB persists cached data
             }
 
+            // 2. Real-time listener for ongoing updates from this or other devices
             firestoreListener = firestore.collection("users")
                 .document(userId)
                 .collection("tasks")
                 .addSnapshotListener { snapshot, e ->
                     if (e != null || snapshot == null) return@addSnapshotListener
                     viewModelScope.launch(Dispatchers.IO) {
-                        for (change in snapshot.documentChanges) {
-                            val doc = change.document
-                            val mapData = doc.data
-                            when (change.type) {
-                                DocumentChange.Type.ADDED, DocumentChange.Type.MODIFIED -> {
-                                    val entity = mapData.toToDoEntity(doc.id)
-                                    if (entity != null) {
-                                        reminderDao.insertReminder(entity)
-                                        if (!entity.time.isNullOrBlank() && entity.isAlarmEnabled) {
-                                            alarmScheduler.schedule(entity)
-                                        }
-                                    }
-                                }
-                                DocumentChange.Type.REMOVED -> {
-                                    val idVal = (mapData["id"] as? Long)?.toInt()
-                                        ?: doc.id.toIntOrNull()
-                                    if (idVal != null) {
-                                        reminderDao.getReminderById(idVal)?.let { localEntity ->
-                                            reminderDao.deleteReminder(localEntity)
-                                            alarmScheduler.cancel(localEntity.id)
-                                        }
-                                    }
+                        for (doc in snapshot.documents) {
+                            val mapData = doc.data ?: continue
+                            val entity = mapData.toToDoEntity(doc.id)
+                            if (entity != null) {
+                                reminderDao.insertReminder(entity)
+                                if (!entity.time.isNullOrBlank() && entity.isAlarmEnabled) {
+                                    alarmScheduler.schedule(entity)
                                 }
                             }
                         }
@@ -159,8 +154,12 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
         remindDate: LocalDate? = null
     ) {
         viewModelScope.launch(Dispatchers.IO) {
+            val taskPrimaryId = if (id == 0) {
+                (System.currentTimeMillis().toInt() and 0x7FFFFFFF) + (1..999).random()
+            } else id
+
             var reminder = ToDoEntity(
-                id = id,
+                id = taskPrimaryId,
                 title = title,
                 content = content,
                 date = date,
@@ -286,7 +285,7 @@ fun ToDoEntity.toFirestoreMap(): Map<String, Any?> {
 }
 
 fun Map<String, Any?>.toToDoEntity(documentId: String): ToDoEntity? {
-    val idVal = (this["id"] as? Long)?.toInt() ?: documentId.toIntOrNull() ?: 0
+    val rawId = (this["id"] as? Long)?.toInt() ?: documentId.toIntOrNull() ?: documentId.hashCode().let { if (it < 0) -it else it }
     val titleVal = this["title"] as? String ?: ""
     val contentVal = this["content"] as? String ?: ""
     val dateVal = (this["date"] as? String)?.let { try { LocalDate.parse(it) } catch (e: Exception) { null } }
@@ -301,7 +300,7 @@ fun Map<String, Any?>.toToDoEntity(documentId: String): ToDoEntity? {
     val remindDateVal = (this["remindDate"] as? String)?.let { try { LocalDate.parse(it) } catch (e: Exception) { null } }
 
     return ToDoEntity(
-        id = idVal,
+        id = if (rawId == 0) (documentId.hashCode().let { if (it < 0) -it else it }) else rawId,
         title = titleVal,
         content = contentVal,
         date = dateVal,

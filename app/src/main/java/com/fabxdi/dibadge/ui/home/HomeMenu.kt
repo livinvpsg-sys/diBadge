@@ -172,7 +172,7 @@ fun HomeMenu(
                             Text(
                                 text = displayFullName,
                                 fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.Normal,
                                 color = primaryTextColor,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
@@ -296,7 +296,7 @@ fun HomeMenu(
                 Text(
                     text = "Sign out of diBadge?",
                     fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Normal,
                     color = primaryTextColor
                 )
             },
@@ -319,7 +319,7 @@ fun HomeMenu(
                     Text(
                         text = "Sign out",
                         fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.Normal,
                         color = errorColor
                     )
                 }
@@ -384,7 +384,7 @@ fun DrawerRowItem(
             Text(
                 text = label,
                 fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.Normal,
                 color = textColor
             )
         }

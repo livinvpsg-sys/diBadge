@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
@@ -204,38 +205,78 @@ fun CountryChip(
 }
 
 fun createSignatureDataUrl(
-    width: Int,
-    height: Int,
+    width: Int = 1200,
+    height: Int = 800,
     strokes: List<List<Offset>>,
     typedText: String,
     mode: String,
-    strokeColorHex: String
+    strokeColorHex: String,
+    fontIndex: Int = 0
 ): String {
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = android.graphics.Canvas(bitmap)
+
+    val colorInt = try { android.graphics.Color.parseColor(strokeColorHex) } catch (e: Exception) { android.graphics.Color.BLACK }
+
     val paint = Paint().apply {
         isAntiAlias = true
-        color = android.graphics.Color.parseColor(strokeColorHex)
-        strokeWidth = 12f
+        color = colorInt
+        strokeWidth = 14f
         style = Paint.Style.STROKE
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
 
-    if (mode == "draw") {
+    if (mode == "draw" && strokes.isNotEmpty()) {
+        var minX = Float.MAX_VALUE
+        var maxX = Float.MIN_VALUE
+        var minY = Float.MAX_VALUE
+        var maxY = Float.MIN_VALUE
+
         for (stroke in strokes) {
+            for (pt in stroke) {
+                if (pt.x < minX) minX = pt.x
+                if (pt.x > maxX) maxX = pt.x
+                if (pt.y < minY) minY = pt.y
+                if (pt.y > maxY) maxY = pt.y
+            }
+        }
+
+        val strokeWidthRange = (maxX - minX).coerceAtLeast(1f)
+        val strokeHeightRange = (maxY - minY).coerceAtLeast(1f)
+
+        val paddingX = width * 0.08f
+        val paddingY = height * 0.08f
+        val availW = width - (paddingX * 2f)
+        val availH = height - (paddingY * 2f)
+
+        val scale = (availW / strokeWidthRange).coerceAtMost(availH / strokeHeightRange)
+
+        val offsetX = paddingX + (availW - strokeWidthRange * scale) / 2f - minX * scale
+        val offsetY = paddingY + (availH - strokeHeightRange * scale) / 2f - minY * scale
+
+        for (stroke in strokes) {
+            if (stroke.isEmpty()) continue
             val path = Path()
             for (i in stroke.indices) {
                 val pt = stroke[i]
-                if (i == 0) path.moveTo(pt.x * 3f, pt.y * 3f)
-                else path.lineTo(pt.x * 3f, pt.y * 3f)
+                val scaledX = pt.x * scale + offsetX
+                val scaledY = pt.y * scale + offsetY
+                if (i == 0) path.moveTo(scaledX, scaledY)
+                else path.lineTo(scaledX, scaledY)
             }
             canvas.drawPath(path, paint)
         }
     } else if (typedText.isNotBlank()) {
+        val selectedTypeface = when (fontIndex) {
+            0 -> Typeface.create("cursive", Typeface.ITALIC)
+            1 -> Typeface.create(Typeface.SERIF, Typeface.ITALIC)
+            else -> Typeface.create(Typeface.MONOSPACE, Typeface.BOLD_ITALIC)
+        }
+
         paint.style = Paint.Style.FILL
-        paint.textSize = 160f
-        paint.typeface = Typeface.create(Typeface.SERIF, Typeface.ITALIC)
+        paint.textSize = 150f
+        paint.typeface = selectedTypeface
         val bounds = Rect()
         paint.getTextBounds(typedText, 0, typedText.length, bounds)
         val x = (width - bounds.width()) / 2f
@@ -247,200 +288,4 @@ fun createSignatureDataUrl(
     bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
     val bytes = stream.toByteArray()
     return "data:image/png;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-}
-
-@Composable
-fun SignatureDialog(
-    initialMode: String = "draw",
-    initialTypedName: String = "",
-    initialStrokes: List<List<Offset>> = emptyList(),
-    onDismiss: () -> Unit,
-    onSignatureSaved: (sigDataUrl: String, mode: String, typedName: String, strokes: List<List<Offset>>) -> Unit
-) {
-    var selectedMode by remember { mutableStateOf(initialMode.ifBlank { "draw" }) }
-    var typedName by remember { mutableStateOf(initialTypedName) }
-
-    val currentStroke = remember { mutableStateListOf<Offset>() }
-    val allStrokes = remember { mutableStateListOf<List<Offset>>().apply { addAll(initialStrokes) } }
-
-    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
-    val strokeColorHex = if (isDark) "#FAF9F5" else "#1C1B1F"
-    val strokeColor = if (isDark) Color(0xFFFAF9F5) else Color(0xFF1C1B1F)
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    FilterChip(
-                        selected = selectedMode == "draw",
-                        onClick = { selectedMode = "draw" },
-                        label = { Text("Draw", fontWeight = if (selectedMode == "draw") FontWeight.Bold else FontWeight.Normal) },
-                        shape = CircleShape
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    FilterChip(
-                        selected = selectedMode == "type",
-                        onClick = { selectedMode = "type" },
-                        label = { Text("Type", fontWeight = if (selectedMode == "type") FontWeight.Bold else FontWeight.Normal) },
-                        shape = CircleShape
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                if (selectedMode == "draw") {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = "Draw your signature below:",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(140.dp)
-                                .pointerInput(Unit) {
-                                    detectDragGestures(
-                                        onDragStart = { offset ->
-                                            currentStroke.clear()
-                                            currentStroke.add(offset)
-                                        },
-                                        onDrag = { change, _ ->
-                                            currentStroke.add(change.position)
-                                        },
-                                        onDragEnd = {
-                                            if (currentStroke.isNotEmpty()) {
-                                                allStrokes.add(currentStroke.toList())
-                                                currentStroke.clear()
-                                            }
-                                        }
-                                    )
-                                },
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                        ) {
-                            Canvas(modifier = Modifier.fillMaxSize()) {
-                                for (stroke in allStrokes) {
-                                    for (i in 0 until stroke.size - 1) {
-                                        drawLine(
-                                            color = strokeColor,
-                                            start = stroke[i],
-                                            end = stroke[i + 1],
-                                            strokeWidth = 3.dp.toPx(),
-                                            cap = StrokeCap.Round
-                                        )
-                                    }
-                                }
-                                for (i in 0 until currentStroke.size - 1) {
-                                    drawLine(
-                                        color = strokeColor,
-                                        start = currentStroke[i],
-                                        end = currentStroke[i + 1],
-                                        strokeWidth = 3.dp.toPx(),
-                                        cap = StrokeCap.Round
-                                    )
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = "Type your signature:",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        OutlinedTextField(
-                            value = typedName,
-                            onValueChange = { typedName = it },
-                            placeholder = { Text("Your Name", fontFamily = FontFamily.Cursive) },
-                            textStyle = MaterialTheme.typography.titleLarge.copy(
-                                fontSize = 26.sp,
-                                fontFamily = FontFamily.Cursive,
-                                color = MaterialTheme.colorScheme.onSurface
-                            ),
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val finalStrokes = if (selectedMode == "draw") {
-                        if (currentStroke.isNotEmpty()) allStrokes + listOf(currentStroke.toList()) else allStrokes.toList()
-                    } else {
-                        emptyList()
-                    }
-
-                    val finalTypedName = if (selectedMode == "type") typedName.trim() else ""
-
-                    val sigDataUrl = createSignatureDataUrl(
-                        width = 1200,
-                        height = 800,
-                        strokes = finalStrokes,
-                        typedText = finalTypedName,
-                        mode = selectedMode,
-                        strokeColorHex = strokeColorHex
-                    )
-
-                    onSignatureSaved(sigDataUrl, selectedMode, finalTypedName, finalStrokes)
-                }
-            ) {
-                Text("Save", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = {
-                    if (selectedMode == "draw") {
-                        currentStroke.clear()
-                        allStrokes.clear()
-                    } else {
-                        typedName = ""
-                    }
-                }
-            ) {
-                Text(
-                    text = "Clear",
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    )
 }

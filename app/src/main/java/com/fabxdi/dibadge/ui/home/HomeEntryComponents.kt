@@ -78,7 +78,7 @@ fun HomeEntryCard(
                 Text(
                     text = entry.title,
                     fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.Normal,
                     color = primaryTextColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis

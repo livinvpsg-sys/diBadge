@@ -32,11 +32,9 @@ import java.time.LocalTime
 fun HomeBanner(
     firstName: String,
     nickname: String = "",
-    notificationCount: Int = 0,
     reminderCount: Int = 0,
     searchQuery: String = "",
     onSearchQueryChange: (String) -> Unit = {},
-    onReminderClick: () -> Unit = {},
     onMenuClick: () -> Unit = {},
     onQrClick: () -> Unit = {},
     selectedCount: Int = 0,
@@ -98,7 +96,7 @@ fun HomeBanner(
                 }
             }
         } else {
-            // Line 1 & Three-Dot Button
+            // Line 1 & Three-Dot Button (Line 1: 24sp Regular 400)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -107,7 +105,7 @@ fun HomeBanner(
                 Text(
                     text = "Hi $greetingName,",
                     fontSize = 24.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Normal,
                     color = primaryTextColor,
                     modifier = Modifier.weight(1f)
                 )
@@ -129,16 +127,14 @@ fun HomeBanner(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Line 2: Tasks due today OR Time-of-day greeting
+            // Line 2: Today's Tasks Count OR Time-of-day greeting (Plain text, NOT tappable)
             if (reminderCount > 0) {
                 val taskWord = if (reminderCount == 1) "task" else "tasks"
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clickable { onReminderClick() }
-                        .semantics(mergeDescendants = true) {
-                            contentDescription = "You have $reminderCount $taskWord to do today"
-                        }
+                    modifier = Modifier.semantics(mergeDescendants = true) {
+                        contentDescription = "$reminderCount $taskWord due today"
+                    }
                 ) {
                     Text(
                         text = "You have",
@@ -147,7 +143,7 @@ fun HomeBanner(
                         color = secondaryTextColor
                     )
 
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
 
                     Surface(
                         shape = CircleShape,
@@ -159,7 +155,7 @@ fun HomeBanner(
                     ) {
                         Box(
                             contentAlignment = Alignment.Center,
-                            modifier = Modifier.padding(horizontal = 6.dp)
+                            modifier = Modifier.padding(horizontal = 8.dp)
                         ) {
                             Text(
                                 text = if (reminderCount >= 100) "99+" else reminderCount.toString(),
@@ -170,7 +166,7 @@ fun HomeBanner(
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
 
                     Text(
                         text = "$taskWord to do today",

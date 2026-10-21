@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,7 +23,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,6 +35,7 @@ import com.fabxdi.dibadge.R
 import com.fabxdi.dibadge.data.HomeEntryEntity
 import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
 import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
+import com.fabxdi.dibadge.ui.connections.ConnectionsScreen
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatScreen
 import com.fabxdi.dibadge.ui.my_activity.MyActivityScreen
 import com.fabxdi.dibadge.ui.my_tasks.MyTasksScreen
@@ -79,6 +84,7 @@ fun MainDashboard(
     var showQrScanner by remember { mutableStateOf(false) }
     var showQrSheet by remember { mutableStateOf(false) }
     var showNewGroupSheet by remember { mutableStateOf(false) }
+    var showUpdatesSheet by remember { mutableStateOf(false) }
     var selectedEntries by remember { mutableStateOf(setOf<HomeEntryEntity>()) }
     var showDeleteEntryDialog by remember { mutableStateOf(false) }
     var selectedEntryForChat by remember { mutableStateOf<HomeEntryEntity?>(null) }
@@ -175,6 +181,14 @@ fun MainDashboard(
         return
     }
 
+    if (selectedTab == HomeTab.Connections) {
+        ConnectionsScreen(
+            onBack = { onTabSelected(HomeTab.Home) },
+            bottomBar = { AppBottomBar(selectedTab, onTabSelected) }
+        )
+        return
+    }
+
     if (selectedTab == HomeTab.MyTasks) {
         MyTasksScreen(
             onBack = { onTabSelected(HomeTab.Home) },
@@ -213,11 +227,9 @@ fun MainDashboard(
                             HomeBanner(
                                 firstName = firstName,
                                 nickname = "",
-                                notificationCount = notificationCount,
                                 reminderCount = reminderCount,
                                 searchQuery = homeSearchQuery,
                                 onSearchQueryChange = { homeSearchQuery = it },
-                                onReminderClick = onReminderClick,
                                 onMenuClick = { scope.launch { drawerState.open() } },
                                 onQrClick = { showQrSheet = true },
                                 selectedCount = selectedEntries.size,
@@ -226,7 +238,15 @@ fun MainDashboard(
                             )
                         }
                     },
-                    bottomBar = { AppBottomBar(selectedTab, onTabSelected) },
+                    bottomBar = {
+                        AppBottomBar(
+                            selectedTab = selectedTab,
+                            onTabSelected = onTabSelected,
+                            hasMyTasksDot = reminderCount > 0,
+                            hasConnectionsDot = false,
+                            hasInboxDot = notificationCount > 0
+                        )
+                    },
                     floatingActionButton = {
                         Surface(
                             modifier = Modifier
@@ -274,21 +294,13 @@ fun MainDashboard(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         if (homeSearchQuery.isEmpty()) {
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Text(
-                                                    text = "No chat groups yet",
-                                                    fontSize = 17.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = MaterialTheme.colorScheme.onBackground
-                                                )
-                                                Spacer(modifier = Modifier.height(4.dp))
-                                                Text(
-                                                    text = "Tap + to create your first group",
-                                                    fontSize = 16.sp,
-                                                    fontWeight = FontWeight.Normal,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
+                                            Text(
+                                                text = "Welcome to diBadge",
+                                                fontSize = 18.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                                modifier = Modifier.offset(y = (-20).dp)
+                                            )
                                         } else {
                                             Text(
                                                 text = "No matches found",
@@ -327,7 +339,12 @@ fun MainDashboard(
                                     }
                                 }
                             }
-                            HomeTab.Connections -> Text("Connections View", style = MaterialTheme.typography.titleLarge)
+                            HomeTab.Connections -> {
+                                ConnectionsScreen(
+                                    onBack = { onTabSelected(HomeTab.Home) },
+                                    bottomBar = { AppBottomBar(selectedTab, onTabSelected) }
+                                )
+                            }
                             HomeTab.MyTasks -> Text("My Tasks View", style = MaterialTheme.typography.titleLarge)
                             HomeTab.Note -> Text("Inbox View", style = MaterialTheme.typography.titleLarge)
                         }
@@ -399,10 +416,16 @@ fun MainDashboard(
 @Composable
 fun AppBottomBar(
     selectedTab: HomeTab,
-    onTabSelected: (HomeTab) -> Unit
+    onTabSelected: (HomeTab) -> Unit,
+    hasMyTasksDot: Boolean = false,
+    hasConnectionsDot: Boolean = false,
+    hasInboxDot: Boolean = false
 ) {
+    val diBadgeColors = DiBadgeTheme.colors
+    val colors = MaterialTheme.colorScheme
+
     NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = colors.surface,
         tonalElevation = 0.dp
     ) {
         HomeTab.entries.forEach { tab ->
@@ -414,23 +437,44 @@ fun AppBottomBar(
                 label = "bottomBarIconSize"
             )
 
+            val showDot = when (tab) {
+                HomeTab.MyTasks -> hasMyTasksDot
+                HomeTab.Connections -> hasConnectionsDot
+                HomeTab.Note -> hasInboxDot
+                else -> false
+            }
+
             NavigationBarItem(
                 selected = isSelected,
                 onClick = { onTabSelected(tab) },
                 icon = {
-                    if (tab == HomeTab.Home && isSelected) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_dibadge_mark),
-                            contentDescription = tab.label,
-                            tint = Color.Unspecified,
-                            modifier = Modifier.size(iconSize)
-                        )
-                    } else {
-                        Icon(
-                            painter = painterResource(id = tab.iconRes),
-                            contentDescription = tab.label,
-                            modifier = Modifier.size(iconSize)
-                        )
+                    Box {
+                        if (tab == HomeTab.Home && isSelected) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_dibadge_mark),
+                                contentDescription = tab.label,
+                                tint = Color.Unspecified,
+                                modifier = Modifier.size(iconSize)
+                            )
+                        } else {
+                            Icon(
+                                painter = painterResource(id = tab.iconRes),
+                                contentDescription = tab.label,
+                                modifier = Modifier.size(iconSize)
+                            )
+                        }
+
+                        if (showDot) {
+                            Surface(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = 6.dp, y = (-3).dp),
+                                shape = CircleShape,
+                                color = diBadgeColors.accent,
+                                border = BorderStroke(2.dp, colors.surface)
+                            ) {}
+                        }
                     }
                 },
                 label = {
@@ -442,11 +486,11 @@ fun AppBottomBar(
                     )
                 },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.onBackground,
-                    selectedTextColor = MaterialTheme.colorScheme.onBackground,
+                    selectedIconColor = colors.onBackground,
+                    selectedTextColor = colors.onBackground,
                     indicatorColor = Color.Transparent,
-                    unselectedIconColor = DiBadgeTheme.colors.tabInactive,
-                    unselectedTextColor = DiBadgeTheme.colors.tabInactive
+                    unselectedIconColor = diBadgeColors.tabInactive,
+                    unselectedTextColor = diBadgeColors.tabInactive
                 )
             )
         }
