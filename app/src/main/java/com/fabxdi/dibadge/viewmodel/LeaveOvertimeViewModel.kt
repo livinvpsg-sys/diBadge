@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fabxdi.dibadge.data.AppDatabase
+import com.fabxdi.dibadge.data.ClaimEntity
 import com.fabxdi.dibadge.data.LeaveEntity
 import com.fabxdi.dibadge.data.OvertimeEntity
 import kotlinx.coroutines.flow.Flow
@@ -17,6 +18,7 @@ class LeaveOvertimeViewModel(application: Application) : AndroidViewModel(applic
 
     val allLeaves: Flow<List<LeaveEntity>> = leaveOvertimeDao.getAllLeaves()
     val allOvertime: Flow<List<OvertimeEntity>> = leaveOvertimeDao.getAllOvertime()
+    val allClaims: Flow<List<ClaimEntity>> = leaveOvertimeDao.getAllClaims()
 
     init {
         viewModelScope.launch {
@@ -109,6 +111,45 @@ class LeaveOvertimeViewModel(application: Application) : AndroidViewModel(applic
     fun deleteLeave(leave: LeaveEntity) {
         viewModelScope.launch {
             leaveOvertimeDao.deleteLeave(leave)
+        }
+    }
+
+    fun saveClaim(
+        date: LocalDate,
+        category: String,
+        amount: Double,
+        description: String,
+        id: Int = 0,
+        status: String = "Pending",
+        receiptUrl: String? = null
+    ) {
+        viewModelScope.launch {
+            val claim = ClaimEntity(
+                id = id,
+                date = date,
+                category = category,
+                amount = amount,
+                description = description,
+                status = status,
+                receiptUrl = receiptUrl
+            )
+            if (id == 0) {
+                leaveOvertimeDao.insertClaim(claim)
+            } else {
+                leaveOvertimeDao.updateClaim(claim)
+            }
+        }
+    }
+
+    fun updateClaim(claim: ClaimEntity) {
+        viewModelScope.launch {
+            leaveOvertimeDao.updateClaim(claim)
+        }
+    }
+
+    fun deleteClaim(claim: ClaimEntity) {
+        viewModelScope.launch {
+            leaveOvertimeDao.deleteClaim(claim)
         }
     }
 }

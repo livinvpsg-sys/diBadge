@@ -150,6 +150,7 @@ class MainActivity : ComponentActivity() {
                     val reminderViewModel: ReminderViewModel = viewModel()
                     val leaveOvertimeViewModel: LeaveOvertimeViewModel = viewModel()
                     val todayRemindersCount by reminderViewModel.todayRemindersCount.collectAsState()
+                    val hasMyTasksDot by reminderViewModel.hasOverdueOrTodayTasks.collectAsState()
 
                     // State to manage the currently selected tab
                     var selectedTab by remember { mutableStateOf(HomeTab.Home) }
@@ -165,10 +166,6 @@ class MainActivity : ComponentActivity() {
 
                     if (showCalendarScreen) {
                         CalendarScreen(
-                            onTabClick = { tab ->
-                                showCalendarScreen = false
-                                selectedTab = tab
-                            },
                             onBackClick = {
                                 showCalendarScreen = false
                             },
@@ -191,6 +188,7 @@ class MainActivity : ComponentActivity() {
                                 showCalendarScreen = true
                             },
                             reminderCount = todayRemindersCount,
+                            hasMyTasksDot = hasMyTasksDot,
                             notificationCount = 0,
                             firstName = if (userFirstName.isNotBlank()) userFirstName else displayName,
                             fullName = computedFullName,

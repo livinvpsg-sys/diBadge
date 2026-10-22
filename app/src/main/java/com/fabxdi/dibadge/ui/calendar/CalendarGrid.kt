@@ -1,186 +1,245 @@
 package com.fabxdi.dibadge.ui.calendar
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import androidx.compose.ui.unit.sp
+import com.fabxdi.dibadge.data.ClaimEntity
+import com.fabxdi.dibadge.data.LeaveEntity
+import com.fabxdi.dibadge.data.OvertimeEntity
+import java.time.DayOfWeek
 import java.time.LocalDate
-import java.time.Month
 import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
-import kotlin.math.abs
 
-@OptIn(ExperimentalMaterial3Api::class)
+data class DayRequestSummary(
+    val hasApprovedLeave: Boolean = false,
+    val hasPendingLeave: Boolean = false,
+    val hasApprovedOt: Boolean = false,
+    val hasPendingOt: Boolean = false,
+    val hasApprovedClaim: Boolean = false,
+    val hasPendingClaim: Boolean = false
+)
+
 @Composable
 fun CalendarGrid(
-    onDateClick: (LocalDate) -> Unit,
-    modifier: Modifier = Modifier,
-    highlightDates: Set<LocalDate> = emptySet(),
-    leaveStatusMap: Map<LocalDate, String> = emptyMap()
+    currentYearMonth: YearMonth,
+    leaves: List<LeaveEntity>,
+    overtimes: List<OvertimeEntity>,
+    claims: List<ClaimEntity>,
+    onDateClick: (LocalDate) -> Unit
 ) {
-    var currentMonth by remember { mutableStateOf(YearMonth.now()) }
-    var showYearPicker by remember { mutableStateOf(false) }
-    var showMonthPicker by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState()
-
-    // Get today's date for highlighting
     val today = remember { LocalDate.now() }
-    // State for the currently selected date
-    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
+    val colors = MaterialTheme.colorScheme
 
-    // Optimization: Memoize values to avoid heavy calculations on the main thread
-    val daysInMonth = remember(currentMonth) { currentMonth.lengthOfMonth() }
-    val firstDayOfMonth = remember(currentMonth) { currentMonth.atDay(1).dayOfWeek.value % 7 }
-    val monthName = remember(currentMonth) { currentMonth.month.getDisplayName(TextStyle.FULL, Locale.getDefault()) }
-    val year = remember(currentMonth) { currentMonth.year }
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val outlineColor = colors.outline
+    val pageBgColor = colors.background
+    val isDark = primaryTextColor.red > 0.5f
 
-    // Prepare the dates list once per month change
-    val calendarDays = remember(daysInMonth, firstDayOfMonth) {
-        val days = mutableListOf<Int?>()
-        repeat(firstDayOfMonth) { days.add(null) }
-        for (i in 1..daysInMonth) { days.add(i) }
-        while (days.size % 7 != 0) { days.add(null) }
-        days.chunked(7)
+    // Days mapping for Sunday-first month grid
+    val daysInMonth = remember(currentYearMonth) {
+        val firstOfMonth = currentYearMonth.atDay(1)
+        val firstDayOfWeekSun = firstOfMonth.dayOfWeek.value % 7 // Sun=0, Mon=1...
+        val totalDays = currentYearMonth.lengthOfMonth()
+
+        val list = mutableListOf<LocalDate?>()
+        for (i in 0 until firstDayOfWeekSun) {
+            list.add(null)
+        }
+        for (d in 1..totalDays) {
+            list.add(currentYearMonth.atDay(d))
+        }
+        // Pad to 6 rows (42 cells)
+        while (list.size < 42) {
+            list.add(null)
+        }
+        list
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = DiBadgeTheme.spacing.medium)
-            .pointerInput(Unit) {
-                var totalDrag = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { totalDrag = 0f },
-                    onDragEnd = {
-                        if (abs(totalDrag) > 60) {
-                            if (totalDrag > 0) {
-                                currentMonth = currentMonth.minusMonths(1)
-                            } else {
-                                currentMonth = currentMonth.plusMonths(1)
-                            }
-                        }
-                    },
-                    onHorizontalDrag = { _, dragAmount ->
-                        totalDrag += dragAmount
-                    }
-                )
-            },
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Spacer(modifier = Modifier.height(56.dp))
+    // Summary map for each date in currentYearMonth
+    val daySummaryMap = remember(leaves, overtimes, claims, currentYearMonth) {
+        val map = mutableMapOf<LocalDate, DayRequestSummary>()
 
-        // Month and Year Display
+        leaves.forEach { leave ->
+            var curr = leave.startDate
+            val end = leave.endDate ?: leave.startDate
+            val isApproved = leave.status.equals("Approved", ignoreCase = true)
+            val isPending = leave.status.equals("Pending", ignoreCase = true)
+
+            while (!curr.isAfter(end)) {
+                val old = map[curr] ?: DayRequestSummary()
+                map[curr] = old.copy(
+                    hasApprovedLeave = old.hasApprovedLeave || isApproved,
+                    hasPendingLeave = old.hasPendingLeave || isPending
+                )
+                curr = curr.plusDays(1)
+            }
+        }
+
+        overtimes.forEach { ot ->
+            val isApproved = ot.status.equals("Approved", ignoreCase = true)
+            val isPending = ot.status.equals("Pending", ignoreCase = true)
+            val old = map[ot.date] ?: DayRequestSummary()
+            map[ot.date] = old.copy(
+                hasApprovedOt = old.hasApprovedOt || isApproved,
+                hasPendingOt = old.hasPendingOt || isPending
+            )
+        }
+
+        claims.forEach { claim ->
+            val isApproved = claim.status.equals("Approved", ignoreCase = true)
+            val isPending = claim.status.equals("Pending", ignoreCase = true)
+            val old = map[claim.date] ?: DayRequestSummary()
+            map[claim.date] = old.copy(
+                hasApprovedClaim = old.hasApprovedClaim || isApproved,
+                hasPendingClaim = old.hasPendingClaim || isPending
+            )
+        }
+
+        map
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Weekday Header Row (Sunday first: Sun, Mon, Tue, Wed, Thu, Fri, Sat)
+        val weekdays = remember {
+            listOf(DayOfWeek.SUNDAY, DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY, DayOfWeek.SATURDAY)
+        }
+
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column {
+            weekdays.forEach { dayOfWeek ->
+                val dayStr = dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())
                 Text(
-                    text = monthName,
-                    style = MaterialTheme.typography.displayLarge,
-                    modifier = Modifier.clickable { showMonthPicker = true }
-                )
-                Text(
-                    text = year.toString(),
-                    style = MaterialTheme.typography.headlineMedium,
-                    modifier = Modifier.clickable { showYearPicker = true }
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.Companion.height(DiBadgeTheme.spacing.large))
-
-        // Day Names Header
-        val daysOfWeek = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
-        Row(modifier = Modifier.fillMaxWidth()) {
-            daysOfWeek.forEach { day ->
-                Text(
-                    text = day,
-                    modifier = Modifier.weight(1f),
+                    text = dayStr,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = secondaryTextColor,
                     textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold
+                    modifier = Modifier.weight(1f)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.Companion.height(DiBadgeTheme.spacing.medium))
+        HorizontalDivider(thickness = 1.dp, color = outlineColor)
 
-        // Dates Grid (Using Column/Row for better performance than LazyVerticalGrid for static content)
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            calendarDays.forEach { week ->
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    week.forEach { day ->
-                        val date = day?.let { currentMonth.atDay(it) }
-                        val isToday = date == today
-                        val isSelected = date == selectedDate
-                        val isHighlighted = date != null && highlightDates.contains(date)
+        // 6 Rows Month Grid
+        val rows = daysInMonth.chunked(7)
+        rows.forEachIndexed { rowIndex, rowDays ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                rowDays.forEach { date ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .then(
+                                if (date != null) Modifier.clickable { onDateClick(date) } else Modifier
+                            ),
+                        contentAlignment = Alignment.TopCenter
+                    ) {
+                        if (date != null) {
+                            val isToday = date.isEqual(today)
+                            val summary = daySummaryMap[date] ?: DayRequestSummary()
 
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .aspectRatio(1f)
-                                .padding(4.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (day != null && date != null) {
-                                Surface(
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .clickable(
-                                            interactionSource = remember { MutableInteractionSource() },
-                                            indication = null
-                                        ) { 
-                                            selectedDate = date
-                                            onDateClick(date)
-                                        },
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = when {
-                                        isSelected -> Color.White
-                                        else -> Color.Transparent
-                                    },
-                                    border = when {
-                                        isSelected -> null
-                                        isHighlighted -> BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f))
-                                        else -> null
+                            val accessibilityDesc = buildString {
+                                append("${date.dayOfMonth} ${date.month.getDisplayName(TextStyle.FULL, Locale.getDefault())}")
+                                if (isToday) append(", Today")
+                                if (summary.hasApprovedLeave) append(", Leave approved")
+                                if (summary.hasPendingLeave) append(", Leave pending")
+                                if (summary.hasApprovedOt) append(", Overtime approved")
+                                if (summary.hasPendingOt) append(", Overtime pending")
+                                if (summary.hasApprovedClaim) append(", Claim approved")
+                                if (summary.hasPendingClaim) append(", Claim pending")
+                            }
+
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(vertical = 4.dp)
+                                    .semantics { contentDescription = accessibilityDesc },
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                // Day Number
+                                if (isToday) {
+                                    val todayBg = if (isDark) Color(0xFFF0F3F5) else Color(0xFF11161A)
+                                    val todayFg = if (isDark) Color(0xFF0E1114) else Color(0xFFF5F7F9)
+                                    Surface(
+                                        modifier = Modifier.size(24.dp),
+                                        shape = CircleShape,
+                                        color = todayBg
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = date.dayOfMonth.toString(),
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = todayFg
+                                            )
+                                        }
                                     }
+                                } else {
+                                    Text(
+                                        text = date.dayOfMonth.toString(),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = primaryTextColor
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(3.dp))
+
+                                // Status Pills Stack (Leave, OT, Claim)
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = day.toString(),
-                                            style = MaterialTheme.typography.titleLarge.copy(
-                                                fontStyle = FontStyle.Normal,
-                                                fontWeight = if (isSelected || isHighlighted || isToday) FontWeight.Bold else FontWeight.Medium
-                                            ),
-                                            color = when {
-                                                isSelected -> Color.Black
-                                                leaveStatusMap[date] == "Pending" -> Color(0xFF2196F3) // Blue
-                                                leaveStatusMap[date] == "Approved" -> Color(0xFF4CAF50) // Green
-                                                isHighlighted -> MaterialTheme.colorScheme.primary
-                                                else -> MaterialTheme.colorScheme.onBackground
-                                            },
-                                            textAlign = TextAlign.Center
+                                    if (summary.hasApprovedLeave || summary.hasPendingLeave) {
+                                        StatusLabelPill(
+                                            text = "Leave",
+                                            hasApproved = summary.hasApprovedLeave,
+                                            hasPending = summary.hasPendingLeave,
+                                            isDark = isDark
+                                        )
+                                    }
+                                    if (summary.hasApprovedOt || summary.hasPendingOt) {
+                                        StatusLabelPill(
+                                            text = "OT",
+                                            hasApproved = summary.hasApprovedOt,
+                                            hasPending = summary.hasPendingOt,
+                                            isDark = isDark
+                                        )
+                                    }
+                                    if (summary.hasApprovedClaim || summary.hasPendingClaim) {
+                                        StatusLabelPill(
+                                            text = "Claim",
+                                            hasApproved = summary.hasApprovedClaim,
+                                            hasPending = summary.hasPendingClaim,
+                                            isDark = isDark
                                         )
                                     }
                                 }
@@ -189,123 +248,67 @@ fun CalendarGrid(
                     }
                 }
             }
-        }
-    }
 
-    // Month Picker
-    if (showMonthPicker) {
-        ModalBottomSheet(
-            onDismissRequest = { showMonthPicker = false },
-            sheetState = sheetState,
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface
-        ) {
-            MonthPickerList(
-                currentMonthValue = currentMonth.monthValue,
-                onMonthSelected = { selectedMonthValue ->
-                    currentMonth = currentMonth.withMonth(selectedMonthValue)
-                    showMonthPicker = false
-                }
-            )
-        }
-    }
-
-    // Year Picker
-    if (showYearPicker) {
-        ModalBottomSheet(
-            onDismissRequest = { showYearPicker = false },
-            sheetState = sheetState,
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface
-        ) {
-            YearPickerList(
-                currentYear = year,
-                onYearSelected = { selectedYear ->
-                    currentMonth = currentMonth.withYear(selectedYear)
-                    showYearPicker = false
-                }
-            )
-        }
-    }
-}
-
-@Composable
-fun MonthPickerList(currentMonthValue: Int, onMonthSelected: (Int) -> Unit) {
-    val months = remember { (1..12).toList() }
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = (currentMonthValue - 1).coerceAtLeast(0))
-
-    LazyColumn(
-        state = listState,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(320.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        contentPadding = PaddingValues(vertical = DiBadgeTheme.spacing.medium)
-    ) {
-        items(months) { monthVal ->
-            val monthName = Month.of(monthVal).getDisplayName(TextStyle.FULL, Locale.getDefault())
-            val isSelected = monthVal == currentMonthValue
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onMonthSelected(monthVal) }
-                    .padding(vertical = 10.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = monthName,
-                    textAlign = TextAlign.Center,
-                    style = if (isSelected)
-                        MaterialTheme.typography.headlineMedium
-                    else
-                        MaterialTheme.typography.titleMedium,
-                    color = if (isSelected)
-                        MaterialTheme.colorScheme.onSurface
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                )
+            if (rowIndex < rows.lastIndex) {
+                HorizontalDivider(thickness = 1.dp, color = outlineColor)
             }
         }
     }
 }
 
 @Composable
-fun YearPickerList(currentYear: Int, onYearSelected: (Int) -> Unit) {
-    val years = remember { (currentYear - 50..currentYear + 50).toList() }
-    val listState = rememberLazyListState(initialFirstVisibleItemIndex = 48) // Roughly center the current year
+fun StatusLabelPill(
+    text: String,
+    hasApproved: Boolean,
+    hasPending: Boolean,
+    isDark: Boolean
+) {
+    val approvedFill = if (isDark) Color(0xFF16403D) else Color(0xFFD3E9E6)
+    val approvedFg = if (isDark) Color(0xFF58B5AC) else Color(0xFF1B6F69)
 
-    LazyColumn(
-        state = listState,
+    val pendingFill = if (isDark) Color(0xFF262D35) else Color(0xFFDDE3E8)
+    val pendingFg = if (isDark) Color(0xFFA3AEB8) else Color(0xFF4A5661)
+
+    val isSplit = hasApproved && hasPending
+
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
-            .height(300.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        contentPadding = PaddingValues(vertical = DiBadgeTheme.spacing.medium)
+            .fillMaxWidth(0.92f)
+            .height(18.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .then(
+                when {
+                    isSplit -> Modifier
+                    hasApproved -> Modifier.background(approvedFill)
+                    else -> Modifier.background(pendingFill)
+                }
+            ),
+        contentAlignment = Alignment.Center
     ) {
-        items(years) { year ->
-            val isSelected = year == currentYear
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onYearSelected(year) }
-                    .padding(vertical = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = year.toString(),
-                    textAlign = TextAlign.Center,
-                    style = if (isSelected)
-                        MaterialTheme.typography.headlineMedium
-                    else
-                        MaterialTheme.typography.titleMedium,
-                    color = if (isSelected)
-                        MaterialTheme.colorScheme.onSurface
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+        if (isSplit) {
+            // Split Pill: Left Approved, Right Pending
+            Row(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .background(approvedFill)
+                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .background(pendingFill)
                 )
             }
         }
+
+        Text(
+            text = text,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+            color = if (hasApproved && !isSplit) approvedFg else if (!hasApproved) pendingFg else approvedFg,
+            textAlign = TextAlign.Center
+        )
     }
 }

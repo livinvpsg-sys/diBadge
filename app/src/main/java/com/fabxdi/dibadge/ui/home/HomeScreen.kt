@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Group
+import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,11 +37,16 @@ import com.fabxdi.dibadge.data.HomeEntryEntity
 import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
 import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
 import com.fabxdi.dibadge.ui.connections.ConnectionsScreen
+import com.fabxdi.dibadge.data.InboxEntity
+import com.fabxdi.dibadge.ui.inbox.InboxScreen
+import com.fabxdi.dibadge.ui.inbox.MessageDetailScreen
+import com.fabxdi.dibadge.viewmodel.InboxViewModel
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatScreen
 import com.fabxdi.dibadge.ui.my_activity.MyActivityScreen
 import com.fabxdi.dibadge.ui.my_tasks.MyTasksScreen
 import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
 import com.fabxdi.dibadge.ui.profile.ProfileScreen
+import com.fabxdi.dibadge.ui.settings.SettingsScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.LeaveOvertimeViewModel
 import com.fabxdi.dibadge.viewmodel.ToDoViewModel
@@ -64,6 +70,7 @@ fun MainDashboard(
     onCalendarTabClick: () -> Unit,
     onReminderClick: () -> Unit = {},
     reminderCount: Int = 0,
+    hasMyTasksDot: Boolean = reminderCount > 0,
     notificationCount: Int = 0,
     firstName: String = "User",
     fullName: String = firstName,
@@ -75,7 +82,8 @@ fun MainDashboard(
     openSnoozeTimePicker: Boolean = false,
     onSnoozeHandled: () -> Unit = {},
     viewModel: ToDoViewModel = viewModel(),
-    leaveOvertimeViewModel: LeaveOvertimeViewModel = viewModel()
+    leaveOvertimeViewModel: LeaveOvertimeViewModel = viewModel(),
+    inboxViewModel: InboxViewModel = viewModel()
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -84,10 +92,12 @@ fun MainDashboard(
     var showQrScanner by remember { mutableStateOf(false) }
     var showQrSheet by remember { mutableStateOf(false) }
     var showNewGroupSheet by remember { mutableStateOf(false) }
-    var showUpdatesSheet by remember { mutableStateOf(false) }
     var selectedEntries by remember { mutableStateOf(setOf<HomeEntryEntity>()) }
     var showDeleteEntryDialog by remember { mutableStateOf(false) }
     var selectedEntryForChat by remember { mutableStateOf<HomeEntryEntity?>(null) }
+    var selectedInboxItemForDetail by remember { mutableStateOf<InboxEntity?>(null) }
+
+    val unreadInboxCount by inboxViewModel.unreadCount.collectAsState()
 
     // Handle device back button to clear selection
     BackHandler(enabled = selectedEntries.isNotEmpty()) {
@@ -98,8 +108,21 @@ fun MainDashboard(
     var showReminderForm by remember { mutableStateOf(false) }
     var showMyActivityScreen by remember { mutableStateOf(false) }
     var showProfileScreen by remember { mutableStateOf(false) }
+    var showSettingsScreen by remember { mutableStateOf(false) }
     var showOvertimeForm by remember { mutableStateOf(false) }
     var showLeaveForm by remember { mutableStateOf(false) }
+
+    if (showSettingsScreen) {
+        SettingsScreen(
+            userEmail = email,
+            onBack = { showSettingsScreen = false },
+            onSignOut = {
+                showSettingsScreen = false
+                onSignOut()
+            }
+        )
+        return
+    }
 
     if (showProfileScreen) {
         ProfileScreen(
@@ -173,10 +196,38 @@ fun MainDashboard(
         return
     }
 
+    if (selectedInboxItemForDetail != null) {
+        MessageDetailScreen(
+            item = selectedInboxItemForDetail!!,
+            onBack = { selectedInboxItemForDetail = null },
+            inboxViewModel = inboxViewModel
+        )
+        return
+    }
+
     if (selectedEntryForChat != null) {
         ChatScreen(
             entry = selectedEntryForChat!!,
             onBack = { selectedEntryForChat = null }
+        )
+        return
+    }
+
+    if (selectedTab == HomeTab.Note) {
+        InboxScreen(
+            onOpenMessageDetail = { item ->
+                selectedInboxItemForDetail = item
+            },
+            bottomBar = {
+                AppBottomBar(
+                    selectedTab = selectedTab,
+                    onTabSelected = onTabSelected,
+                    hasMyTasksDot = hasMyTasksDot,
+                    hasConnectionsDot = false,
+                    hasInboxDot = unreadInboxCount > 0
+                )
+            },
+            viewModel = inboxViewModel
         )
         return
     }
@@ -214,7 +265,7 @@ fun MainDashboard(
                         onProfileClick = { showProfileScreen = true },
                         onCalendarClick = onCalendarTabClick,
                         onMyActivityClick = { showMyActivityScreen = true },
-                        onSettingsClick = onSettingsClick,
+                        onSettingsClick = { showSettingsScreen = true },
                         onSignOut = onSignOut
                     )
                 }
@@ -242,9 +293,9 @@ fun MainDashboard(
                         AppBottomBar(
                             selectedTab = selectedTab,
                             onTabSelected = onTabSelected,
-                            hasMyTasksDot = reminderCount > 0,
+                            hasMyTasksDot = hasMyTasksDot,
                             hasConnectionsDot = false,
-                            hasInboxDot = notificationCount > 0
+                            hasInboxDot = unreadInboxCount > 0
                         )
                     },
                     floatingActionButton = {
@@ -294,13 +345,39 @@ fun MainDashboard(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         if (homeSearchQuery.isEmpty()) {
-                                            Text(
-                                                text = "Welcome to diBadge",
-                                                fontSize = 18.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                                modifier = Modifier.offset(y = (-20).dp)
-                                            )
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                modifier = Modifier
+                                                    .padding(horizontal = 40.dp)
+                                                    .offset(y = (-20).dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Layers,
+                                                    contentDescription = null,
+                                                    tint = DiBadgeTheme.colors.tabInactive,
+                                                    modifier = Modifier.size(44.dp)
+                                                )
+
+                                                Spacer(modifier = Modifier.height(10.dp))
+
+                                                Text(
+                                                    text = "Start your first group",
+                                                    fontSize = 16.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = MaterialTheme.colorScheme.onBackground
+                                                )
+
+                                                Spacer(modifier = Modifier.height(6.dp))
+
+                                                Text(
+                                                    text = "Tap + to create a group, or scan a code to join one",
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.Normal,
+                                                    lineHeight = 18.sp,
+                                                    textAlign = TextAlign.Center,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
                                         } else {
                                             Text(
                                                 text = "No matches found",
@@ -339,14 +416,9 @@ fun MainDashboard(
                                     }
                                 }
                             }
-                            HomeTab.Connections -> {
-                                ConnectionsScreen(
-                                    onBack = { onTabSelected(HomeTab.Home) },
-                                    bottomBar = { AppBottomBar(selectedTab, onTabSelected) }
-                                )
-                            }
-                            HomeTab.MyTasks -> Text("My Tasks View", style = MaterialTheme.typography.titleLarge)
-                            HomeTab.Note -> Text("Inbox View", style = MaterialTheme.typography.titleLarge)
+                            HomeTab.Connections -> {}
+                            HomeTab.MyTasks -> {}
+                            HomeTab.Note -> {}
                         }
                     }
                 }

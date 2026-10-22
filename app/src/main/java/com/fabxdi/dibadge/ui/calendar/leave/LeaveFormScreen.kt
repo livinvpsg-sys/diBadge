@@ -1,45 +1,40 @@
 package com.fabxdi.dibadge.ui.calendar.leave
 
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.activity.compose.BackHandler
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
-import com.fabxdi.dibadge.R
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.data.LeaveEntity
-import com.fabxdi.dibadge.ui.components.DiBadgeDateRangePicker
+import com.fabxdi.dibadge.ui.components.DiBadgeDatePicker
+import com.fabxdi.dibadge.ui.calendar.AttachmentFile
+import com.fabxdi.dibadge.ui.calendar.AttachmentsSection
+import com.fabxdi.dibadge.ui.settings.SettingsCard
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
-import com.fabxdi.dibadge.util.FilePickerUtils
-import java.time.Instant
+import kotlinx.coroutines.launch
 import java.time.LocalDate
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,796 +42,464 @@ import java.util.Locale
 fun LeaveFormScreen(
     existingLeaves: List<LeaveEntity>,
     leaveToEdit: LeaveEntity? = null,
-    onApply: (LocalDate, LocalDate?, String, String, List<String>, Int, String) -> Unit,
+    initialDate: LocalDate = LocalDate.now(),
+    onApply: (startDate: LocalDate, endDate: LocalDate?, type: String, reason: String, attachments: List<String>, id: Int, action: String) -> Unit,
     onClose: () -> Unit
 ) {
-    val context = LocalContext.current
-    var selectedLeaveType by remember { mutableStateOf<String?>(leaveToEdit?.leaveType) }
-    var isLeaveTypeMenuExpanded by remember { mutableStateOf(false) }
-    val leaveTypes = listOf(
-        "Annual leave",
-        "medical leave",
-        "maternity leave",
-        "paternity leave",
-        "leave without pay",
-        "Bereavement leave"
-    )
-
-    var selectedDateOption by remember { 
-        mutableStateOf<String?>(
-            if (leaveToEdit != null) {
-                if (leaveToEdit.endDate == null) "A day" else "More days"
-            } else null
-        ) 
-    }
-    var isDateOptionMenuExpanded by remember { mutableStateOf(false) }
-    val dateOptions = listOf("A day", "More days")
-
-    var reason by remember { mutableStateOf(leaveToEdit?.reason ?: "") }
-    var actionReason by remember { mutableStateOf("") }
-    var attachedFiles by remember { 
-        mutableStateOf<List<Uri>>(
-            leaveToEdit?.attachments?.map { Uri.parse(it) } ?: emptyList()
-        ) 
-    }
-    var actionAttachments by remember { mutableStateOf<List<Uri>>(emptyList()) }
-
-    var isEditMenuExpanded by remember { mutableStateOf(false) }
-    var currentAction by remember { mutableStateOf(if (leaveToEdit != null) "Edit" else "Apply") }
-
     val isEditing = leaveToEdit != null
-    val isPastLeave = leaveToEdit?.let { (it.endDate ?: it.startDate).isBefore(LocalDate.now()) } ?: false
-    val isOngoing = leaveToEdit?.let {
-        val today = LocalDate.now()
-        val end = it.endDate ?: it.startDate
-        !today.isBefore(it.startDate) && !today.isAfter(end)
-    } ?: false
-    
-    val canEditDatesAndAttachments = !isEditing || (currentAction == "Cancel" || currentAction == "Extend")
-    val isTypeAndReasonReadOnly = isEditing
 
-    val attachmentLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenMultipleDocuments(),
-        onResult = { uris ->
-            if (currentAction == "Extend" || currentAction == "Cancel") {
-                val remainingSpace = 3 - actionAttachments.size
-                if (remainingSpace > 0) {
-                    val newUris = uris.take(remainingSpace)
-                    newUris.forEach { uri ->
-                        try {
-                            context.contentResolver.takePersistableUriPermission(
-                                uri,
-                                Intent.FLAG_GRANT_READ_URI_PERMISSION
-                            )
-                        } catch (e: Exception) {}
-                    }
-                    actionAttachments = actionAttachments + newUris
-                }
-            } else {
-                val remainingSpace = 3 - attachedFiles.size
-                if (remainingSpace > 0) {
-                    val newUris = uris.take(remainingSpace)
-                    newUris.forEach { uri ->
-                        try {
-                            context.contentResolver.takePersistableUriPermission(
-                                uri,
-                                Intent.FLAG_GRANT_READ_URI_PERMISSION
-                            )
-                        } catch (e: Exception) {}
-                    }
-                    attachedFiles = attachedFiles + newUris
-                }
-            }
+    var selectedOrg by remember { mutableStateOf("diBadge Inc.") }
+    var selectedLeaveType by remember { mutableStateOf(leaveToEdit?.leaveType ?: "") }
+    var fromDate by remember { mutableStateOf(leaveToEdit?.startDate ?: initialDate) }
+    var toDate by remember { mutableStateOf(leaveToEdit?.endDate ?: leaveToEdit?.startDate ?: initialDate) }
+    var reasonInput by remember { mutableStateOf(leaveToEdit?.reason ?: "") }
+
+    var attachedFiles by remember { mutableStateOf<List<AttachmentFile>>(emptyList()) }
+
+    var showFromDatePicker by remember { mutableStateOf(false) }
+    var showToDatePicker by remember { mutableStateOf(false) }
+    var showLeaveTypeSheet by remember { mutableStateOf(false) }
+    var showOrgSheet by remember { mutableStateOf(false) }
+    var showDiscardDialog by remember { mutableStateOf(false) }
+
+    val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Ensure To Date is not before From Date
+    LaunchedEffect(fromDate) {
+        if (toDate.isBefore(fromDate)) {
+            toDate = fromDate
         }
-    )
+    }
 
-    var showDatePicker by remember { mutableStateOf(false) }
-    var showDateRangePicker by remember { mutableStateOf(false) }
+    // Leave Days Calculation (inclusive)
+    val totalDays = remember(fromDate, toDate) {
+        if (toDate.isBefore(fromDate)) 0L
+        else ChronoUnit.DAYS.between(fromDate, toDate) + 1
+    }
 
-    var triedToApply by remember { mutableStateOf(false) }
-    var showConfirmationDialog by remember { mutableStateOf(false) }
-    var showNoDateChangeDialog by remember { mutableStateOf(false) }
-    var actionToConfirm by remember { mutableStateOf("") }
-    
-    fun isDateOccupied(date: LocalDate): Boolean {
-        return existingLeaves.any { leave ->
+    // Overlap Check with existing leaves
+    val hasOverlap = remember(fromDate, toDate, existingLeaves, leaveToEdit) {
+        existingLeaves.any { leave ->
             if (leaveToEdit != null && leave.id == leaveToEdit.id) return@any false
             val leaveEnd = leave.endDate ?: leave.startDate
-            !date.isBefore(leave.startDate) && !date.isAfter(leaveEnd)
+            !(toDate.isBefore(leave.startDate) || fromDate.isAfter(leaveEnd))
         }
     }
 
-    val datePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = leaveToEdit?.startDate?.atStartOfDay(ZoneId.of("UTC"))?.toInstant()?.toEpochMilli(),
-        selectableDates = object : SelectableDates {
-            override fun isSelectableDate(utcTimeMillis: Long): Boolean {
-                val date = Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneId.of("UTC")).toLocalDate()
-                val today = LocalDate.now()
-                if (currentAction == "Cancel" && leaveToEdit != null) {
-                    val leaveEnd = leaveToEdit.endDate ?: leaveToEdit.startDate
-                    return !date.isBefore(leaveToEdit.startDate) && !date.isAfter(leaveEnd) && !date.isBefore(today)
-                }
-                if (currentAction == "Extend" && leaveToEdit != null) {
-                    val leaveEnd = leaveToEdit.endDate ?: leaveToEdit.startDate
-                    return date.isAfter(leaveEnd) && !date.isBefore(today) && !isDateOccupied(date)
-                }
-                return !date.isBefore(today) && !isDateOccupied(date)
-            }
-            override fun isSelectableYear(year: Int): Boolean = year >= LocalDate.now().year
-        }
-    )
+    val canSubmit = selectedLeaveType.isNotBlank() && !toDate.isBefore(fromDate) && !hasOverlap
 
-    val dateRangePickerState = rememberDateRangePickerState(
-        initialSelectedStartDateMillis = leaveToEdit?.startDate?.atStartOfDay(ZoneId.of("UTC"))?.toInstant()?.toEpochMilli(),
-        initialSelectedEndDateMillis = leaveToEdit?.endDate?.atStartOfDay(ZoneId.of("UTC"))?.toInstant()?.toEpochMilli(),
-        selectableDates = object : SelectableDates {
-            override fun isSelectableDate(utcTimeMillis: Long): Boolean {
-                val date = Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneId.of("UTC")).toLocalDate()
-                if (currentAction == "Cancel" && leaveToEdit != null) {
-                    val leaveEnd = leaveToEdit.endDate ?: leaveToEdit.startDate
-                    return !date.isBefore(leaveToEdit.startDate) && !date.isAfter(leaveEnd) && !date.isBefore(LocalDate.now())
-                }
-                return !date.isBefore(LocalDate.now()) && !isDateOccupied(date)
-            }
-            override fun isSelectableYear(year: Int): Boolean = year >= LocalDate.now().year
-        }
-    )
-
-    var showUnsavedChangesDialog by remember { mutableStateOf(false) }
-
-    val hasChanges = remember(
-        selectedLeaveType, 
-        datePickerState.selectedDateMillis, 
-        dateRangePickerState.selectedStartDateMillis, 
-        dateRangePickerState.selectedEndDateMillis,
-        reason,
-        actionReason,
-        attachedFiles,
-        actionAttachments,
-        currentAction
-    ) {
-        if (!isEditing) {
-            selectedLeaveType != null || 
-            datePickerState.selectedDateMillis != null ||
-            dateRangePickerState.selectedStartDateMillis != null ||
-            reason.isNotEmpty() ||
-            attachedFiles.isNotEmpty()
-        } else {
-            val originalStartDateMillis = leaveToEdit?.startDate?.atStartOfDay(ZoneId.of("UTC"))?.toInstant()?.toEpochMilli()
-            val originalEndDateMillis = leaveToEdit?.endDate?.atStartOfDay(ZoneId.of("UTC"))?.toInstant()?.toEpochMilli()
-
-            when (currentAction) {
-                "Extend" -> {
-                    val currentEndDateMillis = if (selectedDateOption == "A day") datePickerState.selectedDateMillis else dateRangePickerState.selectedEndDateMillis
-                    currentEndDateMillis != originalEndDateMillis || 
-                    actionReason.isNotEmpty() || 
-                    actionAttachments.isNotEmpty()
-                }
-                "Cancel" -> {
-                    val currentStartDateMillis = if (selectedDateOption == "A day") datePickerState.selectedDateMillis else dateRangePickerState.selectedStartDateMillis
-                    val currentEndDateMillis = if (selectedDateOption == "A day") null else dateRangePickerState.selectedEndDateMillis
-                    currentStartDateMillis != originalStartDateMillis ||
-                    currentEndDateMillis != originalEndDateMillis ||
-                    actionReason.isNotEmpty() ||
-                    actionAttachments.isNotEmpty()
-                }
-                else -> false
-            }
-        }
+    val hasUnsavedChanges = remember(selectedLeaveType, fromDate, toDate, reasonInput, attachedFiles) {
+        if (!isEditing) selectedLeaveType.isNotBlank() || reasonInput.isNotBlank() || attachedFiles.isNotEmpty()
+        else (selectedLeaveType != leaveToEdit?.leaveType || fromDate != leaveToEdit?.startDate || toDate != (leaveToEdit?.endDate ?: leaveToEdit?.startDate) || reasonInput != leaveToEdit?.reason)
     }
 
-    BackHandler {
-        if (hasChanges && (currentAction == "Extend" || currentAction == "Cancel")) {
-            showUnsavedChangesDialog = true
+    val handleBack = {
+        if (hasUnsavedChanges) {
+            showDiscardDialog = true
         } else {
             onClose()
         }
     }
 
-    fun formatMillisToDate(millis: Long?): String {
-        if (millis == null) return ""
-        val formatter = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.getDefault())
-        return Instant.ofEpochMilli(millis)
-            .atZone(ZoneId.of("UTC"))
-            .toLocalDate()
-            .format(formatter)
-    }
+    BackHandler(enabled = true, onBack = { handleBack() })
 
-    val isFormValid = if (currentAction == "Cancel" || currentAction == "Extend") {
-        datePickerState.selectedDateMillis != null
-    } else {
-        selectedLeaveType != null && 
-        (if (selectedDateOption == "More days") dateRangePickerState.selectedEndDateMillis != null else datePickerState.selectedDateMillis != null) &&
-        reason.trim().isNotEmpty()
-    }
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
 
-    var hasSelectedActionDate by remember { mutableStateOf(false) }
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val cardBgColor = colors.surface
+    val outlineColor = colors.outline
+    val tealAccent = diBadgeColors.accent
+    val tabInactiveColor = diBadgeColors.tabInactive
+    val errorColor = colors.error
 
-    val actionMessage = remember(currentAction, datePickerState.selectedDateMillis, leaveToEdit, hasSelectedActionDate) {
-        if (leaveToEdit != null && datePickerState.selectedDateMillis != null && hasSelectedActionDate) {
-            val selectedDate = Instant.ofEpochMilli(datePickerState.selectedDateMillis!!).atZone(ZoneId.of("UTC")).toLocalDate()
-            val originalEnd = leaveToEdit.endDate ?: leaveToEdit.startDate
-            val formatter = DateTimeFormatter.ofPattern("dd MMM yyyy")
+    val dateFormatter = remember { DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.getDefault()) }
 
-            if (currentAction == "Cancel") {
-                if (!selectedDate.isBefore(leaveToEdit.startDate) && !selectedDate.isAfter(originalEnd)) {
-                    if (selectedDate == leaveToEdit.startDate) {
-                        "Whole leave will be cancelled"
-                    } else if (selectedDate == originalEnd) {
-                        "Leave on ${selectedDate.format(formatter)} will be cancelled"
-                    } else {
-                        "Leaves from ${selectedDate.format(formatter)} to ${originalEnd.format(formatter)} will be cancelled"
-                    }
-                } else null
-            } else if (currentAction == "Extend") {
-                if (selectedDate.isAfter(originalEnd)) {
-                    val extendStart = originalEnd.plusDays(1)
-                    if (extendStart.isEqual(selectedDate)) {
-                        "Leave will be extended to ${selectedDate.format(formatter)} (1 day)"
-                    } else {
-                        "Leave will be extended from ${extendStart.format(formatter)} to ${selectedDate.format(formatter)}"
-                    }
-                } else null
-            } else null
-        } else null
-    }
-
-    val errorColor = Color(0xFFBF2C34)
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) {
-        TopAppBar(
-            title = {
-                Text(
-                    text = "Leave",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(start = 8.dp)
-                )
-            },
-            navigationIcon = {
-                IconButton(onClick = {
-                    if (hasChanges && (currentAction == "Extend" || currentAction == "Cancel")) {
-                        showUnsavedChangesDialog = true
-                    } else {
-                        onClose()
-                    }
-                }) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back"
-                    )
-                }
-            },
-            actions = {
-                if (leaveToEdit != null && isPastLeave) {
-                    // No Edit option for past leaves
-                } else {
-                    Box {
-                        TextButton(onClick = {
-                            if (leaveToEdit != null && currentAction == "Edit") {
-                                isEditMenuExpanded = true
-                            } else {
-                                triedToApply = true
-                                if (isFormValid) {
-                                    if ((currentAction == "Cancel" || currentAction == "Extend") && !hasSelectedActionDate) {
-                                        showNoDateChangeDialog = true
-                                    } else {
-                                        actionToConfirm = currentAction
-                                        showConfirmationDialog = true
-                                    }
-                                }
-                            }
-                        }) {
-                            Text(
-                                text = currentAction,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-
-                        DropdownMenu(
-                            expanded = isEditMenuExpanded,
-                            onDismissRequest = { isEditMenuExpanded = false },
-                            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Extend") },
-                                onClick = {
-                                    currentAction = "Extend"
-                                    isEditMenuExpanded = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Cancel") },
-                                onClick = {
-                                    currentAction = "Cancel"
-                                    isEditMenuExpanded = false
-                                }
-                            )
-                            if (!(leaveToEdit?.status == "Approved" && isOngoing)) {
-                                DropdownMenuItem(
-                                    text = { Text("Cancel Whole Leave") },
-                                    onClick = {
-                                        actionToConfirm = "CancelAll"
-                                        showConfirmationDialog = true
-                                        isEditMenuExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.background
-            )
-        )
-
-        Column(
-            modifier = Modifier
-                .padding(horizontal = DiBadgeTheme.spacing.medium)
-                .verticalScroll(rememberScrollState())
-        ) {
-            Spacer(modifier = Modifier.height(64.dp))
-
-            // Leave Type and Date Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                // Leave Type (Left)
-                Column(modifier = Modifier.weight(1.1f)) {
-                    Box {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable(enabled = !isTypeAndReasonReadOnly) { isLeaveTypeMenuExpanded = true }
-                        ) {
-                            val iconColor = if (triedToApply && selectedLeaveType == null) errorColor else MaterialTheme.colorScheme.onBackground
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_leave),
-                                contentDescription = null,
-                                modifier = Modifier.size(20.dp),
-                                tint = iconColor
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = selectedLeaveType ?: "Type of leaves",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = if (selectedLeaveType == null) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onBackground
-                            )
-                        }
-
-                        if (!isTypeAndReasonReadOnly) {
-                            DropdownMenu(
-                                expanded = isLeaveTypeMenuExpanded,
-                                onDismissRequest = { isLeaveTypeMenuExpanded = false },
-                                modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-                            ) {
-                                leaveTypes.forEach { type ->
-                                    DropdownMenuItem(
-                                        text = { Text(type) },
-                                        onClick = {
-                                            selectedLeaveType = type
-                                            isLeaveTypeMenuExpanded = false
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Date Option (Right)
-                val dimColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
-                val dateFieldText = remember(selectedDateOption, datePickerState.selectedDateMillis, dateRangePickerState.selectedStartDateMillis, dateRangePickerState.selectedEndDateMillis, dimColor) {
-                    when (selectedDateOption) {
-                        "A day" -> {
-                            val d = formatMillisToDate(datePickerState.selectedDateMillis)
-                            if (d.isEmpty()) buildAnnotatedString { append("Date") } else buildAnnotatedString { append(d) }
-                        }
-                        "More days" -> {
-                            val start = formatMillisToDate(dateRangePickerState.selectedStartDateMillis)
-                            val end = formatMillisToDate(dateRangePickerState.selectedEndDateMillis)
-                            if (start.isNotEmpty() && end.isNotEmpty()) {
-                                buildAnnotatedString {
-                                    append(start)
-                                    withStyle(SpanStyle(color = dimColor)) {
-                                        append(" to ")
-                                    }
-                                    append(end)
-                                }
-                            } else if (start.isNotEmpty()) {
-                                buildAnnotatedString { append(start) }
-                            } else {
-                                buildAnnotatedString { append("Date") }
-                            }
-                        }
-                        else -> buildAnnotatedString { append("Date") }
-                    }
-                }
-
-                Box {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable(enabled = canEditDatesAndAttachments) { 
-                            if (currentAction == "Cancel" || currentAction == "Extend") {
-                                showDatePicker = true
-                            } else {
-                                isDateOptionMenuExpanded = true
-                            }
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CalendarToday,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                            tint = if (triedToApply && (if (selectedDateOption == "More days") dateRangePickerState.selectedEndDateMillis == null else datePickerState.selectedDateMillis == null)) errorColor else MaterialTheme.colorScheme.onBackground
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = dateFieldText,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (dateFieldText.text == "Date") MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onBackground
-                        )
-                    }
-
-                    DropdownMenu(
-                        expanded = isDateOptionMenuExpanded,
-                        onDismissRequest = { isDateOptionMenuExpanded = false },
-                        modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-                    ) {
-                        dateOptions.forEach { option ->
-                            DropdownMenuItem(
-                                text = { Text(option) },
-                                onClick = {
-                                    selectedDateOption = option
-                                    isDateOptionMenuExpanded = false
-                                    if (option == "A day") showDatePicker = true else showDateRangePicker = true
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(48.dp))
-
-            // Reason Input Field
-            TextField(
-                value = reason,
-                onValueChange = { reason = it },
-                readOnly = isEditing,
-                placeholder = { 
-                    Text(
-                        text = "Reason",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Normal)
-                    ) 
-                },
-                modifier = Modifier.fillMaxWidth(),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                ),
-                textStyle = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Normal)
-            )
-
-            if (currentAction == "Extend" || currentAction == "Cancel") {
-                TextField(
-                    value = actionReason,
-                    onValueChange = { actionReason = it },
-                    placeholder = { 
-                        Text(
-                            text = if (currentAction == "Extend") "Extension Reason (Optional)" else "Cancellation Reason (Optional)",
-                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Normal)
-                        ) 
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    ),
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Normal)
-                )
-            }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(vertical = 4.dp),
-                thickness = 1.dp,
-                color = if (triedToApply && reason.trim().isEmpty()) errorColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-            )
-
-            Spacer(modifier = Modifier.Companion.height(DiBadgeTheme.spacing.large))
-
-            // Attachments Section
-            if (currentAction == "Extend" || currentAction == "Cancel") {
-                if (attachedFiles.isNotEmpty()) {
-                    Text(
-                        text = "Previous Attachments",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    AttachmentList(
-                        context = context,
-                        attachedFiles = attachedFiles,
-                        canRemove = false,
-                        onRemove = {},
-                        onAddClick = {}
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-
-                Text(
-                    text = if (currentAction == "Extend") "Extension Proof (Optional)" else "Cancellation Proof (Optional)",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                AttachmentList(
-                    context = context,
-                    attachedFiles = actionAttachments,
-                    onRemove = { index ->
-                        actionAttachments = actionAttachments.filterIndexed { i, _ -> i != index }
-                    },
-                    onAddClick = { attachmentLauncher.launch(arrayOf("*/*")) }
-                )
-            } else {
-                AttachmentList(
-                    context = context,
-                    attachedFiles = attachedFiles,
-                    onRemove = { index ->
-                        attachedFiles = attachedFiles.filterIndexed { i, _ -> i != index }
-                    },
-                    onAddClick = { attachmentLauncher.launch(arrayOf("*/*")) }
-                )
-            }
-
-            if (actionMessage != null) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = actionMessage,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(12.dp)
-                    )
-                }
-            }
-        }
-    }
-
-    // Single Date Picker Dialog
-    if (showDatePicker) {
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = { 
-                    showDatePicker = false
-                    hasSelectedActionDate = true
-                }) {
-                    Text("OK")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) {
-                    Text("Cancel")
-                }
-            }
-        ) {
-            DatePicker(state = datePickerState)
-        }
-    }
-
-    // Date Range Picker Sheet
-    if (showDateRangePicker) {
-        val curStart = dateRangePickerState.selectedStartDateMillis?.let {
-            Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
-        }
-        val curEnd = dateRangePickerState.selectedEndDateMillis?.let {
-            Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
-        }
-
-        DiBadgeDateRangePicker(
-            initialStartDate = curStart,
-            initialEndDate = curEnd,
-            onRangeSelected = { start, end ->
-                showDateRangePicker = false
-                val startMillis = start.atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli()
-                val endMillis = end.atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli()
-                dateRangePickerState.setSelection(startMillis, endMillis)
-            },
-            onDismiss = { showDateRangePicker = false }
-        )
-    }
-
-    if (showConfirmationDialog) {
-        AlertDialog(
-            onDismissRequest = { showConfirmationDialog = false },
-            title = { Text(text = "Confirm Action") },
-            text = {
-                val message = when (actionToConfirm) {
-                    "Cancel" -> "Are you sure you want to cancel the selected leave?"
-                    "Extend" -> "Are you sure you want to extend this leave?"
-                    "CancelAll" -> "Are you sure you want to cancel the whole leave?"
-                    "Apply" -> "Are you sure you want to apply for this leave?"
-                    else -> "Are you sure you want to proceed?"
-                }
-                Text(text = message)
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showConfirmationDialog = false
-                    if (actionToConfirm == "CancelAll") {
-                        onApply(
-                            LocalDate.MIN,
-                            null,
-                            selectedLeaveType ?: "",
-                            reason,
-                            attachedFiles.map { it.toString() },
-                            leaveToEdit?.id ?: 0,
-                            "CancelAll"
-                        )
-                    } else if (actionToConfirm == "Apply") {
-                        val startDate = if (selectedDateOption == "More days") {
-                            Instant.ofEpochMilli(dateRangePickerState.selectedStartDateMillis!!).atZone(ZoneId.of("UTC")).toLocalDate()
-                        } else {
-                            Instant.ofEpochMilli(datePickerState.selectedDateMillis!!).atZone(ZoneId.of("UTC")).toLocalDate()
-                        }
-                        val endDate = if (selectedDateOption == "More days") {
-                            Instant.ofEpochMilli(dateRangePickerState.selectedEndDateMillis!!).atZone(ZoneId.of("UTC")).toLocalDate()
-                        } else null
-
-                        onApply(
-                            startDate,
-                            endDate,
-                            selectedLeaveType!!,
-                            reason,
-                            attachedFiles.map { it.toString() },
-                            leaveToEdit?.id ?: 0,
-                            actionToConfirm
-                        )
-                    } else {
-                        val selectedDate = Instant.ofEpochMilli(datePickerState.selectedDateMillis!!).atZone(ZoneId.of("UTC")).toLocalDate()
-                        onApply(
-                            selectedDate,
-                            null,
-                            selectedLeaveType!!,
-                            if (actionReason.isNotBlank()) actionReason else reason,
-                            (if (actionAttachments.isNotEmpty()) actionAttachments else attachedFiles).map { it.toString() },
-                            leaveToEdit?.id ?: 0,
-                            actionToConfirm
-                        )
-                    }
-                }) {
-                    Text("Confirm")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showConfirmationDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-
-    if (showNoDateChangeDialog) {
-        AlertDialog(
-            onDismissRequest = { showNoDateChangeDialog = false },
-            title = { Text(text = "Date Not Selected") },
-            text = { Text(text = "Please select a date to ${currentAction.lowercase()} the leave.") },
-            confirmButton = {
-                TextButton(onClick = { showNoDateChangeDialog = false }) {
-                    Text("OK")
-                }
-            }
-        )
-    }
-
-    if (showUnsavedChangesDialog) {
-        AlertDialog(
-            onDismissRequest = { showUnsavedChangesDialog = false },
-            title = { Text(text = "Unsaved Changes") },
-            text = { Text(text = "You have unsaved changes in your ${currentAction.lowercase()} request. Do you want to save them before leaving?") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showUnsavedChangesDialog = false
-                    triedToApply = true
-                    if (isFormValid) {
-                        if ((currentAction == "Cancel" || currentAction == "Extend") && !hasSelectedActionDate) {
-                            showNoDateChangeDialog = true
-                        } else {
-                            actionToConfirm = currentAction
-                            showConfirmationDialog = true
-                        }
-                    }
-                }) {
-                    Text("Save")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showUnsavedChangesDialog = false
-                    onClose()
-                }) {
-                    Text("Discard")
-                }
-            }
-        )
-    }
-}
-
-@Composable
-fun AttachmentList(
-    context: Context,
-    attachedFiles: List<Uri>,
-    canRemove: Boolean = true,
-    onRemove: (Int) -> Unit,
-    onAddClick: () -> Unit
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        attachedFiles.forEachIndexed { index, uri ->
+    Scaffold(
+        topBar = {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .background(colors.background)
+                    .statusBarsPadding()
+                    .height(64.dp)
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Icon(
-                    imageVector = Icons.Default.AttachFile,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = FilePickerUtils.getFileName(context, uri),
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                if (canRemove) {
-                    IconButton(onClick = { onRemove(index) }, modifier = Modifier.size(24.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { handleBack() },
+                        modifier = Modifier.size(44.dp)
+                    ) {
                         Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Remove",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(20.dp)
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = primaryTextColor,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = if (isEditing) "Edit leave" else "New leave",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = primaryTextColor
+                    )
+                }
+
+                Text(
+                    text = "Submit",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (canSubmit) tealAccent else tabInactiveColor,
+                    modifier = Modifier
+                        .clickable(enabled = canSubmit) {
+                            onApply(
+                                fromDate,
+                                if (fromDate.isEqual(toDate)) null else toDate,
+                                selectedLeaveType,
+                                reasonInput.trim(),
+                                attachedFiles.map { it.uriString },
+                                leaveToEdit?.id ?: 0,
+                                if (isEditing) "Save" else "Apply"
+                            )
+                        }
+                        .padding(horizontal = 8.dp, vertical = 8.dp)
+                        .semantics {
+                            contentDescription = if (canSubmit) "Submit" else "Submit, unavailable"
+                        }
+                )
+            }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .background(colors.background)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Main Form Card
+            SettingsCard {
+                // Row 1: Organisation
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 60.dp)
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Organisation", fontSize = 12.sp, color = secondaryTextColor)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(selectedOrg, fontSize = 16.sp, color = primaryTextColor)
+                    }
+                }
+
+                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+
+                // Row 2: Leave type (Required)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 60.dp)
+                        .clickable { showLeaveTypeSheet = true }
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                        .semantics {
+                            contentDescription = "Leave type, ${selectedLeaveType.ifBlank { "Select leave type" }}, opens list"
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Leave type", fontSize = 12.sp, color = secondaryTextColor)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = selectedLeaveType.ifBlank { "Select leave type" },
+                            fontSize = 16.sp,
+                            color = if (selectedLeaveType.isNotBlank()) primaryTextColor else tabInactiveColor
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowDown,
+                        contentDescription = "Select leave type",
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+
+                // Row 3: From Date
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 60.dp)
+                        .clickable { showFromDatePicker = true }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("From", fontSize = 12.sp, color = secondaryTextColor)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(fromDate.format(dateFormatter), fontSize = 16.sp, color = primaryTextColor)
+                    }
+                    Icon(
+                        imageVector = Icons.Outlined.CalendarMonth,
+                        contentDescription = "Select from date",
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+
+                // Row 4: To Date
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 60.dp)
+                        .clickable { showToDatePicker = true }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("To", fontSize = 12.sp, color = secondaryTextColor)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(toDate.format(dateFormatter), fontSize = 16.sp, color = primaryTextColor)
+                    }
+                    Icon(
+                        imageVector = Icons.Outlined.CalendarMonth,
+                        contentDescription = "Select to date",
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                // Overlap Error Message
+                if (hasOverlap) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "You already have leave on these dates",
+                        fontSize = 13.sp,
+                        color = errorColor,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                }
+
+                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+
+                // Row 5: Days (Read-only)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 60.dp)
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text("Days", fontSize = 12.sp, color = secondaryTextColor)
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "$totalDays ${if (totalDays == 1L) "day" else "days"}",
+                        fontSize = 16.sp,
+                        color = secondaryTextColor
+                    )
+                }
+
+                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+
+                // Row 6: Reason (Multi-line text, min height 96dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 96.dp)
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    Text("Reason (optional)", fontSize = 12.sp, color = secondaryTextColor)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    BasicTextField(
+                        value = reasonInput,
+                        onValueChange = { if (it.length <= 300) reasonInput = it },
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 15.sp,
+                            color = primaryTextColor
+                        ),
+                        cursorBrush = SolidColor(tealAccent),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    )
+                }
+            }
+
+            // Attachments Section
+            AttachmentsSection(
+                attachedFiles = attachedFiles,
+                onAddFile = { attachedFiles = attachedFiles + it },
+                onRemoveFile = { attachedFiles = attachedFiles - it },
+                onShowSnackbar = { msg ->
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar(msg)
+                    }
+                }
+            )
+        }
+    }
+
+    if (showFromDatePicker) {
+        DiBadgeDatePicker(
+            selectedDate = fromDate,
+            onDateSelected = {
+                fromDate = it
+                showFromDatePicker = false
+            },
+            onDismiss = { showFromDatePicker = false }
+        )
+    }
+
+    if (showToDatePicker) {
+        DiBadgeDatePicker(
+            selectedDate = toDate,
+            onDateSelected = {
+                toDate = it
+                showToDatePicker = false
+            },
+            onDismiss = { showToDatePicker = false }
+        )
+    }
+
+    if (showLeaveTypeSheet) {
+        val leaveTypesList = listOf("Annual leave", "Sick leave", "Unpaid leave", "Other")
+        ModalBottomSheet(
+            onDismissRequest = { showLeaveTypeSheet = false },
+            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+            containerColor = cardBgColor,
+            scrimColor = Color.Black.copy(alpha = 0.45f),
+            tonalElevation = 0.dp,
+            dragHandle = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp, bottom = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Surface(
+                        modifier = Modifier.size(width = 32.dp, height = 4.dp),
+                        shape = RoundedCornerShape(2.dp),
+                        color = secondaryTextColor.copy(alpha = 0.40f)
+                    ) {}
+                }
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 8.dp)
+                    .padding(bottom = 28.dp)
+            ) {
+                Text(
+                    text = "Leave type",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = primaryTextColor,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                leaveTypesList.forEach { typeOption ->
+                    val isSelected = selectedLeaveType == typeOption
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .clickable {
+                                selectedLeaveType = typeOption
+                                showLeaveTypeSheet = false
+                            },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(22.dp),
+                            shape = CircleShape,
+                            color = Color.Transparent,
+                            border = BorderStroke(1.5.dp, if (isSelected) tealAccent else tabInactiveColor)
+                        ) {
+                            if (isSelected) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Surface(
+                                        modifier = Modifier.size(10.dp),
+                                        shape = CircleShape,
+                                        color = tealAccent
+                                    ) {}
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Text(
+                            text = typeOption,
+                            fontSize = 16.sp,
+                            fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+                            color = primaryTextColor
                         )
                     }
                 }
             }
         }
-        
-        if (attachedFiles.size < 3 && canRemove) {
-            TextButton(
-                onClick = onAddClick,
-                modifier = Modifier.align(Alignment.Start)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Add Attachment")
+    }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = {
+                Text(
+                    text = "Discard this request?",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryTextColor
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDiscardDialog = false
+                        onClose()
+                    }
+                ) {
+                    Text(
+                        text = "Discard",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.error
+                    )
                 }
-            }
-        }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardDialog = false }) {
+                    Text(
+                        text = "Cancel",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = secondaryTextColor
+                    )
+                }
+            },
+            containerColor = cardBgColor,
+            shape = RoundedCornerShape(20.dp)
+        )
     }
 }

@@ -23,7 +23,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import com.fabxdi.dibadge.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -77,6 +79,7 @@ fun ConnectionsScreen(
     val outlineColor = colors.outline
     val primaryTextColor = colors.onBackground
     val secondaryTextColor = colors.onSurfaceVariant
+    val tabInactiveColor = diBadgeColors.tabInactive
     val tealAccent = diBadgeColors.accent
     val errorColor = colors.error
 
@@ -252,10 +255,10 @@ fun ConnectionsScreen(
                             modifier = Modifier.padding(horizontal = 32.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Outlined.Person,
+                                painter = painterResource(id = R.drawable.ic_connections),
                                 contentDescription = null,
-                                tint = secondaryTextColor.copy(alpha = 0.5f),
-                                modifier = Modifier.size(44.dp)
+                                tint = tabInactiveColor,
+                                modifier = Modifier.size(48.dp)
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(

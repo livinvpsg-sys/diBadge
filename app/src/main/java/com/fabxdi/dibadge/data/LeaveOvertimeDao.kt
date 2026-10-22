@@ -32,4 +32,16 @@ interface LeaveOvertimeDao {
 
     @Delete
     suspend fun deleteOvertime(overtime: OvertimeEntity)
+
+    @Query("SELECT * FROM claim_logs")
+    fun getAllClaims(): Flow<List<ClaimEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertClaim(claim: ClaimEntity): Long
+
+    @Update
+    suspend fun updateClaim(claim: ClaimEntity)
+
+    @Delete
+    suspend fun deleteClaim(claim: ClaimEntity)
 }

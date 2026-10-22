@@ -1,31 +1,40 @@
 package com.fabxdi.dibadge.ui.calendar.overtime
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AccessTime
-import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.AccessTime
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.data.LeaveEntity
 import com.fabxdi.dibadge.data.OvertimeEntity
+import com.fabxdi.dibadge.ui.components.DiBadgeDatePicker
 import com.fabxdi.dibadge.ui.components.DiBadgeTimePicker
+import com.fabxdi.dibadge.ui.settings.SettingsCard
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import java.time.Duration
-import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -34,410 +43,363 @@ import java.util.Locale
 fun OvertimeFormScreen(
     existingLeaves: List<LeaveEntity>,
     overtimeToEdit: OvertimeEntity? = null,
+    initialDate: LocalDate = LocalDate.now(),
     onApply: (LocalDate, LocalTime, LocalTime, String, Int) -> Unit,
     onDelete: (OvertimeEntity) -> Unit = {},
     onClose: () -> Unit
 ) {
     val isEditing = overtimeToEdit != null
-    
-    var selectedDate by remember { mutableStateOf<LocalDate?>(overtimeToEdit?.date) }
-    var startTime by remember { mutableStateOf<LocalTime?>(overtimeToEdit?.startTime) }
-    var endTime by remember { mutableStateOf<LocalTime?>(overtimeToEdit?.endTime) }
+
+    var selectedOrg by remember { mutableStateOf("diBadge Inc.") }
+    var selectedDate by remember { mutableStateOf(overtimeToEdit?.date ?: initialDate) }
+    var startTime by remember { mutableStateOf<LocalTime?>(overtimeToEdit?.startTime ?: LocalTime.of(18, 0)) }
+    var endTime by remember { mutableStateOf<LocalTime?>(overtimeToEdit?.endTime ?: LocalTime.of(21, 0)) }
     var description by remember { mutableStateOf(overtimeToEdit?.description ?: "") }
 
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showStartTimePicker by remember { mutableStateOf(false) }
+    var showEndTimePicker by remember { mutableStateOf(false) }
+
+    var showOrgSheet by remember { mutableStateOf(false) }
+    var showDiscardDialog by remember { mutableStateOf(false) }
+
     val hasChanges = remember(selectedDate, startTime, endTime, description) {
-        if (!isEditing) return@remember false
-        selectedDate != overtimeToEdit?.date ||
-        startTime != overtimeToEdit?.startTime ||
-        endTime != overtimeToEdit?.endTime ||
-        description != (overtimeToEdit?.description ?: "")
+        if (!isEditing) description.isNotBlank()
+        else (selectedDate != overtimeToEdit?.date || startTime != overtimeToEdit?.startTime || endTime != overtimeToEdit?.endTime || description != overtimeToEdit?.description)
     }
 
     val handleBack = {
         if (hasChanges) {
-            // showUnsavedChangesDialog handled later in UI
+            showDiscardDialog = true
         } else {
             onClose()
         }
     }
-    
-    var showUnsavedChangesDialog by remember { mutableStateOf(false) }
-    
-    BackHandler {
-        if (hasChanges) {
-            showUnsavedChangesDialog = true
-        } else {
-            onClose()
-        }
-    }
-    
-    val canEdit = !isEditing || overtimeToEdit?.status == "Pending"
-    
-    var showDatePicker by remember { mutableStateOf(false) }
-    var showStartTimePicker by remember { mutableStateOf(false) }
-    var showEndTimePicker by remember { mutableStateOf(false) }
-    var showConfirmationDialog by remember { mutableStateOf(false) }
-    var showDeleteConfirmation by remember { mutableStateOf(false) }
-    var showLeaveConflictDialog by remember { mutableStateOf(false) }
-    var triedToApply by remember { mutableStateOf(false) }
 
-    val datePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = (selectedDate ?: LocalDate.now()).atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli(),
-        selectableDates = object : SelectableDates {
-            override fun isSelectableDate(utcTimeMillis: Long): Boolean {
-                val date = Instant.ofEpochMilli(utcTimeMillis).atZone(ZoneId.of("UTC")).toLocalDate()
-                return !date.isAfter(LocalDate.now())
-            }
-            override fun isSelectableYear(year: Int): Boolean {
-                return year <= LocalDate.now().year
-            }
-        }
-    )
+    BackHandler(enabled = true, onBack = { handleBack() })
 
-    val startTimePickerState = rememberTimePickerState(
-        initialHour = startTime?.hour ?: 18,
-        initialMinute = startTime?.minute ?: 0
-    )
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
 
-    val endTimePickerState = rememberTimePickerState(
-        initialHour = endTime?.hour ?: 20,
-        initialMinute = endTime?.minute ?: 0
-    )
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val cardBgColor = colors.surface
+    val outlineColor = colors.outline
+    val tealAccent = diBadgeColors.accent
+    val tabInactiveColor = diBadgeColors.tabInactive
 
-    val isFormValid by remember {
-        derivedStateOf {
-            selectedDate != null && startTime != null && endTime != null && description.trim().isNotEmpty()
-        }
-    }
+    val dateFormatter = remember { DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.getDefault()) }
+    val timeFormatter = remember { DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()) }
 
-    val dateFormatter = remember { DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.getDefault()) }
-    val timeFormatter = remember { DateTimeFormatter.ofPattern("hh:mm a", Locale.getDefault()) }
-
-    val totalOvertimeText = remember(startTime, endTime) {
+    // Hours calculation
+    val (calculatedHours, endsNextDay) = remember(startTime, endTime) {
         if (startTime != null && endTime != null) {
-            var duration = Duration.between(startTime, endTime)
-            if (duration.isNegative) {
-                duration = duration.plusDays(1)
-            }
-            val hours = duration.toHours()
-            val minutes = duration.toMinutes() % 60
-            String.format(Locale.getDefault(), "Total Overtime Hours : %02d hrs : %02d mts", hours, minutes)
-        } else {
-            "Total Overtime Hours : 00 hrs : 00 mts"
-        }
+            var dur = Duration.between(startTime, endTime).toMinutes() / 60.0
+            val nextDay = dur < 0
+            if (nextDay) dur += 24.0
+            Pair(dur, nextDay)
+        } else Pair(0.0, false)
     }
 
-    val currentAction = when {
-        !isEditing -> "Apply"
-        hasChanges -> "Save"
-        overtimeToEdit?.status == "Pending" -> "Delete"
-        else -> ""
-    }
+    val canSubmit = startTime != null && endTime != null && calculatedHours > 0.0
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) {
-        TopAppBar(
-            title = {
-                Text(
-                    text = "Overtime",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(start = 8.dp)
-                )
-            },
-            navigationIcon = {
-                IconButton(onClick = {
-                    if (hasChanges) {
-                        showUnsavedChangesDialog = true
-                    } else {
-                        onClose()
+    Scaffold(
+        topBar = {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(colors.background)
+                    .statusBarsPadding()
+                    .height(64.dp)
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { handleBack() },
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = primaryTextColor,
+                            modifier = Modifier.size(24.dp)
+                        )
                     }
-                }) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back"
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = if (isEditing) "Edit overtime" else "New overtime",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = primaryTextColor
                     )
                 }
-            },
-            actions = {
-                if (isEditing && overtimeToEdit?.status == "Approved") {
-                    // Approved status - totally cannot edit
-                    Text(
-                        text = "Approved",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = Color(0xFF4CAF50),
-                        modifier = Modifier.padding(end = 12.dp)
-                    )
-                } else if (currentAction.isNotEmpty()) {
-                    TextButton(onClick = {
-                        if (currentAction == "Delete") {
-                            showDeleteConfirmation = true
-                        } else {
-                            triedToApply = true
-                            if (isFormValid) {
-                                val hasConflict = existingLeaves.any { leave ->
-                                    val leaveEnd = leave.endDate ?: leave.startDate
-                                    !selectedDate!!.isBefore(leave.startDate) && !selectedDate!!.isAfter(leaveEnd)
-                                }
-                                
-                                if (hasConflict) {
-                                    showLeaveConflictDialog = true
-                                } else {
-                                    showConfirmationDialog = true
-                                }
+
+                Text(
+                    text = "Submit",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (canSubmit) tealAccent else tabInactiveColor,
+                    modifier = Modifier
+                        .clickable(enabled = canSubmit) {
+                            if (selectedDate != null && startTime != null && endTime != null) {
+                                onApply(
+                                    selectedDate,
+                                    startTime!!,
+                                    endTime!!,
+                                    description.trim(),
+                                    overtimeToEdit?.id ?: 0
+                                )
                             }
                         }
-                    }) {
+                        .padding(horizontal = 8.dp, vertical = 8.dp)
+                        .semantics {
+                            contentDescription = if (canSubmit) "Submit" else "Submit, unavailable"
+                        }
+                )
+            }
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .background(colors.background)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp)
+        ) {
+            Spacer(modifier = Modifier.height(12.dp))
+
+            SettingsCard {
+                // Row 1: Organisation
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 60.dp)
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Organisation", fontSize = 12.sp, color = secondaryTextColor)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(selectedOrg, fontSize = 16.sp, color = primaryTextColor)
+                    }
+                }
+
+                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+
+                // Row 2: Date
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 60.dp)
+                        .clickable { showDatePicker = true }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Date", fontSize = 12.sp, color = secondaryTextColor)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(selectedDate.format(dateFormatter), fontSize = 16.sp, color = primaryTextColor)
+                    }
+                    Icon(
+                        imageVector = Icons.Outlined.CalendarMonth,
+                        contentDescription = "Select date",
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+
+                // Row 3: Start time
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 60.dp)
+                        .clickable { showStartTimePicker = true }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Start time", fontSize = 12.sp, color = secondaryTextColor)
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = currentAction,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = if (currentAction == "Delete") Color(0xFFBF2C34) else MaterialTheme.colorScheme.primary
+                            text = startTime?.format(timeFormatter) ?: "Select time",
+                            fontSize = 16.sp,
+                            color = if (startTime != null) primaryTextColor else tabInactiveColor
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Outlined.AccessTime,
+                        contentDescription = "Select start time",
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+
+                // Row 4: End time
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 60.dp)
+                        .clickable { showEndTimePicker = true }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("End time", fontSize = 12.sp, color = secondaryTextColor)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = endTime?.format(timeFormatter) ?: "Select time",
+                            fontSize = 16.sp,
+                            color = if (endTime != null) primaryTextColor else tabInactiveColor
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Outlined.AccessTime,
+                        contentDescription = "Select end time",
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
+                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+
+                // Row 5: Hours (Read-only)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 60.dp)
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text("Hours", fontSize = 12.sp, color = secondaryTextColor)
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = if (calculatedHours > 0) "$calculatedHours hrs" else "0 hrs",
+                        fontSize = 16.sp,
+                        color = secondaryTextColor
+                    )
+                    if (endsNextDay) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Ends the next day",
+                            fontSize = 12.sp,
+                            color = secondaryTextColor
                         )
                     }
                 }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.background
-            )
-        )
 
-        Column(
-            modifier = Modifier
-                .padding(horizontal = DiBadgeTheme.spacing.medium)
-                .verticalScroll(rememberScrollState())
-        ) {
-            Spacer(modifier = Modifier.height(64.dp))
+                HorizontalDivider(thickness = 1.dp, color = outlineColor)
 
-            // Date and Time Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Date (Left)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                // Row 6: Work done (Multi-line text, min height 96dp)
+                Column(
                     modifier = Modifier
-                        .weight(1f)
-                        .clickable(enabled = canEdit) { showDatePicker = true }
+                        .fillMaxWidth()
+                        .heightIn(min = 96.dp)
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.CalendarToday,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = if (triedToApply && selectedDate == null) Color(0xFFBF2C34) else MaterialTheme.colorScheme.onBackground
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = selectedDate?.format(dateFormatter) ?: "Date",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (selectedDate == null) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onBackground
-                    )
-                }
-
-                // Time (Right)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clickable(enabled = canEdit) { showStartTimePicker = true }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AccessTime,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = if (triedToApply && (startTime == null || endTime == null)) Color(0xFFBF2C34) else MaterialTheme.colorScheme.onBackground
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (startTime != null && endTime != null) "${startTime?.format(timeFormatter)} - ${endTime?.format(timeFormatter)}" else "Time",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (startTime == null) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onBackground
+                    Text("Work done (optional)", fontSize = 12.sp, color = secondaryTextColor)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    BasicTextField(
+                        value = description,
+                        onValueChange = { if (it.length <= 300) description = it },
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 15.sp,
+                            color = primaryTextColor
+                        ),
+                        cursorBrush = SolidColor(tealAccent),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(48.dp))
-
-            // Description Input Field
-            TextField(
-                value = description,
-                onValueChange = { description = it },
-                readOnly = !canEdit,
-                placeholder = {
-                    Text(
-                        text = "Description",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Normal)
-                    )
-                },
-                modifier = Modifier.fillMaxWidth(),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                ),
-                textStyle = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Normal)
-            )
-
-            HorizontalDivider(
-                modifier = Modifier.padding(vertical = 4.dp),
-                thickness = 1.dp,
-                color = if (triedToApply && description.trim().isEmpty()) Color(0xFFBF2C34) else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Text(
-                text = totalOvertimeText,
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                color = MaterialTheme.colorScheme.onSurface
-            )
         }
     }
 
-    // Dialogs
     if (showDatePicker) {
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    datePickerState.selectedDateMillis?.let {
-                        selectedDate = Instant.ofEpochMilli(it).atZone(ZoneId.of("UTC")).toLocalDate()
-                    }
-                    showDatePicker = false
-                }) { Text("OK") }
+        DiBadgeDatePicker(
+            selectedDate = selectedDate,
+            onDateSelected = {
+                selectedDate = it
+                showDatePicker = false
             },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
-            }
-        ) {
-            DatePicker(state = datePickerState)
-        }
+            onDismiss = { showDatePicker = false }
+        )
     }
 
     if (showStartTimePicker) {
-        val curStart = startTime ?: LocalTime.of(17, 0)
-
         DiBadgeTimePicker(
-            initialTime = curStart,
+            initialTime = startTime ?: LocalTime.of(18, 0),
             title = "Select Start Time",
-            onTimeSelected = { chosenTime ->
-                startTime = chosenTime
+            onTimeSelected = {
+                startTime = it
                 showStartTimePicker = false
-                showEndTimePicker = true
             },
             onDismiss = { showStartTimePicker = false }
         )
     }
 
     if (showEndTimePicker) {
-        val curEnd = endTime ?: LocalTime.of(19, 0)
-
         DiBadgeTimePicker(
-            initialTime = curEnd,
+            initialTime = endTime ?: LocalTime.of(21, 0),
             title = "Select End Time",
-            onTimeSelected = { chosenTime ->
-                endTime = chosenTime
+            onTimeSelected = {
+                endTime = it
                 showEndTimePicker = false
             },
             onDismiss = { showEndTimePicker = false }
         )
     }
 
-    if (showConfirmationDialog) {
+    if (showDiscardDialog) {
         AlertDialog(
-            onDismissRequest = { showConfirmationDialog = false },
-            title = { Text(text = if (isEditing) "Confirm Changes" else "Confirm Overtime") },
-            text = { Text(text = if (isEditing) "Are you sure you want to save these changes?" else "Are you sure you want to apply for this overtime?") },
+            onDismissRequest = { showDiscardDialog = false },
+            title = {
+                Text(
+                    text = "Discard this request?",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryTextColor
+                )
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    showConfirmationDialog = false
-                    if (selectedDate != null && startTime != null && endTime != null) {
-                        onApply(selectedDate!!, startTime!!, endTime!!, description, overtimeToEdit?.id ?: 0)
+                TextButton(
+                    onClick = {
+                        showDiscardDialog = false
+                        onClose()
                     }
-                }) {
-                    Text("Confirm")
+                ) {
+                    Text(
+                        text = "Discard",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.error
+                    )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showConfirmationDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-
-    if (showDeleteConfirmation) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirmation = false },
-            title = { Text(text = "Confirm Delete") },
-            text = { Text(text = "Are you sure you want to delete this overtime?") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDeleteConfirmation = false
-                    overtimeToEdit?.let { onDelete(it) }
-                }) {
-                    Text("Delete", color = Color(0xFFBF2C34))
+                TextButton(onClick = { showDiscardDialog = false }) {
+                    Text(
+                        text = "Cancel",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = secondaryTextColor
+                    )
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirmation = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-
-    if (showUnsavedChangesDialog) {
-        AlertDialog(
-            onDismissRequest = { showUnsavedChangesDialog = false },
-            title = { Text(text = "Unsaved Changes") },
-            text = { Text(text = "You have unsaved changes. Do you want to save them before leaving?") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showUnsavedChangesDialog = false
-                    triedToApply = true
-                    if (isFormValid) {
-                        val hasConflict = existingLeaves.any { leave ->
-                            val leaveEnd = leave.endDate ?: leave.startDate
-                            !selectedDate!!.isBefore(leave.startDate) && !selectedDate!!.isAfter(leaveEnd)
-                        }
-                        if (hasConflict) {
-                            showLeaveConflictDialog = true
-                        } else {
-                            if (selectedDate != null && startTime != null && endTime != null) {
-                                onApply(selectedDate!!, startTime!!, endTime!!, description, overtimeToEdit?.id ?: 0)
-                            }
-                        }
-                    }
-                }) {
-                    Text("Save")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showUnsavedChangesDialog = false
-                    onClose()
-                }) {
-                    Text("Discard")
-                }
-            }
-        )
-    }
-
-    if (showLeaveConflictDialog) {
-        AlertDialog(
-            onDismissRequest = { showLeaveConflictDialog = false },
-            title = { Text(text = "Leave Conflict") },
-            text = { Text(text = "You cannot apply for overtime on a date when you have already applied for leave.") },
-            confirmButton = {
-                TextButton(onClick = { showLeaveConflictDialog = false }) {
-                    Text("OK")
-                }
-            }
+            containerColor = cardBgColor,
+            shape = RoundedCornerShape(20.dp)
         )
     }
 }

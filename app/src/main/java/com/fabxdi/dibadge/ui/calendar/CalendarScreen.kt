@@ -1,394 +1,418 @@
 package com.fabxdi.dibadge.ui.calendar
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
-import com.fabxdi.dibadge.R
-import com.fabxdi.dibadge.ui.home.HomeTab
-import java.time.LocalDate
-import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
-import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
-import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
-import com.fabxdi.dibadge.ui.my_activity.MyActivityScreen
-import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
-import androidx.compose.foundation.shape.CircleShape
-
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.fabxdi.dibadge.viewmodel.LeaveOvertimeViewModel
-import com.fabxdi.dibadge.data.ReminderEntity
-import com.fabxdi.dibadge.data.OvertimeEntity
+import com.fabxdi.dibadge.data.ClaimEntity
 import com.fabxdi.dibadge.data.LeaveEntity
-import kotlin.collections.find
-import kotlin.collections.forEach
+import com.fabxdi.dibadge.data.OvertimeEntity
+import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
+import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
+import com.fabxdi.dibadge.ui.calendar.claim.ClaimFormScreen
+import com.fabxdi.dibadge.ui.my_tasks.CalendarHeaderIcon
+import com.fabxdi.dibadge.ui.my_tasks.MonthPickerSheet
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import com.fabxdi.dibadge.viewmodel.LeaveOvertimeViewModel
+import kotlinx.coroutines.launch
+import java.time.Duration
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalendarScreen(
-    onTabClick: (HomeTab) -> Unit,
     onBackClick: () -> Unit,
     viewModel: LeaveOvertimeViewModel = viewModel(),
     initialSelectedDate: LocalDate? = null
 ) {
-    // Handle device back button
-    BackHandler {
-        onBackClick()
-    }
+    val coroutineScope = rememberCoroutineScope()
+    val today = remember { LocalDate.now() }
 
-    var isFabExpanded by remember { mutableStateOf(false) }
-    var showOvertimeForm by remember { mutableStateOf(false) }
-    var showLeaveForm by remember { mutableStateOf(false) }
-    var showLogbook by remember { mutableStateOf(false) }
-    var showDayScreen by remember { mutableStateOf(initialSelectedDate != null) }
+    var currentYearMonth by remember { mutableStateOf(YearMonth.now()) }
     var selectedDayDate by remember { mutableStateOf(initialSelectedDate ?: LocalDate.now()) }
+
+    var showMonthPickerSheet by remember { mutableStateOf(false) }
+    var showNewRequestSheet by remember { mutableStateOf(false) }
+    var showDayPopupSheet by remember { mutableStateOf(false) }
+    var showSummarySheet by remember { mutableStateOf(false) }
+
+    var showLeaveForm by remember { mutableStateOf(false) }
+    var showOvertimeForm by remember { mutableStateOf(false) }
+    var showClaimForm by remember { mutableStateOf(false) }
+
     var editingLeave by remember { mutableStateOf<LeaveEntity?>(null) }
     var editingOvertime by remember { mutableStateOf<OvertimeEntity?>(null) }
+    var editingClaim by remember { mutableStateOf<ClaimEntity?>(null) }
+    var selectedRequestForDetails by remember { mutableStateOf<Any?>(null) }
 
     val allLeaves by viewModel.allLeaves.collectAsState(initial = emptyList())
     val allOvertime by viewModel.allOvertime.collectAsState(initial = emptyList())
-    
-    val calendarData = remember(allLeaves, allOvertime) {
-        val itemsMap = mutableMapOf<LocalDate, MutableList<Any>>()
-        val highlightSet = mutableSetOf<LocalDate>()
-        val combinedStatusMap = mutableMapOf<LocalDate, String>()
+    val allClaims by viewModel.allClaims.collectAsState(initial = emptyList())
 
-        allLeaves.forEach { leave ->
-            var current = leave.startDate
-            val end = leave.endDate ?: leave.startDate
-            while (!current.isAfter(end)) {
-                itemsMap.getOrPut(current) { mutableListOf() }.add(leave)
-                combinedStatusMap[current] = leave.status
-                current = current.plusDays(1)
-            }
-        }
-
-        allOvertime.forEach { overtime ->
-            itemsMap.getOrPut(overtime.date) { mutableListOf() }.add(overtime)
-            // If there's already a status from leave, we keep it (as per rule: no overtime on leave day)
-            // but for existing data, we could prioritize Approved
-            if (!combinedStatusMap.containsKey(overtime.date) || overtime.status == "Approved") {
-                combinedStatusMap[overtime.date] = overtime.status
-            }
-        }
-
-        Triple(itemsMap, highlightSet, combinedStatusMap)
+    BackHandler(enabled = true) {
+        onBackClick()
     }
 
-    val savedItemsMap = calendarData.first
-    val highlightDates = calendarData.second
-    val statusMap = calendarData.third
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
 
-    when {
-        showLeaveForm -> {
-            LeaveFormScreen(
-                existingLeaves = allLeaves,
-                leaveToEdit = editingLeave,
-                onApply = { startDate, endDate, type, reason, attachments, id, action ->
-                    if (action == "CancelAll") {
-                        editingLeave?.let { viewModel.deleteLeave(it) }
-                    } else if (action == "Extend" && editingLeave != null) {
-                        val extensionEndDate = startDate
-                        val currentEndDate = editingLeave!!.endDate ?: editingLeave!!.startDate
+    val pageBgColor = colors.background
+    val cardBgColor = colors.surface
+    val outlineColor = colors.outline
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
 
-                        // Always save extended part as Pending
-                        viewModel.saveLeave(
-                            startDate = currentEndDate.plusDays(1),
-                            endDate = extensionEndDate,
-                            leaveType = type,
-                            reason = reason,
-                            attachments = attachments,
-                            status = "Pending"
-                        )
-                    } else if (action == "Cancel" && editingLeave != null) {
-                        val selectedDate = startDate
-                        if (selectedDate == editingLeave!!.startDate) {
-                            // If cancelling from the start, delete the whole thing or change status
-                            if (editingLeave!!.status == "Pending") {
-                                viewModel.deleteLeave(editingLeave!!)
-                            } else {
-                                // Approved -> Entire thing becomes Pending
-                                viewModel.updateLeave(editingLeave!!.copy(status = "Pending"))
-                            }
-                        } else {
-                            val newEndDate = selectedDate.minusDays(1)
-                            if (editingLeave!!.status == "Pending") {
-                                // Trim to end at the day before selectedDate
-                                val updatedLeave = editingLeave!!.copy(
-                                    endDate = if (newEndDate == editingLeave!!.startDate) null else newEndDate
-                                )
-                                viewModel.updateLeave(updatedLeave)
-                            } else {
-                                // Split Approved leave
-                                val remainingStartDate = selectedDate
-                                val remainingEndDate = editingLeave!!.endDate
+    val monthYearFormatter = remember { DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()) }
 
-                                // Update first part (Approved)
-                                val firstPart = editingLeave!!.copy(
-                                    endDate = if (newEndDate == editingLeave!!.startDate) null else newEndDate
-                                )
-                                viewModel.updateLeave(firstPart)
+    var lastSwipeTime by remember { mutableLongStateOf(0L) }
 
-                                // Insert second part as Pending
-                                viewModel.saveLeave(
-                                    startDate = remainingStartDate,
-                                    endDate = remainingEndDate,
-                                    leaveType = type,
-                                    reason = reason,
-                                    attachments = attachments,
-                                    status = "Pending"
-                                )
-                            }
-                        }
-                    } else {
-                        viewModel.saveLeave(startDate, endDate, type, reason, attachments, id)
-                    }
-                    showLeaveForm = false
-                    editingLeave = null
-                },
-                onClose = {
-                    showLeaveForm = false
-                    editingLeave = null
+    // Summary Totals Calculation for Visible Month
+    val monthLeaves = remember(allLeaves, currentYearMonth) {
+        val monthStart = currentYearMonth.atDay(1)
+        val monthEnd = currentYearMonth.atEndOfMonth()
+        allLeaves.filter { leave ->
+            val start = leave.startDate
+            val end = leave.endDate ?: leave.startDate
+            !(start.isAfter(monthEnd) || end.isBefore(monthStart))
+        }
+    }
+
+    val monthOvertimes = remember(allOvertime, currentYearMonth) {
+        allOvertime.filter { YearMonth.from(it.date) == currentYearMonth }
+    }
+
+    val monthClaims = remember(allClaims, currentYearMonth) {
+        allClaims.filter { YearMonth.from(it.date) == currentYearMonth }
+    }
+
+    val approvedLeaveDays = monthLeaves.filter { it.status.equals("Approved", ignoreCase = true) }.sumOf { 1.0 }
+    val pendingLeaveDays = monthLeaves.filter { it.status.equals("Pending", ignoreCase = true) }.sumOf { 1.0 }
+
+    val approvedOtHours = monthOvertimes.filter { it.status.equals("Approved", ignoreCase = true) }.sumOf {
+        val hrs = Duration.between(it.startTime, it.endTime).toMinutes() / 60.0
+        if (hrs < 0) hrs + 24.0 else hrs
+    }
+    val pendingOtHours = monthOvertimes.filter { it.status.equals("Pending", ignoreCase = true) }.sumOf {
+        val hrs = Duration.between(it.startTime, it.endTime).toMinutes() / 60.0
+        if (hrs < 0) hrs + 24.0 else hrs
+    }
+
+    val approvedClaimAmount = monthClaims.filter { it.status.equals("Approved", ignoreCase = true) }.sumOf { it.amount }
+    val pendingClaimAmount = monthClaims.filter { it.status.equals("Pending", ignoreCase = true) }.sumOf { it.amount }
+
+    if (showLeaveForm) {
+        LeaveFormScreen(
+            existingLeaves = allLeaves,
+            leaveToEdit = editingLeave,
+            onApply = { startDate, endDate, type, reason, attachments, id, action ->
+                viewModel.saveLeave(startDate, endDate, type, reason, attachments, id)
+                showLeaveForm = false
+                editingLeave = null
+            },
+            onClose = {
+                showLeaveForm = false
+                editingLeave = null
+            }
+        )
+        return
+    }
+
+    if (showOvertimeForm) {
+        OvertimeFormScreen(
+            existingLeaves = allLeaves,
+            overtimeToEdit = editingOvertime,
+            onApply = { date, start, end, description, id ->
+                viewModel.saveOvertime(date, start, end, description, id)
+                showOvertimeForm = false
+                editingOvertime = null
+            },
+            onDelete = { overtime ->
+                viewModel.deleteOvertime(overtime)
+                showOvertimeForm = false
+                editingOvertime = null
+            },
+            onClose = {
+                showOvertimeForm = false
+                editingOvertime = null
+            }
+        )
+        return
+    }
+
+    if (showClaimForm) {
+        ClaimFormScreen(
+            claimToEdit = editingClaim,
+            initialDate = selectedDayDate,
+            onApply = { date, category, amount, description, id ->
+                viewModel.saveClaim(date, category, amount, description, id)
+                showClaimForm = false
+                editingClaim = null
+            },
+            onClose = {
+                showClaimForm = false
+                editingClaim = null
+            }
+        )
+        return
+    }
+
+    if (selectedRequestForDetails != null) {
+        RequestDetailsScreen(
+            requestItem = selectedRequestForDetails!!,
+            onBack = { selectedRequestForDetails = null },
+            onCancelRequestConfirmed = { item ->
+                when (item) {
+                    is LeaveEntity -> viewModel.deleteLeave(item)
+                    is OvertimeEntity -> viewModel.deleteOvertime(item)
+                    is ClaimEntity -> viewModel.deleteClaim(item)
                 }
-            )
-        }
-        showOvertimeForm -> {
-            OvertimeFormScreen(
-                existingLeaves = allLeaves,
-                overtimeToEdit = editingOvertime,
-                onApply = { date, start, end, description, id ->
-                    viewModel.saveOvertime(date, start, end, description, id)
-                    showOvertimeForm = false
-                    editingOvertime = null
-                },
-                onDelete = { overtime ->
-                    viewModel.deleteOvertime(overtime)
-                    showOvertimeForm = false
-                    editingOvertime = null
-                },
-                onClose = {
-                    showOvertimeForm = false
-                    editingOvertime = null
-                }
-            )
-        }
-        showLogbook -> {
-            MyActivityScreen(
-                leaves = allLeaves,
-                overtimes = allOvertime,
-                onBack = { showLogbook = false }
-            )
-        }
-        showDayScreen -> {
-            DayScreen(
-                date = selectedDayDate,
-                items = savedItemsMap[selectedDayDate] ?: emptyList(),
-                onItemClick = { item ->
-                    if (item is LeaveEntity) {
-                        editingLeave = item
-                        showLeaveForm = true
-                    } else if (item is OvertimeEntity) {
-                        editingOvertime = item
-                        showOvertimeForm = true
-                    }
-                },
-                onBack = { showDayScreen = false }
-            )
-        }
-        else -> {
-            Scaffold(
-                topBar = {
-                    TopAppBar(
-                        title = { },
-                        navigationIcon = {
-                            IconButton(onClick = onBackClick) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = "Back",
-                                    tint = MaterialTheme.colorScheme.onBackground
-                                )
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.background
-                        )
-                    )
-                },
-                bottomBar = {
-                    NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        tonalElevation = NavigationBarDefaults.Elevation
-                    ) {
-                        HomeTab.entries.forEach { tab ->
-                            val isSelected = false
-                            NavigationBarItem(
-                                selected = isSelected,
-                                onClick = {
-                                    onTabClick(tab)
-                                },
-                                colors = NavigationBarItemDefaults.colors(
-                                    selectedIconColor = MaterialTheme.colorScheme.onSurface,
-                                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                                    indicatorColor = Color.Transparent,
-                                    unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
-                                    unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-                                ),
-                                alwaysShowLabel = true,
-                                label = {
-                                    Text(
-                                        text = tab.label,
-                                        style = MaterialTheme.typography.labelMedium.copy(
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                        )
-                                    )
-                                },
-                                icon = {
-                                    val iconTint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                selectedRequestForDetails = null
+            }
+        )
+        return
+    }
 
-                                    when (tab) {
-                                        HomeTab.Home -> {
-                                            Icon(
-                                                painter = painterResource(id = tab.iconRes),
-                                                contentDescription = tab.label,
-                                                tint = iconTint
-                                            )
-                                        }
-                                        HomeTab.Connections -> {
-                                            Icon(
-                                                painter = painterResource(id = R.drawable.ic_connections),
-                                                contentDescription = tab.label,
-                                                tint = iconTint
-                                            )
-                                        }
-                                        HomeTab.MyTasks -> {
-                                            Icon(
-                                                painter = painterResource(id = R.drawable.ic_my_tasks),
-                                                contentDescription = tab.label,
-                                                tint = iconTint
-                                            )
-                                        }
-                                        HomeTab.Note -> {
-                                            Icon(
-                                                painter = painterResource(id = R.drawable.ic_inbox),
-                                                contentDescription = tab.label,
-                                                tint = iconTint
-                                            )
-                                        }
-                                    }
-                                }
-                            )
-                        }
-                    }
-                },
-                floatingActionButton = {
-                    Column(
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.padding(bottom = 16.dp) // Breathing space from bottom bar
-                    ) {
-                        if (isFabExpanded) {
-                            // Overtime Pill
-                            CalendarFabPill(
-                                label = "Overtime",
-                                onClick = {
-                                    showOvertimeForm = true
-                                    isFabExpanded = false
-                                }
-                            )
-                            // Leave Pill
-                            CalendarFabPill(
-                                label = "Leave",
-                                onClick = {
-                                    showLeaveForm = true
-                                    isFabExpanded = false
-                                }
-                            )
-                        }
-
-                        FloatingActionButton(
-                            onClick = { isFabExpanded = !isFabExpanded },
-                            containerColor = MaterialTheme.colorScheme.surface,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                            shape = RoundedCornerShape(16.dp)
+    Scaffold(
+        topBar = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(pageBgColor)
+                    .statusBarsPadding()
+                    .padding(horizontal = 20.dp, vertical = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    // Left: Back Arrow + Month Heading + Down Arrow
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = onBackClick,
+                            modifier = Modifier.size(44.dp)
                         ) {
                             Icon(
-                                imageVector = if (isFabExpanded) Icons.Default.Close else Icons.Default.Add,
-                                contentDescription = "Expand Menu"
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable { showMonthPickerSheet = true }
+                        ) {
+                            Text(
+                                text = currentYearMonth.format(monthYearFormatter),
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = primaryTextColor
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = "Select month",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
-                }
-            ) { innerPadding ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(DiBadgeTheme.spacing.medium),
-                        contentAlignment = Alignment.TopCenter
-                    ) {
-                        CalendarGrid(
-                            highlightDates = highlightDates,
-                            leaveStatusMap = statusMap,
-                            onDateClick = { date ->
-                                val items = savedItemsMap[date]
-                                if (!items.isNullOrEmpty()) {
-                                    selectedDayDate = date
-                                    showDayScreen = true
-                                }
-                            }
-                        )
-                    }
 
-                    // Overlay to detect clicks and close the FAB menu
-                    if (isFabExpanded) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null
-                                ) {
-                                    isFabExpanded = false
-                                }
+                    // Right: 32dp Calendar outline icon with today's date
+                    CalendarHeaderIcon(
+                        todayDate = today.dayOfMonth,
+                        primaryTextColor = primaryTextColor,
+                        onClick = {
+                            currentYearMonth = YearMonth.now()
+                        }
+                    )
+                }
+            }
+        },
+        floatingActionButton = {
+            if (!showNewRequestSheet && !showDayPopupSheet && !showSummarySheet) {
+                Surface(
+                    onClick = { showNewRequestSheet = true },
+                    modifier = Modifier
+                        .padding(bottom = 28.dp, end = 4.dp)
+                        .size(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = cardBgColor,
+                    border = BorderStroke(1.dp, outlineColor)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "New request",
+                            tint = primaryTextColor,
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 }
             }
         }
-    }
-}
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .background(pageBgColor)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                // Month Grid (Scoped Horizontal Swipe)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(horizontal = 20.dp)
+                        .pointerInput(currentYearMonth) {
+                            detectHorizontalDragGestures { _, dragAmount ->
+                                val nowTime = System.currentTimeMillis()
+                                if (nowTime - lastSwipeTime > 350L) {
+                                    if (dragAmount < -30f) {
+                                        lastSwipeTime = nowTime
+                                        currentYearMonth = currentYearMonth.plusMonths(1)
+                                    } else if (dragAmount > 30f) {
+                                        lastSwipeTime = nowTime
+                                        currentYearMonth = currentYearMonth.minusMonths(1)
+                                    }
+                                }
+                            }
+                        }
+                ) {
+                    CalendarGrid(
+                        currentYearMonth = currentYearMonth,
+                        leaves = allLeaves,
+                        overtimes = allOvertime,
+                        claims = allClaims,
+                        onDateClick = { chosenDate ->
+                            selectedDayDate = chosenDate
+                            showDayPopupSheet = true
+                        }
+                    )
+                }
 
-@Composable
-fun CalendarFabPill(
-    label: String,
-    onClick: () -> Unit
-) {
-    ExtendedFloatingActionButton(
-        onClick = onClick,
-        containerColor = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = CircleShape,
-        modifier = Modifier.height(40.dp)
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge
+                // Dedicated Bottom Handle Bar Touch Area (Swipe Up & Tap)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .navigationBarsPadding()
+                        .clickable { showSummarySheet = true }
+                        .pointerInput(Unit) {
+                            detectVerticalDragGestures { _, dragAmount ->
+                                if (dragAmount < -15f) {
+                                    showSummarySheet = true
+                                }
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Surface(
+                        modifier = Modifier.size(width = 40.dp, height = 4.dp),
+                        shape = RoundedCornerShape(2.dp),
+                        color = secondaryTextColor.copy(alpha = 0.50f)
+                    ) {}
+                }
+            }
+        }
+    }
+
+    if (showMonthPickerSheet) {
+        MonthPickerSheet(
+            selectedYearMonth = currentYearMonth,
+            onMonthSelected = { newYM ->
+                currentYearMonth = newYM
+            },
+            onDismiss = { showMonthPickerSheet = false }
+        )
+    }
+
+    if (showNewRequestSheet) {
+        NewRequestSheet(
+            onSelectLeave = {
+                editingLeave = null
+                showLeaveForm = true
+            },
+            onSelectOvertime = {
+                editingOvertime = null
+                showOvertimeForm = true
+            },
+            onSelectClaim = {
+                editingClaim = null
+                showClaimForm = true
+            },
+            onDismiss = { showNewRequestSheet = false }
+        )
+    }
+
+    if (showDayPopupSheet) {
+        val dayLeaves = remember(allLeaves, selectedDayDate) {
+            allLeaves.filter { leave ->
+                val end = leave.endDate ?: leave.startDate
+                !(selectedDayDate.isBefore(leave.startDate) || selectedDayDate.isAfter(end))
+            }
+        }
+        val dayOvertimes = remember(allOvertime, selectedDayDate) {
+            allOvertime.filter { it.date == selectedDayDate }
+        }
+        val dayClaims = remember(allClaims, selectedDayDate) {
+            allClaims.filter { it.date == selectedDayDate }
+        }
+
+        DayPopupSheet(
+            date = selectedDayDate,
+            leaves = dayLeaves,
+            overtimes = dayOvertimes,
+            claims = dayClaims,
+            onLeaveClick = { leave ->
+                selectedRequestForDetails = leave
+            },
+            onOvertimeClick = { overtime ->
+                selectedRequestForDetails = overtime
+            },
+            onClaimClick = { claim ->
+                selectedRequestForDetails = claim
+            },
+            onDismiss = { showDayPopupSheet = false }
+        )
+    }
+
+    if (showSummarySheet) {
+        MonthSummarySheet(
+            monthTitle = currentYearMonth.format(monthYearFormatter),
+            approvedLeaveDays = approvedLeaveDays,
+            pendingLeaveDays = pendingLeaveDays,
+            approvedOtHours = approvedOtHours,
+            pendingOtHours = pendingOtHours,
+            approvedClaimAmount = approvedClaimAmount,
+            pendingClaimAmount = pendingClaimAmount,
+            onDismiss = { showSummarySheet = false }
         )
     }
 }

@@ -13,10 +13,12 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -34,13 +36,30 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
     val allReminders: Flow<List<ToDoEntity>> = reminderDao.getAllReminders()
     val allHomeEntries: Flow<List<HomeEntryEntity>> = reminderDao.getAllHomeEntries()
 
-    val todayRemindersCount: StateFlow<Int> = allReminders.map { reminders ->
-        val today = LocalDate.now()
+    private val currentDateFlow = flow {
+        while (true) {
+            emit(LocalDate.now())
+            delay(30_000L) // Refresh every 30 seconds for midnight 12:00 AM rollover
+        }
+    }
+
+    val todayRemindersCount: StateFlow<Int> = combine(allReminders, currentDateFlow) { reminders, today ->
         val todayStr = today.toString()
         reminders.count { reminder ->
-            !reminder.completedDates.contains(todayStr) && isReminderOnDate(reminder, today)
+            val isDoneToday = reminder.completedDates.contains(todayStr)
+            if (isDoneToday) false
+            else isTaskActiveForToday(reminder, today)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val hasOverdueOrTodayTasks: StateFlow<Boolean> = combine(allReminders, currentDateFlow) { reminders, today ->
+        val todayStr = today.toString()
+        reminders.any { reminder ->
+            val isDoneToday = reminder.completedDates.contains(todayStr)
+            if (isDoneToday) false
+            else isTaskActiveForTodayOrOverdue(reminder, today)
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     private val authStateListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
         val user = firebaseAuth.currentUser
@@ -73,7 +92,6 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // 1. Initial fetch from Firestore to restore all user tasks permanently
                 val querySnapshot = firestore.collection("users")
                     .document(userId)
                     .collection("tasks")
@@ -94,7 +112,6 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
                 // Ignore offline error - local Room DB persists cached data
             }
 
-            // 2. Real-time listener for ongoing updates from this or other devices
             firestoreListener = firestore.collection("users")
                 .document(userId)
                 .collection("tasks")
@@ -188,7 +205,6 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
                 id
             }
 
-            // Sync to Firestore under current user's tasks permanently
             val userId = auth.currentUser?.uid
             if (userId != null) {
                 try {
@@ -197,9 +213,7 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
                         .collection("tasks")
                         .document(finalId.toString())
                         .set(reminder.toFirestoreMap(), SetOptions.merge())
-                } catch (e: Exception) {
-                    // Offline or firestore error - local Room DB persists changes
-                }
+                } catch (e: Exception) {}
             }
         }
     }
@@ -263,6 +277,24 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+}
+
+fun isTaskActiveForToday(reminder: ToDoEntity, today: LocalDate): Boolean {
+    if (reminder.date != null && reminder.date.isEqual(today)) return true
+    if (reminder.remindDate != null && reminder.remindDate.isEqual(today)) return true
+    if (reminder.repeatType.lowercase() != "once" && reminder.repeatType.isNotBlank()) {
+        return isReminderOnDate(reminder, today)
+    }
+    if (reminder.date == null) {
+        val start = reminder.startDate ?: LocalDate.now()
+        return !start.isAfter(today)
+    }
+    return false
+}
+
+fun isTaskActiveForTodayOrOverdue(reminder: ToDoEntity, today: LocalDate): Boolean {
+    if (reminder.date != null && reminder.date.isBefore(today)) return true
+    return isTaskActiveForToday(reminder, today)
 }
 
 fun ToDoEntity.toFirestoreMap(): Map<String, Any?> {
