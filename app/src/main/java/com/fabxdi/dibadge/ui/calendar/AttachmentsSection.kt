@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Image
@@ -160,31 +161,22 @@ fun AttachmentsSection(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Add,
+                            imageVector = Icons.Outlined.AttachFile,
                             contentDescription = null,
-                            tint = tealAccent,
+                            tint = secondaryTextColor,
                             modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            text = "Add attachment",
+                            text = "Attachment",
                             fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = tealAccent
+                            fontWeight = FontWeight.Normal,
+                            color = secondaryTextColor
                         )
                     }
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        Text(
-            text = "Up to 3 files, 5 MB each. Photos or PDF.",
-            fontSize = 12.sp,
-            color = secondaryTextColor,
-            modifier = Modifier.padding(start = 4.dp)
-        )
     }
 
     if (showAddSheet) {
@@ -221,10 +213,17 @@ fun AttachmentsSection(
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Medium,
                     color = primaryTextColor,
-                    modifier = Modifier.padding(vertical = 8.dp)
+                    modifier = Modifier.padding(top = 8.dp)
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Text(
+                    text = "Up to 3 files, 5 MB each. Photos or PDF.",
+                    fontSize = 13.sp,
+                    color = secondaryTextColor,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
 
                 // Option 1: Choose photo
                 Row(

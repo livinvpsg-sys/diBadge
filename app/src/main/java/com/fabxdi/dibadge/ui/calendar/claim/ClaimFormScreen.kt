@@ -155,7 +155,58 @@ fun ClaimFormScreen(
         ) {
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Main Card
+            // Section Label: Amount
+            Text(
+                text = "Amount",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = secondaryTextColor,
+                modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 8.dp)
+            )
+
+            // Card 1: Amount Card (34sp Medium)
+            SettingsCard {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 16.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "S$ ",
+                            fontSize = 34.sp,
+                            fontWeight = FontWeight.Medium,
+                            letterSpacing = (-0.5).sp,
+                            color = if (amountInput.isNotBlank()) primaryTextColor else tabInactiveColor
+                        )
+                        BasicTextField(
+                            value = amountInput,
+                            onValueChange = { amountInput = it },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 34.sp,
+                                fontWeight = FontWeight.Medium,
+                                letterSpacing = (-0.5).sp,
+                                color = primaryTextColor
+                            ),
+                            cursorBrush = SolidColor(tealAccent),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+
+            // Section Label: Details
+            Text(
+                text = "Details",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = secondaryTextColor,
+                modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 8.dp)
+            )
+
+            // Card 2: Details Card (Organisation, Date, Category)
             SettingsCard {
                 // Row 1: Organisation
                 Row(
@@ -226,60 +277,37 @@ fun ClaimFormScreen(
                         modifier = Modifier.size(22.dp)
                     )
                 }
+            }
 
-                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+            // Section Label: Description (optional)
+            Text(
+                text = "Description (optional)",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = secondaryTextColor,
+                modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 8.dp)
+            )
 
-                // Row 4: Amount
-                Row(
+            // Card 3: Description Text Card
+            SettingsCard {
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 60.dp)
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .heightIn(min = 72.dp)
+                        .padding(14.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Amount", fontSize = 12.sp, color = secondaryTextColor)
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("S$ ", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = primaryTextColor)
-                            BasicTextField(
-                                value = amountInput,
-                                onValueChange = { amountInput = it },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                    fontSize = 16.sp,
-                                    color = primaryTextColor
-                                ),
-                                cursorBrush = SolidColor(tealAccent),
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
+                    if (descriptionInput.isEmpty()) {
+                        Text("Add a note", fontSize = 16.sp, color = tabInactiveColor)
                     }
-                }
-
-                HorizontalDivider(thickness = 1.dp, color = outlineColor)
-
-                // Row 5: Description (Multi-line text, min height 96dp)
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 96.dp)
-                        .padding(horizontal = 16.dp, vertical = 10.dp)
-                ) {
-                    Text("Description (optional)", fontSize = 12.sp, color = secondaryTextColor)
-                    Spacer(modifier = Modifier.height(6.dp))
                     BasicTextField(
                         value = descriptionInput,
                         onValueChange = { if (it.length <= 300) descriptionInput = it },
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 15.sp,
+                            fontSize = 16.sp,
                             color = primaryTextColor
                         ),
                         cursorBrush = SolidColor(tealAccent),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }

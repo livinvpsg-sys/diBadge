@@ -172,8 +172,8 @@ fun OvertimeFormScreen(
         ) {
             Spacer(modifier = Modifier.height(12.dp))
 
+            // Card 1: Organisation
             SettingsCard {
-                // Row 1: Organisation
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -188,10 +188,20 @@ fun OvertimeFormScreen(
                         Text(selectedOrg, fontSize = 16.sp, color = primaryTextColor)
                     }
                 }
+            }
 
-                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+            // Section Label: Date and time
+            Text(
+                text = "Date and time",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = secondaryTextColor,
+                modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 8.dp)
+            )
 
-                // Row 2: Date
+            // Card 2: Date and Time Card
+            SettingsCard {
+                // Date
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -216,7 +226,7 @@ fun OvertimeFormScreen(
 
                 HorizontalDivider(thickness = 1.dp, color = outlineColor)
 
-                // Row 3: Start time
+                // Start time
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -245,7 +255,7 @@ fun OvertimeFormScreen(
 
                 HorizontalDivider(thickness = 1.dp, color = outlineColor)
 
-                // Row 4: End time
+                // End time
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -274,53 +284,59 @@ fun OvertimeFormScreen(
 
                 HorizontalDivider(thickness = 1.dp, color = outlineColor)
 
-                // Row 5: Hours (Read-only)
-                Column(
+                // Total Row
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 60.dp)
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.Center
+                        .height(48.dp)
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Hours", fontSize = 12.sp, color = secondaryTextColor)
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Column {
+                        Text("Total", fontSize = 14.sp, color = secondaryTextColor)
+                        if (endsNextDay) {
+                            Text("Ends the next day", fontSize = 11.sp, color = secondaryTextColor)
+                        }
+                    }
                     Text(
                         text = if (calculatedHours > 0) "$calculatedHours hrs" else "0 hrs",
                         fontSize = 16.sp,
-                        color = secondaryTextColor
+                        fontWeight = FontWeight.SemiBold,
+                        color = tealAccent
                     )
-                    if (endsNextDay) {
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Ends the next day",
-                            fontSize = 12.sp,
-                            color = secondaryTextColor
-                        )
-                    }
                 }
+            }
 
-                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+            // Section Label: Work done (optional)
+            Text(
+                text = "Work done (optional)",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = secondaryTextColor,
+                modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 8.dp)
+            )
 
-                // Row 6: Work done (Multi-line text, min height 96dp)
-                Column(
+            // Card 3: Work done Text Card
+            SettingsCard {
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 96.dp)
-                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                        .heightIn(min = 72.dp)
+                        .padding(14.dp)
                 ) {
-                    Text("Work done (optional)", fontSize = 12.sp, color = secondaryTextColor)
-                    Spacer(modifier = Modifier.height(6.dp))
+                    if (description.isEmpty()) {
+                        Text("Add a note", fontSize = 16.sp, color = tabInactiveColor)
+                    }
                     BasicTextField(
                         value = description,
                         onValueChange = { if (it.length <= 300) description = it },
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 15.sp,
+                            fontSize = 16.sp,
                             color = primaryTextColor
                         ),
                         cursorBrush = SolidColor(tealAccent),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }

@@ -187,7 +187,7 @@ fun LeaveFormScreen(
         ) {
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Main Form Card
+            // Card 1: Organisation & Leave Type
             SettingsCard {
                 // Row 1: Organisation
                 Row(
@@ -236,10 +236,20 @@ fun LeaveFormScreen(
                         modifier = Modifier.size(22.dp)
                     )
                 }
+            }
 
-                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+            // Section Label: Dates
+            Text(
+                text = "Dates",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = secondaryTextColor,
+                modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 8.dp)
+            )
 
-                // Row 3: From Date
+            // Card 2: Dates Card
+            SettingsCard {
+                // From Date
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -264,7 +274,7 @@ fun LeaveFormScreen(
 
                 HorizontalDivider(thickness = 1.dp, color = outlineColor)
 
-                // Row 4: To Date
+                // To Date
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -300,45 +310,54 @@ fun LeaveFormScreen(
 
                 HorizontalDivider(thickness = 1.dp, color = outlineColor)
 
-                // Row 5: Days (Read-only)
-                Column(
+                // Total Row
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 60.dp)
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.Center
+                        .height(48.dp)
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Days", fontSize = 12.sp, color = secondaryTextColor)
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Text("Total", fontSize = 14.sp, color = secondaryTextColor)
                     Text(
                         text = "$totalDays ${if (totalDays == 1L) "day" else "days"}",
                         fontSize = 16.sp,
-                        color = secondaryTextColor
+                        fontWeight = FontWeight.SemiBold,
+                        color = tealAccent
                     )
                 }
+            }
 
-                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+            // Section Label: Reason (optional)
+            Text(
+                text = "Reason (optional)",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = secondaryTextColor,
+                modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 8.dp)
+            )
 
-                // Row 6: Reason (Multi-line text, min height 96dp)
-                Column(
+            // Card 3: Reason Text Card
+            SettingsCard {
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 96.dp)
-                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                        .heightIn(min = 72.dp)
+                        .padding(14.dp)
                 ) {
-                    Text("Reason (optional)", fontSize = 12.sp, color = secondaryTextColor)
-                    Spacer(modifier = Modifier.height(6.dp))
+                    if (reasonInput.isEmpty()) {
+                        Text("Add a note", fontSize = 16.sp, color = tabInactiveColor)
+                    }
                     BasicTextField(
                         value = reasonInput,
                         onValueChange = { if (it.length <= 300) reasonInput = it },
                         textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 15.sp,
+                            fontSize = 16.sp,
                             color = primaryTextColor
                         ),
                         cursorBrush = SolidColor(tealAccent),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }

@@ -129,7 +129,7 @@ fun NewRequestSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    painter = painterResource(id = R.drawable.ic_overtime),
+                    imageVector = Icons.Outlined.AccessTime,
                     contentDescription = null,
                     tint = secondaryTextColor,
                     modifier = Modifier.size(22.dp)
