@@ -182,7 +182,6 @@ fun LeaveFormScreen(
                 .padding(innerPadding)
                 .background(colors.background)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp)
         ) {
             Spacer(modifier = Modifier.height(12.dp))
@@ -244,7 +243,7 @@ fun LeaveFormScreen(
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 color = secondaryTextColor,
-                modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 8.dp)
+                modifier = Modifier.padding(start = 24.dp, top = 20.dp, bottom = 8.dp)
             )
 
             // Card 2: Dates Card
@@ -335,7 +334,7 @@ fun LeaveFormScreen(
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 color = secondaryTextColor,
-                modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 8.dp)
+                modifier = Modifier.padding(start = 24.dp, top = 20.dp, bottom = 8.dp)
             )
 
             // Card 3: Reason Text Card

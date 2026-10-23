@@ -60,6 +60,26 @@ class Converters {
     }
 
     @TypeConverter
+    fun fromLongList(value: List<Long>): String {
+        return value.joinToString(",")
+    }
+
+    @TypeConverter
+    fun toLongList(value: String): List<Long> {
+        return if (value.isBlank()) emptyList() else value.split(",").mapNotNull { it.toLongOrNull() }
+    }
+
+    @TypeConverter
+    fun fromBooleanList(value: List<Boolean>): String {
+        return value.joinToString(",")
+    }
+
+    @TypeConverter
+    fun toBooleanList(value: String): List<Boolean> {
+        return if (value.isBlank()) emptyList() else value.split(",").mapNotNull { it.toBooleanStrictOrNull() }
+    }
+
+    @TypeConverter
     fun fromInboxSignerList(list: List<InboxSigner>): String {
         val array = JSONArray()
         for (item in list) {

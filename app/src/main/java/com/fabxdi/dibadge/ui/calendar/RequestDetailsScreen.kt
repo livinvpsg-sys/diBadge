@@ -124,7 +124,6 @@ fun RequestDetailsScreen(
                 .padding(innerPadding)
                 .background(pageBgColor)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp)
         ) {
             Spacer(modifier = Modifier.height(12.dp))
@@ -215,9 +214,6 @@ fun RequestDetailsScreen(
                         DetailValueRow("Date", requestItem.date.format(dateFormatter), primaryTextColor, secondaryTextColor)
                         HorizontalDivider(thickness = 1.dp, color = outlineColor)
 
-                        DetailValueRow("Category", requestItem.category, primaryTextColor, secondaryTextColor)
-                        HorizontalDivider(thickness = 1.dp, color = outlineColor)
-
                         DetailValueRow("Amount", "S$${String.format(Locale.US, "%.2f", requestItem.amount)}", primaryTextColor, secondaryTextColor)
 
                         if (requestItem.description.isNotBlank()) {
@@ -235,7 +231,7 @@ fun RequestDetailsScreen(
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = secondaryTextColor,
-                    modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 8.dp)
+                    modifier = Modifier.padding(start = 24.dp, top = 20.dp, bottom = 8.dp)
                 )
 
                 SettingsCard {
@@ -265,7 +261,7 @@ fun RequestDetailsScreen(
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = secondaryTextColor,
-                    modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 8.dp)
+                    modifier = Modifier.padding(start = 24.dp, top = 20.dp, bottom = 8.dp)
                 )
 
                 SettingsCard {

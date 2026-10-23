@@ -1,26 +1,24 @@
 package com.fabxdi.dibadge.ui.calendar.claim
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -49,24 +47,22 @@ fun ClaimFormScreen(
 
     var selectedOrg by remember { mutableStateOf("diBadge Inc.") }
     var selectedDate by remember { mutableStateOf(claimToEdit?.date ?: initialDate) }
-    var selectedCategory by remember { mutableStateOf(claimToEdit?.category ?: "") }
     var amountInput by remember { mutableStateOf(claimToEdit?.let { String.format(Locale.US, "%.2f", it.amount) } ?: "") }
     var descriptionInput by remember { mutableStateOf(claimToEdit?.description ?: "") }
 
     var attachedFiles by remember { mutableStateOf<List<AttachmentFile>>(emptyList()) }
 
     var showDatePicker by remember { mutableStateOf(false) }
-    var showCategorySheet by remember { mutableStateOf(false) }
     var showDiscardDialog by remember { mutableStateOf(false) }
 
     val parsedAmount = amountInput.toDoubleOrNull() ?: 0.0
-    val canSubmit = selectedCategory.isNotBlank() && parsedAmount > 0.0
+    val canSubmit = parsedAmount > 0.0
 
-    val hasUnsavedChanges = remember(selectedCategory, amountInput, descriptionInput, attachedFiles) {
-        selectedCategory.isNotBlank() || amountInput.isNotBlank() || descriptionInput.isNotBlank() || attachedFiles.isNotEmpty()
+    val hasUnsavedChanges = remember(amountInput, descriptionInput, attachedFiles) {
+        amountInput.isNotBlank() || descriptionInput.isNotBlank() || attachedFiles.isNotEmpty()
     }
 
-    val handleBackAttempt = {
+    val handleBack = {
         if (hasUnsavedChanges) {
             showDiscardDialog = true
         } else {
@@ -74,7 +70,7 @@ fun ClaimFormScreen(
         }
     }
 
-    BackHandler(enabled = true, onBack = { handleBackAttempt() })
+    BackHandler(enabled = true, onBack = { handleBack() })
 
     val colors = MaterialTheme.colorScheme
     val diBadgeColors = DiBadgeTheme.colors
@@ -104,7 +100,7 @@ fun ClaimFormScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
-                        onClick = { handleBackAttempt() },
+                        onClick = { handleBack() },
                         modifier = Modifier.size(44.dp)
                     ) {
                         Icon(
@@ -132,13 +128,16 @@ fun ClaimFormScreen(
                         .clickable(enabled = canSubmit) {
                             onApply(
                                 selectedDate,
-                                selectedCategory,
+                                "General",
                                 parsedAmount,
                                 descriptionInput.trim(),
                                 claimToEdit?.id ?: 0
                             )
                         }
                         .padding(horizontal = 8.dp, vertical = 8.dp)
+                        .semantics {
+                            contentDescription = if (canSubmit) "Submit" else "Submit, unavailable"
+                        }
                 )
             }
         },
@@ -150,65 +149,12 @@ fun ClaimFormScreen(
                 .padding(innerPadding)
                 .background(colors.background)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp)
                 .padding(bottom = 32.dp)
         ) {
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Section Label: Amount
-            Text(
-                text = "Amount",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = secondaryTextColor,
-                modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 8.dp)
-            )
-
-            // Card 1: Amount Card (34sp Medium)
+            // Card 1: Organisation
             SettingsCard {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 16.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "S$ ",
-                            fontSize = 34.sp,
-                            fontWeight = FontWeight.Medium,
-                            letterSpacing = (-0.5).sp,
-                            color = if (amountInput.isNotBlank()) primaryTextColor else tabInactiveColor
-                        )
-                        BasicTextField(
-                            value = amountInput,
-                            onValueChange = { amountInput = it },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                fontSize = 34.sp,
-                                fontWeight = FontWeight.Medium,
-                                letterSpacing = (-0.5).sp,
-                                color = primaryTextColor
-                            ),
-                            cursorBrush = SolidColor(tealAccent),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-            }
-
-            // Section Label: Details
-            Text(
-                text = "Details",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = secondaryTextColor,
-                modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 8.dp)
-            )
-
-            // Card 2: Details Card (Organisation, Date, Category)
-            SettingsCard {
-                // Row 1: Organisation
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -223,10 +169,20 @@ fun ClaimFormScreen(
                         Text(selectedOrg, fontSize = 16.sp, color = primaryTextColor)
                     }
                 }
+            }
 
-                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+            // Section Label: Details
+            Text(
+                text = "Details",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = secondaryTextColor,
+                modifier = Modifier.padding(start = 24.dp, top = 20.dp, bottom = 8.dp)
+            )
 
-                // Row 2: Date
+            // Card 2: Details Card (Date, Amount, Description)
+            SettingsCard {
+                // Row 1: Date
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -251,64 +207,62 @@ fun ClaimFormScreen(
 
                 HorizontalDivider(thickness = 1.dp, color = outlineColor)
 
-                // Row 3: Category
+                // Row 2: Amount
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 60.dp)
-                        .clickable { showCategorySheet = true }
                         .padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Category", fontSize = 12.sp, color = secondaryTextColor)
+                        Text("Amount", fontSize = 12.sp, color = secondaryTextColor)
                         Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = selectedCategory.ifBlank { "Select category" },
-                            fontSize = 16.sp,
-                            color = if (selectedCategory.isNotBlank()) primaryTextColor else tabInactiveColor
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("S$ ", fontSize = 16.sp, fontWeight = FontWeight.Normal, color = primaryTextColor)
+                            BasicTextField(
+                                value = amountInput,
+                                onValueChange = { amountInput = it },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = primaryTextColor
+                                ),
+                                cursorBrush = SolidColor(tealAccent),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
-                    Icon(
-                        imageVector = Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Select category",
-                        tint = secondaryTextColor,
-                        modifier = Modifier.size(22.dp)
-                    )
                 }
-            }
 
-            // Section Label: Description (optional)
-            Text(
-                text = "Description (optional)",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = secondaryTextColor,
-                modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 8.dp)
-            )
+                HorizontalDivider(thickness = 1.dp, color = outlineColor)
 
-            // Card 3: Description Text Card
-            SettingsCard {
-                Box(
+                // Row 3: Description (Multi-line text, min height 72dp)
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 72.dp)
                         .padding(14.dp)
                 ) {
-                    if (descriptionInput.isEmpty()) {
-                        Text("Add a note", fontSize = 16.sp, color = tabInactiveColor)
+                    Text("Description (optional)", fontSize = 12.sp, color = secondaryTextColor)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        if (descriptionInput.isEmpty()) {
+                            Text("Add a note", fontSize = 16.sp, color = tabInactiveColor)
+                        }
+                        BasicTextField(
+                            value = descriptionInput,
+                            onValueChange = { if (it.length <= 300) descriptionInput = it },
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 16.sp,
+                                color = primaryTextColor
+                            ),
+                            cursorBrush = SolidColor(tealAccent),
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
-                    BasicTextField(
-                        value = descriptionInput,
-                        onValueChange = { if (it.length <= 300) descriptionInput = it },
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 16.sp,
-                            color = primaryTextColor
-                        ),
-                        cursorBrush = SolidColor(tealAccent),
-                        modifier = Modifier.fillMaxWidth()
-                    )
                 }
             }
 
@@ -335,89 +289,6 @@ fun ClaimFormScreen(
             },
             onDismiss = { showDatePicker = false }
         )
-    }
-
-    if (showCategorySheet) {
-        val categories = listOf("Transport", "Meals", "Materials", "Accommodation", "Other")
-        ModalBottomSheet(
-            onDismissRequest = { showCategorySheet = false },
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-            containerColor = cardBgColor,
-            scrimColor = Color.Black.copy(alpha = 0.45f),
-            tonalElevation = 0.dp,
-            dragHandle = {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp, bottom = 8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Surface(
-                        modifier = Modifier.size(width = 32.dp, height = 4.dp),
-                        shape = RoundedCornerShape(2.dp),
-                        color = secondaryTextColor.copy(alpha = 0.40f)
-                    ) {}
-                }
-            }
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 8.dp)
-                    .padding(bottom = 28.dp)
-            ) {
-                Text(
-                    text = "Category",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = primaryTextColor,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                categories.forEach { cat ->
-                    val isSelected = selectedCategory == cat
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                            .clickable {
-                                selectedCategory = cat
-                                showCategorySheet = false
-                            },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Surface(
-                            modifier = Modifier.size(22.dp),
-                            shape = CircleShape,
-                            color = Color.Transparent,
-                            border = BorderStroke(1.5.dp, if (isSelected) tealAccent else tabInactiveColor)
-                        ) {
-                            if (isSelected) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Surface(
-                                        modifier = Modifier.size(10.dp),
-                                        shape = CircleShape,
-                                        color = tealAccent
-                                    ) {}
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(16.dp))
-
-                        Text(
-                            text = cat,
-                            fontSize = 16.sp,
-                            fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
-                            color = primaryTextColor
-                        )
-                    }
-                }
-            }
-        }
     }
 
     if (showDiscardDialog) {

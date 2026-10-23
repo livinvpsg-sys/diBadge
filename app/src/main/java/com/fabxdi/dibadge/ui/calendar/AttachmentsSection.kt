@@ -77,7 +77,11 @@ fun AttachmentsSection(
         }
     }
 
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+    ) {
         Text(
             text = "Attachments (optional)",
             fontSize = 12.sp,

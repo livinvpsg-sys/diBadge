@@ -3,6 +3,7 @@ package com.fabxdi.dibadge.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.fabxdi.dibadge.data.ActivityLogEntity
 import com.fabxdi.dibadge.data.AppDatabase
 import com.fabxdi.dibadge.data.InboxEntity
 import com.fabxdi.dibadge.data.InboxSigner
@@ -23,6 +24,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.UUID
 
 class InboxViewModel(application: Application) : AndroidViewModel(application) {
     private val inboxDao = AppDatabase.getDatabase(application).inboxDao()
@@ -185,6 +187,38 @@ class InboxViewModel(application: Application) : AndroidViewModel(application) {
 
             inboxDao.updateInboxItem(updated)
             syncItemToFirestore(updated)
+
+            // Log entry into ActivityLogDao
+            val resultLabel = when (actionType) {
+                "acknowledge" -> "Confirmed"
+                "accepted" -> "Approved"
+                "declined" -> "Rejected"
+                "signed" -> "Signed"
+                "approved" -> "Approved"
+                "rejected" -> "Rejected"
+                else -> "Confirmed"
+            }
+
+            val kindLabel = when {
+                item.permitNumber != null || item.subject.contains("permit", ignoreCase = true) -> "permit"
+                item.subject.contains("toolbox", ignoreCase = true) -> "toolbox"
+                else -> "message"
+            }
+
+            val refLabel = item.permitNumber ?: if (kindLabel == "toolbox") "TBM-0412" else "Letter"
+
+            val activityLog = ActivityLogEntity(
+                id = UUID.randomUUID().toString(),
+                result = resultLabel,
+                kind = kindLabel,
+                title = item.subject,
+                source = item.senderName,
+                reference = refLabel,
+                relatedId = item.id,
+                timestamp = System.currentTimeMillis()
+            )
+
+            AppDatabase.getDatabase(getApplication()).activityLogDao().insertActivityLog(activityLog)
         }
     }
 

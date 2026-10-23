@@ -42,7 +42,10 @@ import com.fabxdi.dibadge.ui.inbox.InboxScreen
 import com.fabxdi.dibadge.ui.inbox.MessageDetailScreen
 import com.fabxdi.dibadge.viewmodel.InboxViewModel
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatScreen
+import com.fabxdi.dibadge.ui.home.QrScannerScreen
+import com.fabxdi.dibadge.ui.home.MyQrCodeScreen
 import com.fabxdi.dibadge.ui.my_activity.MyActivityScreen
+import com.fabxdi.dibadge.ui.my_docs.MyDocsScreen
 import com.fabxdi.dibadge.ui.my_tasks.MyTasksScreen
 import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
 import com.fabxdi.dibadge.ui.profile.ProfileScreen
@@ -107,10 +110,37 @@ fun MainDashboard(
     var isFabExpanded by remember { mutableStateOf(false) }
     var showReminderForm by remember { mutableStateOf(false) }
     var showMyActivityScreen by remember { mutableStateOf(false) }
+    var showMyDocsScreen by remember { mutableStateOf(false) }
     var showProfileScreen by remember { mutableStateOf(false) }
     var showSettingsScreen by remember { mutableStateOf(false) }
+    var showQrScannerScreen by remember { mutableStateOf(false) }
+    var showMyQrCodeScreen by remember { mutableStateOf(false) }
     var showOvertimeForm by remember { mutableStateOf(false) }
     var showLeaveForm by remember { mutableStateOf(false) }
+
+    if (showQrScannerScreen) {
+        QrScannerScreen(
+            userCode = "7K2M9QX4B",
+            onBack = { showQrScannerScreen = false }
+        )
+        return
+    }
+
+    if (showMyQrCodeScreen) {
+        MyQrCodeScreen(
+            userFullName = fullName,
+            userCode = "7K2M9QX4B",
+            onBack = { showMyQrCodeScreen = false }
+        )
+        return
+    }
+
+    if (showMyDocsScreen) {
+        MyDocsScreen(
+            onBack = { showMyDocsScreen = false }
+        )
+        return
+    }
 
     if (showSettingsScreen) {
         SettingsScreen(
@@ -132,12 +162,11 @@ fun MainDashboard(
     }
 
     if (showMyActivityScreen) {
-        val allLeaves by leaveOvertimeViewModel.allLeaves.collectAsState(initial = emptyList())
-        val allOvertime by leaveOvertimeViewModel.allOvertime.collectAsState(initial = emptyList())
         MyActivityScreen(
-            leaves = allLeaves,
-            overtimes = allOvertime,
-            onBack = { showMyActivityScreen = false }
+            onBack = { showMyActivityScreen = false },
+            onOpenRelatedItem = { relatedId ->
+                showMyActivityScreen = false
+            }
         )
         return
     }
@@ -265,6 +294,7 @@ fun MainDashboard(
                         onProfileClick = { showProfileScreen = true },
                         onCalendarClick = onCalendarTabClick,
                         onMyActivityClick = { showMyActivityScreen = true },
+                        onMyDocsClick = { showMyDocsScreen = true },
                         onSettingsClick = { showSettingsScreen = true },
                         onSignOut = onSignOut
                     )
@@ -438,8 +468,14 @@ fun MainDashboard(
 
     if (showQrSheet) {
         QrButtonSheet(
-            onScanQrClick = { showQrScanner = true },
-            onMyQrClick = { showQrScanner = true },
+            onScanQrClick = {
+                showQrSheet = false
+                showQrScannerScreen = true
+            },
+            onMyQrClick = {
+                showQrSheet = false
+                showMyQrCodeScreen = true
+            },
             onDismiss = { showQrSheet = false }
         )
     }
@@ -471,15 +507,6 @@ fun MainDashboard(
                 TextButton(onClick = { showDeleteEntryDialog = false }) {
                     Text("Cancel")
                 }
-            }
-        )
-    }
-
-    if (showQrScanner) {
-        QrScannerDialog(
-            onDismiss = { showQrScanner = false },
-            onResult = { result ->
-                homeSearchQuery = result
             }
         )
     }
