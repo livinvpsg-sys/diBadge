@@ -1,7 +1,9 @@
 package com.fabxdi.dibadge.ui.home
 
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
@@ -10,12 +12,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Group
-import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,12 +31,14 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.R
 import com.fabxdi.dibadge.data.HomeEntryEntity
+import com.fabxdi.dibadge.ui.theme.AppThemeMode
 import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
 import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
 import com.fabxdi.dibadge.ui.connections.ConnectionsScreen
@@ -362,6 +367,14 @@ fun MainDashboard(
                         when (selectedTab) {
                             HomeTab.Home -> {
                                 val homeEntries by viewModel.allHomeEntries.collectAsState(initial = emptyList())
+
+                                LaunchedEffect(homeEntries) {
+                                    val defaultEntries = homeEntries.filter { it.title == "diBadge Group" }
+                                    for (entry in defaultEntries) {
+                                        viewModel.deleteHomeEntry(entry)
+                                    }
+                                }
+
                                 val filteredEntries = remember(homeEntries, homeSearchQuery) {
                                     homeEntries.filter { 
                                         it.title.contains(homeSearchQuery, ignoreCase = true) || 
@@ -369,79 +382,53 @@ fun MainDashboard(
                                     }
                                 }
 
-                                if (filteredEntries.isEmpty()) {
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (homeSearchQuery.isEmpty()) {
-                                            Column(
-                                                horizontalAlignment = Alignment.CenterHorizontally,
-                                                modifier = Modifier
-                                                    .padding(horizontal = 40.dp)
-                                                    .offset(y = (-20).dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Outlined.Layers,
-                                                    contentDescription = null,
-                                                    tint = DiBadgeTheme.colors.tabInactive,
-                                                    modifier = Modifier.size(44.dp)
-                                                )
-
-                                                Spacer(modifier = Modifier.height(10.dp))
-
+                                Crossfade(
+                                    targetState = filteredEntries.isEmpty(),
+                                    animationSpec = tween(300),
+                                    label = "HomeEmptyStateCrossfade"
+                                ) { isEmpty ->
+                                    if (isEmpty) {
+                                        Box(
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (homeSearchQuery.isEmpty()) {
+                                                HomeEmptyState()
+                                            } else {
                                                 Text(
-                                                    text = "Start your first group",
+                                                    text = "No matches found",
                                                     fontSize = 16.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = MaterialTheme.colorScheme.onBackground
-                                                )
-
-                                                Spacer(modifier = Modifier.height(6.dp))
-
-                                                Text(
-                                                    text = "Tap + to create a group, or scan a code to join one",
-                                                    fontSize = 13.sp,
                                                     fontWeight = FontWeight.Normal,
-                                                    lineHeight = 18.sp,
-                                                    textAlign = TextAlign.Center,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
                                             }
-                                        } else {
-                                            Text(
-                                                text = "No matches found",
-                                                fontSize = 16.sp,
-                                                fontWeight = FontWeight.Normal,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
                                         }
-                                    }
-                                } else {
-                                    LazyColumn(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentPadding = PaddingValues(vertical = 8.dp)
-                                    ) {
-                                        items(filteredEntries.size) { index ->
-                                            val entry = filteredEntries[index]
-                                            HomeEntryCard(
-                                                entry = entry,
-                                                isSelected = selectedEntries.contains(entry),
-                                                onClick = { 
-                                                    if (selectedEntries.isNotEmpty()) {
-                                                        selectedEntries = if (selectedEntries.contains(entry)) {
-                                                            selectedEntries - entry
+                                    } else {
+                                        LazyColumn(
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentPadding = PaddingValues(vertical = 8.dp)
+                                        ) {
+                                            items(filteredEntries.size) { index ->
+                                                val entry = filteredEntries[index]
+                                                HomeEntryCard(
+                                                    entry = entry,
+                                                    isSelected = selectedEntries.contains(entry),
+                                                    onClick = { 
+                                                        if (selectedEntries.isNotEmpty()) {
+                                                            selectedEntries = if (selectedEntries.contains(entry)) {
+                                                                selectedEntries - entry
+                                                            } else {
+                                                                selectedEntries + entry
+                                                            }
                                                         } else {
-                                                            selectedEntries + entry
+                                                            selectedEntryForChat = entry
                                                         }
-                                                    } else {
-                                                        selectedEntryForChat = entry
+                                                    },
+                                                    onLongClick = {
+                                                        selectedEntries = selectedEntries + entry
                                                     }
-                                                },
-                                                onLongClick = {
-                                                    selectedEntries = selectedEntries + entry
-                                                }
-                                            )
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -592,6 +579,85 @@ fun AppBottomBar(
                     unselectedTextColor = diBadgeColors.tabInactive
                 )
             )
+        }
+    }
+}
+
+@Composable
+fun HomeEmptyState(
+    modifier: Modifier = Modifier
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 40.dp)
+    ) {
+        Icon(
+            painter = painterResource(id = R.drawable.ic_people_empty),
+            contentDescription = null,
+            tint = DiBadgeTheme.colors.tabInactive,
+            modifier = Modifier.size(44.dp)
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Text(
+            text = "Get started",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Text(
+            text = "Tap + to create a group, or search\nto message a connection",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Normal,
+            lineHeight = 18.2.sp,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Preview(name = "Home Empty State - Light", widthDp = 412, showBackground = true)
+@Composable
+fun HomeEmptyStateLightPreview() {
+    DiBadgeTheme(themeMode = AppThemeMode.LIGHT) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(300.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                HomeEmptyState()
+            }
+        }
+    }
+}
+
+@Preview(
+    name = "Home Empty State - Dark",
+    widthDp = 412,
+    showBackground = true,
+    uiMode = Configuration.UI_MODE_NIGHT_YES
+)
+@Composable
+fun HomeEmptyStateDarkPreview() {
+    DiBadgeTheme(themeMode = AppThemeMode.DARK) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(300.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                HomeEmptyState()
+            }
         }
     }
 }

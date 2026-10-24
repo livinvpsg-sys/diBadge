@@ -10,8 +10,11 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import com.fabxdi.dibadge.viewmodel.GroupTaskViewModel
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -38,6 +41,10 @@ import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.QrCode
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -81,6 +88,8 @@ import com.fabxdi.dibadge.viewmodel.GroupMediaItem
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.fabxdi.dibadge.util.UserColorUtils
 import com.fabxdi.dibadge.viewmodel.GroupDetailsViewModel
+import com.fabxdi.dibadge.viewmodel.ConnectionsViewModel
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.LocalDate
@@ -127,6 +136,17 @@ fun ChatDetailsScreen(
     val codeLookupResult by detailsViewModel.codeLookupResult.collectAsState()
     val memberSearchCandidates by detailsViewModel.memberSearchCandidates.collectAsState()
 
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val cardBgColor = colors.surface
+    val outlineColor = colors.outline
+    val pageBgColor = colors.background
+    val tealAccent = diBadgeColors.accent
+    val isDark = primaryTextColor.red > 0.5f
+
     var selectedActionTab by remember { mutableStateOf<Int?>(null) } // null=None (Media default), 1=Members, 2=Groups, 3=Forms, 4=Folders
     var selectedMediaCategory by remember { mutableStateOf("Media") } // "Media", "Docs"
     var selectedMediaIds by remember { mutableStateOf(setOf<String>()) }
@@ -138,7 +158,16 @@ fun ChatDetailsScreen(
     var editDescriptionInput by remember { mutableStateOf("") }
 
     var showAddMemberDialog by remember { mutableStateOf(false) }
+    var showMembersSheet by remember { mutableStateOf(false) }
+    var showGroupsSheet by remember { mutableStateOf(false) }
+    var showTasksSheet by remember { mutableStateOf(false) }
+    var isMuted by remember { mutableStateOf(false) }
+    var showMuteSheet by remember { mutableStateOf(false) }
+    var showClearChatDialog by remember { mutableStateOf(false) }
     var memberSearchQuery by remember { mutableStateOf("") }
+
+    val groupTaskViewModel: GroupTaskViewModel = viewModel()
+    val groupTasks by groupTaskViewModel.getTasksForGroup(entry.id.toString()).collectAsState(initial = emptyList())
 
     var groupCodeSearchQuery by remember { mutableStateOf("") }
     var customToastMessage by remember { mutableStateOf<String?>(null) }
@@ -149,6 +178,11 @@ fun ChatDetailsScreen(
     var avatarRotationAngle by remember { mutableFloatStateOf(0f) }
     var showAvatarCropDialog by remember { mutableStateOf(false) }
     var showFullscreenAvatarViewer by remember { mutableStateOf(false) }
+
+    val scrollState = rememberScrollState()
+    val showScrolledTitle = remember {
+        derivedStateOf { scrollState.value > 120 }
+    }
 
     LaunchedEffect(customToastMessage) {
         if (customToastMessage != null) {
@@ -293,7 +327,18 @@ fun ChatDetailsScreen(
                 )
             } else {
                 TopAppBar(
-                    title = { }, // No title in header as requested
+                    title = {
+                        if (showScrolledTitle.value) {
+                            Text(
+                                text = groupName.ifBlank { "Group" },
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = primaryTextColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(
@@ -304,79 +349,33 @@ fun ChatDetailsScreen(
                         }
                     },
                     actions = {
-                        Box {
-                            IconButton(onClick = { showHeaderDropdown = true }, modifier = Modifier.size(40.dp)) {
+                        IconButton(
+                            onClick = { showHeaderDropdown = true },
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
                                 Icon(
-                                    Icons.Default.MoreVert, 
-                                    contentDescription = "Menu Options",
-                                    tint = MaterialTheme.colorScheme.onSurface
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "More options",
+                                    tint = primaryTextColor,
+                                    modifier = Modifier.size(22.dp)
                                 )
-                            }
-
-                            DropdownMenu(
-                                expanded = showHeaderDropdown,
-                                onDismissRequest = { showHeaderDropdown = false },
-                                modifier = Modifier.background(MaterialTheme.colorScheme.surface)
-                            ) {
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            text = "Group code",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                    },
-                                    onClick = {
-                                        showHeaderDropdown = false
-                                        showGroupCodeDialog = true
-                                    },
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                                    modifier = Modifier.height(32.dp)
-                                )
+                                if (isAdmin && pendingRequests.isNotEmpty()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .offset(x = 2.dp, y = (-2).dp)
+                                            .size(9.dp)
+                                            .background(tealAccent, shape = CircleShape)
+                                    )
+                                }
                             }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background
+                        containerColor = pageBgColor
                     )
                 )
-            }
-        },
-        bottomBar = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(bottom = 12.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surface,
-                    shadowElevation = 8.dp
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(28.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        val categories = listOf("Media", "Docs")
-                        categories.forEach { category ->
-                            val isCategorySelected = (selectedMediaCategory == category)
-                            Text(
-                                text = category,
-                                fontSize = 14.sp,
-                                fontWeight = if (isCategorySelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isCategorySelected) {
-                                    MaterialTheme.colorScheme.onSurface
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                },
-                                modifier = Modifier.clickable { selectedMediaCategory = category }
-                            )
-                        }
-                    }
-                }
             }
         }
     ) { innerPadding ->
@@ -400,21 +399,22 @@ fun ChatDetailsScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.background)
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(scrollState)
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                // HEADER SECTION (Moved UP, NO camera icon badge, NO "Group 0 members" line)
+                // HEADER SECTION (Centered 88dp round avatar, name, description, member count)
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 0.dp, bottom = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Profile Image / Avatar (Clickable to view photo or pick new photo)
+                    // 88dp Round Avatar
+                    val raisedFill = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
                     Surface(
                         modifier = Modifier
-                            .size(100.dp)
+                            .size(88.dp)
                             .clip(CircleShape)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
@@ -427,7 +427,8 @@ fun ChatDetailsScreen(
                                 }
                             },
                         shape = CircleShape,
-                        color = UserColorUtils.getColorForName(entry.id.toString())
+                        color = raisedFill,
+                        border = BorderStroke(1.dp, outlineColor)
                     ) {
                         if (groupPhotoUrl.isNotBlank()) {
                             AsyncImage(
@@ -440,11 +441,9 @@ fun ChatDetailsScreen(
                             Box(contentAlignment = Alignment.Center) {
                                 Text(
                                     text = groupName.take(1).uppercase(),
-                                    style = MaterialTheme.typography.titleLarge.copy(
-                                        fontSize = 40.sp,
-                                        fontWeight = FontWeight.Bold
-                                    ),
-                                    color = Color.White
+                                    fontSize = 36.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = primaryTextColor
                                 )
                             }
                         }
@@ -452,13 +451,15 @@ fun ChatDetailsScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Group Name (Clickable -> Edit Name Popup ONLY, NO flashing box)
+                    // Group Name (22sp Medium)
                     Text(
                         text = groupName.ifBlank { "Group" },
                         fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Medium,
+                        color = primaryTextColor,
                         textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
@@ -468,15 +469,21 @@ fun ChatDetailsScreen(
                         }
                     )
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
 
-                    // Description Text (Clickable -> Edit Description Popup ONLY, NO flashing box)
-                    val displaySubtitle = if (groupSubtitle == "test") "" else groupSubtitle
+                    // Description (14sp Secondary, max 3 lines)
+                    val isMemberCount = remember(groupSubtitle) {
+                        val sub = groupSubtitle.trim().lowercase()
+                        sub.endsWith("member") || sub.endsWith("members")
+                    }
+                    val displaySubtitle = if (groupSubtitle == "test" || isMemberCount) "" else groupSubtitle
                     Text(
                         text = displaySubtitle.ifBlank { "Add group description" },
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                        fontSize = 14.sp,
+                        color = secondaryTextColor,
                         textAlign = TextAlign.Center,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
@@ -487,36 +494,78 @@ fun ChatDetailsScreen(
                     )
                 }
 
-                // 4 ACTION ICONS IN ONE ROW (Members, Groups, Forms, Folders)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    DetailActionItem(
-                        painter = painterResource(id = R.drawable.ic_members),
-                        label = "Members",
-                        isSelected = (selectedActionTab == 1),
-                        onClick = { selectedActionTab = if (selectedActionTab == 1) null else 1 }
-                    )
-                    DetailActionItem(
-                        painter = painterResource(id = R.drawable.ic_groups),
-                        label = "Groups",
-                        isSelected = (selectedActionTab == 2),
-                        onClick = { selectedActionTab = if (selectedActionTab == 2) null else 2 }
-                    )
-                    DetailActionItem(
-                        icon = Icons.Outlined.Description,
-                        label = "Forms",
-                        isSelected = (selectedActionTab == 3),
-                        onClick = { selectedActionTab = if (selectedActionTab == 3) null else 3 }
-                    )
-                    DetailActionItem(
-                        icon = Icons.Outlined.Folder,
-                        label = "Folders",
-                        isSelected = (selectedActionTab == 4),
-                        onClick = { selectedActionTab = if (selectedActionTab == 4) null else 4 }
-                    )
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Two Equal-Width Tabs: Media and Docs (44dp high)
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Media Tab (Left)
+                        val isMediaSelected = selectedMediaCategory == "Media"
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clickable { selectedMediaCategory = "Media" },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Media",
+                                    fontSize = 15.sp,
+                                    fontWeight = if (isMediaSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (isMediaSelected) primaryTextColor else secondaryTextColor
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(2.dp)
+                                        .background(if (isMediaSelected) primaryTextColor else Color.Transparent)
+                                )
+                            }
+                        }
+
+                        // Docs Tab (Right)
+                        val isDocsSelected = selectedMediaCategory == "Docs"
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .clickable { selectedMediaCategory = "Docs" },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Docs",
+                                    fontSize = 15.sp,
+                                    fontWeight = if (isDocsSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (isDocsSelected) primaryTextColor else secondaryTextColor
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(2.dp)
+                                        .background(if (isDocsSelected) primaryTextColor else Color.Transparent)
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(thickness = 1.dp, color = outlineColor)
                 }
 
                 // IF AN ACTION ICON IS SELECTED: SHOW CARD LIST ABOVE MEDIA
@@ -1066,42 +1115,189 @@ fun ChatDetailsScreen(
         }
     )
 
-    // Group Code Popup
-    GroupCodeDialog(
-        show = showGroupCodeDialog,
-        groupCode = groupCode,
-        onDismiss = { showGroupCodeDialog = false },
-        onCopy = { code ->
-            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val clip = ClipData.newPlainText("group_code", code)
-            clipboard.setPrimaryClip(clip)
-            showGroupCodeDialog = false
-            customToastMessage = "Code copied"
-        }
-    )
+    if (showGroupCodeDialog) {
+        GroupCodeSheet(
+            groupCode = groupCode,
+            onCopy = { code ->
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = ClipData.newPlainText("group_code", code)
+                clipboard.setPrimaryClip(clip)
+                showGroupCodeDialog = false
+                customToastMessage = "Group code copied"
+            },
+            onDismiss = { showGroupCodeDialog = false }
+        )
+    }
 
-    // Add Member Dialog
-    AddMemberDialog(
-        show = showAddMemberDialog,
-        isAdmin = isAdmin,
-        searchQuery = memberSearchQuery,
-        onQueryChange = {
-            memberSearchQuery = it
-            detailsViewModel.searchUserToAdd(it)
-        },
-        candidates = memberSearchCandidates,
-        onAddCandidate = { candidate ->
-            detailsViewModel.addMemberToGroup(candidate.uid) {
-                showAddMemberDialog = false
-                memberSearchQuery = ""
-                Toast.makeText(context, "Added ${candidate.displayName}", Toast.LENGTH_SHORT).show()
-            }
-        },
-        onDismiss = {
-            showAddMemberDialog = false
-            memberSearchQuery = ""
+    val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: "me"
+    val resolvedUserRole = remember(members, currentUserId, isAdmin) {
+        resolveUserRole(
+            members = members,
+            currentUserId = currentUserId,
+            isAdmin = isAdmin
+        )
+    }
+    val canUserManage = remember(resolvedUserRole) {
+        canUserAssignTasks(resolvedUserRole)
+    }
+
+    if (showHeaderDropdown) {
+        ChatDetailsMenuSheet(
+            isMuted = isMuted,
+            canUserManage = canUserManage,
+            waitingInvitesCount = pendingRequests.size,
+            isConnectedToOrg = acceptedConnections.isNotEmpty(),
+            onSelectMembers = { showMembersSheet = true },
+            onSelectGroups = { showGroupsSheet = true },
+            onSelectForms = {},
+            onSelectTasks = { showTasksSheet = true },
+            onSelectFolders = {},
+            onSelectMute = { showMuteSheet = true },
+            onSelectUnmute = {
+                isMuted = false
+                customToastMessage = "Notifications unmuted"
+            },
+            onSelectClearChat = { showClearChatDialog = true },
+            onSelectGroupCode = { showGroupCodeDialog = true },
+            onDismiss = { showHeaderDropdown = false }
+        )
+    }
+
+    if (showGroupsSheet) {
+        GroupsBottomSheet(
+            ownGroupCode = groupCode,
+            connectedGroups = acceptedConnections,
+            pendingRequests = pendingRequests,
+            canUserManage = canUserManage,
+            onCodeLookup = { code ->
+                detailsViewModel.lookupGroupCode(code)
+            },
+            codeLookupResult = codeLookupResult,
+            onSendInvite = { targetId, targetType, name ->
+                detailsViewModel.sendConnectRequest(targetId, targetType) {
+                    customToastMessage = "Invite sent to $name"
+                }
+            },
+            onAcceptInvite = { connectionId, name ->
+                detailsViewModel.updateConnectionStatus(connectionId, "accepted")
+                customToastMessage = "$name is now connected"
+            },
+            onDeclineInvite = { connectionId ->
+                detailsViewModel.updateConnectionStatus(connectionId, "declined")
+                customToastMessage = "Invitation declined"
+            },
+            onRemoveConnection = { connectionId, name ->
+                detailsViewModel.updateConnectionStatus(connectionId, "removed")
+                customToastMessage = "$name removed"
+            },
+            onDismiss = { showGroupsSheet = false }
+        )
+    }
+
+    if (showTasksSheet) {
+        val currentUserName = FirebaseAuth.getInstance().currentUser?.displayName?.ifBlank { null } ?: "Livin Varghese"
+        TasksBottomSheet(
+            groupId = entry.id.toString(),
+            tasks = groupTasks,
+            members = members,
+            currentRole = resolvedUserRole,
+            currentUserName = currentUserName,
+            currentUserUid = currentUserId,
+            onAssignTaskConfirmed = { title, assignees, dueDate, dueTime, note ->
+                groupTaskViewModel.assignTasks(
+                    title = title,
+                    groupId = entry.id.toString(),
+                    assignees = assignees,
+                    assignerName = currentUserName,
+                    assignerUid = currentUserId,
+                    dueDate = dueDate,
+                    dueTime = dueTime,
+                    note = note
+                )
+            },
+            onDismiss = { showTasksSheet = false }
+        )
+    }
+
+    if (showMuteSheet) {
+        MuteChoiceSheet(
+            onMuteConfirmed = { option ->
+                isMuted = true
+                customToastMessage = "Muted for $option"
+            },
+            onDismiss = { showMuteSheet = false }
+        )
+    }
+
+    if (showClearChatDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearChatDialog = false },
+            title = {
+                Text("Clear this chat?", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = primaryTextColor)
+            },
+            text = {
+                Text("Messages will be removed only for you. Others in this group still see them.", fontSize = 14.sp, color = secondaryTextColor)
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearChatDialog = false
+                        customToastMessage = "Chat cleared"
+                    }
+                ) {
+                    Text("Clear", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = colors.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearChatDialog = false }) {
+                    Text("Cancel", fontSize = 15.sp, fontWeight = FontWeight.Normal, color = secondaryTextColor)
+                }
+            },
+            containerColor = cardBgColor,
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
+    // Add Member Dialog / Bottom Sheet
+    if (showAddMemberDialog) {
+        val connectionsViewModel: ConnectionsViewModel = viewModel()
+        val userConnections by connectionsViewModel.connections.collectAsState()
+
+        val existingMemberUids = remember(members) { members.map { it.uid }.toSet() }
+        val existingMemberNames = remember(members) { members.map { it.displayName.lowercase() }.toSet() }
+
+        val availableCandidates = remember(userConnections, existingMemberUids, existingMemberNames) {
+            userConnections
+                .filter { conn ->
+                    val uid = conn.uid.ifBlank { conn.id }
+                    !existingMemberUids.contains(uid) && !existingMemberNames.contains(conn.name.lowercase())
+                }
+                .map { conn ->
+                    AddConnectionCandidate(
+                        id = conn.uid.ifBlank { conn.id },
+                        name = conn.name,
+                        email = conn.organization.ifBlank { conn.role }
+                    )
+                }
         }
-    )
+
+        AddPeopleSheet(
+            candidates = availableCandidates,
+            totalConnectionsCount = userConnections.size,
+            onAddSelected = { added ->
+                showAddMemberDialog = false
+                for (candidate in added) {
+                    detailsViewModel.addMemberToGroup(candidate.id)
+                }
+                if (added.isNotEmpty()) {
+                    Toast.makeText(context, "Added ${added.size} member(s)", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onDismiss = {
+                showAddMemberDialog = false
+            }
+        )
+    }
 
     // Delete Media Popup
     DeleteMediaDialog(
@@ -1118,6 +1314,36 @@ fun ChatDetailsScreen(
             showDeleteMediaDialog = false
         }
     )
+
+    if (showMembersSheet) {
+        val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: "me"
+        val userMember = members.find { it.uid == currentUserId || it.isYou }
+        val userRole = userMember?.role?.lowercase() ?: (if (isAdmin) "owner" else "member")
+
+        MembersBottomSheet(
+            groupName = groupName,
+            members = members,
+            currentUserId = currentUserId,
+            currentRole = userRole,
+            onAddPeopleClick = {
+                showMembersSheet = false
+                showAddMemberDialog = true
+            },
+            onRoleChange = { memberId, newRole ->
+                detailsViewModel.updateMemberRole(context, memberId, newRole)
+            },
+            onTransferOwnership = { newOwnerId ->
+                detailsViewModel.transferGroupOwnership(context, newOwnerId)
+            },
+            onExitGroup = {
+                showMembersSheet = false
+                detailsViewModel.leaveGroup(context) {
+                    onBack()
+                }
+            },
+            onDismiss = { showMembersSheet = false }
+        )
+    }
 
     // Avatar Crop / Rotate Editor Dialog
     AvatarCropDialog(

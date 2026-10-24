@@ -83,7 +83,11 @@ fun HomeEntryCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (entry.subtitle.isNotBlank()) {
+                val isMemberCount = remember(entry.subtitle) {
+                    val sub = entry.subtitle.trim().lowercase()
+                    sub.endsWith("member") || sub.endsWith("members")
+                }
+                if (entry.subtitle.isNotBlank() && !isMemberCount) {
                     Spacer(modifier = Modifier.height(3.dp))
                     Text(
                         text = entry.subtitle,

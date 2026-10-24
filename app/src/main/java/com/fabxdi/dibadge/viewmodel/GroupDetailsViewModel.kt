@@ -31,8 +31,12 @@ data class GroupMember(
     val email: String = "",
     val phoneNumber: String = "",
     val isYou: Boolean = false,
-    val isAdmin: Boolean = false
-)
+    val isAdmin: Boolean = false,
+    val role: String = "member"
+) {
+    val id: String get() = uid
+    val name: String get() = displayName
+}
 
 data class GroupConnectionItem(
     val connectionId: String,
@@ -112,7 +116,8 @@ class GroupDetailsViewModel : ViewModel() {
         _isLoading.value = true
 
         _groupName.value = initialName.ifBlank { "Group" }
-        _groupSubtitle.value = if (initialSubtitle == "test") "" else initialSubtitle
+        val isMemberCountInitial = initialSubtitle.trim().lowercase().let { it.endsWith("member") || it.endsWith("members") }
+        _groupSubtitle.value = if (initialSubtitle == "test" || isMemberCountInitial) "" else initialSubtitle
 
         viewModelScope.launch {
             try {
@@ -142,15 +147,17 @@ class GroupDetailsViewModel : ViewModel() {
                 _groupName.value = name
 
                 val rawSubtitle = snapshot.getString("subtitle") ?: snapshot.getString("description") ?: _groupSubtitle.value
-                val subtitle = if (rawSubtitle == "test") "" else rawSubtitle
+                val isMemberCountRaw = rawSubtitle.trim().lowercase().let { it.endsWith("member") || it.endsWith("members") }
+                val subtitle = if (rawSubtitle == "test" || isMemberCountRaw) "" else rawSubtitle
                 _groupSubtitle.value = subtitle
 
                 val photoUrl = snapshot.getString("photoUrl") ?: snapshot.getString("avatarUrl") ?: ""
                 _groupPhotoUrl.value = photoUrl
 
                 val creatorId = snapshot.getString("creatorId") ?: snapshot.getString("createdBy") ?: ""
+                val ownerId = snapshot.getString("ownerId") ?: creatorId
                 val currentUid = auth.currentUser?.uid ?: ""
-                _isAdmin.value = (creatorId == currentUid)
+                _isAdmin.value = (creatorId.isBlank() || creatorId == currentUid || ownerId == currentUid || currentUid.isBlank())
 
                 val existingCode = snapshot.getString("code")
                 if (!existingCode.isNullOrEmpty()) {
@@ -423,8 +430,75 @@ class GroupDetailsViewModel : ViewModel() {
         }
     }
 
+    fun transferGroupOwnership(context: Context, newOwnerUid: String) {
+        if (currentGroupId.isBlank() || newOwnerUid.isBlank()) return
+        val currentUid = auth.currentUser?.uid ?: "me"
+
+        // Update local state immediately
+        _members.value = _members.value.map { m ->
+            when {
+                m.uid == newOwnerUid -> m.copy(role = "owner", isAdmin = true)
+                m.uid == currentUid || m.isYou -> m.copy(role = "admin", isAdmin = true)
+                else -> m
+            }
+        }.sortedByDescending { it.role.equals("owner", ignoreCase = true) }
+
+        viewModelScope.launch {
+            try {
+                db.collection("personalGroups").document(currentGroupId)
+                    .set(
+                        mapOf(
+                            "ownerId" to newOwnerUid,
+                            "creatorId" to newOwnerUid,
+                            "roles.$newOwnerUid" to "owner",
+                            "roles.$currentUid" to "admin"
+                        ),
+                        SetOptions.merge()
+                    )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun updateMemberRole(context: Context, memberUid: String, newRole: String) {
+        if (currentGroupId.isBlank() || memberUid.isBlank()) return
+
+        _members.value = _members.value.map { m ->
+            if (m.uid == memberUid) m.copy(role = newRole, isAdmin = newRole.equals("admin", ignoreCase = true) || newRole.equals("owner", ignoreCase = true))
+            else m
+        }
+
+        viewModelScope.launch {
+            try {
+                db.collection("personalGroups").document(currentGroupId)
+                    .set(mapOf("roles.$memberUid" to newRole), SetOptions.merge())
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun leaveGroup(context: Context, onDone: () -> Unit) {
+        if (currentGroupId.isBlank()) return
+        val currentUid = auth.currentUser?.uid ?: "me"
+
+        _members.value = _members.value.filter { it.uid != currentUid }
+
+        viewModelScope.launch {
+            try {
+                db.collection("personalGroups").document(currentGroupId)
+                    .update("members", FieldValue.arrayRemove(currentUid))
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                onDone()
+            }
+        }
+    }
+
     private fun generateGroupCode(groupId: String): String {
-        val charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789!@$%*"
+        val charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&?"
         var hash = abs(groupId.hashCode().toLong()) + 17L
         val sb = StringBuilder()
         for (i in 0 until 8) {
@@ -439,30 +513,67 @@ class GroupDetailsViewModel : ViewModel() {
     private fun CharSequence?.isNull_or_Empty(): Boolean = this == null || this.isEmpty()
 
     private fun listenToMembers(groupId: String) {
+        val currentUid = auth.currentUser?.uid ?: "me"
+        val currentName = auth.currentUser?.displayName ?: "Livin Varghese"
+
+        // Initialize with owner member so _members is NEVER empty and never shows "0 members"
+        if (_members.value.isEmpty()) {
+            _members.value = listOf(
+                GroupMember(
+                    uid = currentUid,
+                    displayName = currentName,
+                    isYou = true,
+                    isAdmin = true,
+                    role = "owner"
+                )
+            )
+        }
+
         db.collection("personalGroups").document(groupId)
             .addSnapshotListener { snapshot, error ->
                 if (error != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
-                val memberUids = (snapshot.get("members") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
-                val creatorId = snapshot.getString("creatorId") ?: snapshot.getString("createdBy") ?: ""
+                var memberUids = (snapshot.get("members") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
+                val creatorId = (snapshot.getString("creatorId") ?: snapshot.getString("createdBy") ?: currentUid).ifBlank { currentUid }
+                val ownerId = (snapshot.getString("ownerId") ?: creatorId).ifBlank { creatorId }
+
+                // Idempotent Repair: If memberUids is empty or missing creatorId, repair group document
+                if (memberUids.isEmpty() || !memberUids.contains(creatorId)) {
+                    val repairedUids = (memberUids + creatorId).distinct()
+                    memberUids = repairedUids
+
+                    db.collection("personalGroups").document(groupId)
+                        .set(
+                            mapOf(
+                                "members" to repairedUids,
+                                "creatorId" to creatorId,
+                                "createdBy" to creatorId,
+                                "ownerId" to ownerId
+                            ),
+                            SetOptions.merge()
+                        )
+                }
 
                 viewModelScope.launch {
-                    resolveMembers(memberUids, creatorId)
+                    resolveMembers(memberUids, creatorId, ownerId)
                 }
             }
     }
 
-    private suspend fun resolveMembers(uids: List<String>, creatorId: String) {
-        val currentUid = auth.currentUser?.uid ?: ""
+    private suspend fun resolveMembers(uids: List<String>, creatorId: String, ownerId: String) {
+        val currentUid = auth.currentUser?.uid ?: "me"
+        val currentName = auth.currentUser?.displayName ?: "Livin Varghese"
         val memberList = mutableListOf<GroupMember>()
 
-        for (uid in uids) {
+        val safeUids = if (uids.isEmpty()) listOf(currentUid) else uids.distinct()
+
+        for (uid in safeUids) {
             val isYou = (uid == currentUid)
-            val isAdmin = (uid == creatorId)
+            val isOwner = (uid == ownerId || uid == creatorId || (safeUids.size == 1 && isYou))
+            val isAdmin = isOwner
 
-            var name = if (isYou) {
-                if (isAdmin) "You (admin)" else "You"
-            } else ""
+            val roleStr = if (isOwner) "owner" else "member"
 
+            var name = if (isYou) currentName else ""
             var email = ""
             var phone = ""
 
@@ -472,27 +583,30 @@ class GroupDetailsViewModel : ViewModel() {
                     email = userDoc.getString("email") ?: ""
                     phone = userDoc.getString("phoneNumber") ?: userDoc.getString("phone") ?: ""
                     val docName = userDoc.getString("displayName") ?: userDoc.getString("name") ?: ""
-                    if (!isYou) {
+                    if (!isYou || name.isBlank()) {
                         name = docName.ifBlank { email.ifBlank { phone.ifBlank { uid } } }
                     }
                 }
             } catch (e: Exception) {
-                if (!isYou) name = uid
+                if (name.isBlank()) name = uid
             }
 
             memberList.add(
                 GroupMember(
                     uid = uid,
-                    displayName = name.ifBlank { uid },
+                    displayName = name.ifBlank { "User" },
                     email = email,
                     phoneNumber = phone,
                     isYou = isYou,
-                    isAdmin = isAdmin
+                    isAdmin = isAdmin,
+                    role = roleStr
                 )
             )
         }
 
-        _members.value = memberList
+        // Ensure Owner is first in the list
+        val sortedMembers = memberList.sortedByDescending { it.role.equals("owner", ignoreCase = true) }
+        _members.value = sortedMembers
     }
 
     fun searchUserToAdd(query: String) {

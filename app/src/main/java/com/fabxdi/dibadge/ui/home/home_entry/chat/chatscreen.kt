@@ -615,7 +615,11 @@ fun ChatScreen(
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Normal),
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
-                                if (currentEntry.subtitle.isNotBlank()) {
+                                val isMemberCountSubtitle = remember(currentEntry.subtitle) {
+                                    val sub = currentEntry.subtitle.trim().lowercase()
+                                    sub.endsWith("member") || sub.endsWith("members")
+                                }
+                                if (currentEntry.subtitle.isNotBlank() && !isMemberCountSubtitle) {
                                     Text(
                                         text = currentEntry.subtitle,
                                         style = MaterialTheme.typography.bodySmall,

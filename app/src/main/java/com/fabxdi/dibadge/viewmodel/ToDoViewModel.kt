@@ -9,6 +9,7 @@ import com.fabxdi.dibadge.data.ToDoEntity
 import com.fabxdi.dibadge.ui.my_tasks.isReminderOnDate
 import com.fabxdi.dibadge.util.AlarmScheduler
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
@@ -140,14 +141,39 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun saveHomeEntry(title: String, subtitle: String, initials: String) {
-        viewModelScope.launch {
-            reminderDao.insertHomeEntry(
-                HomeEntryEntity(
-                    title = title,
-                    subtitle = subtitle,
-                    initials = initials
-                )
+        viewModelScope.launch(Dispatchers.IO) {
+            val generatedId = (System.currentTimeMillis().toInt() and 0x7FFFFFFF) + (1..999).random()
+            val finalSubtitle = subtitle.trim()
+
+            val entry = HomeEntryEntity(
+                id = generatedId,
+                title = title,
+                subtitle = finalSubtitle,
+                initials = initials
             )
+            reminderDao.insertHomeEntry(entry)
+
+            // Write creator as owner member in Firestore personalGroups/{groupId}
+            val currentUid = auth.currentUser?.uid ?: "me"
+            try {
+                val groupData = mapOf(
+                    "id" to generatedId.toString(),
+                    "name" to title,
+                    "title" to title,
+                    "subtitle" to finalSubtitle,
+                    "creatorId" to currentUid,
+                    "createdBy" to currentUid,
+                    "ownerId" to currentUid,
+                    "members" to listOf(currentUid),
+                    "roles" to mapOf(currentUid to "owner"),
+                    "createdAt" to FieldValue.serverTimestamp()
+                )
+                firestore.collection("personalGroups")
+                    .document(generatedId.toString())
+                    .set(groupData, SetOptions.merge())
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 

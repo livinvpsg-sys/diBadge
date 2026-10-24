@@ -1,6 +1,7 @@
 package com.fabxdi.dibadge.ui.home.home_entry.chat
 
 import android.net.Uri
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -11,6 +12,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,36 +29,37 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.AudioPlayer
-import com.fabxdi.dibadge.util.UserColorUtils
-import com.fabxdi.dibadge.ui.theme.SlateCharcoal
 import com.fabxdi.dibadge.util.FilePickerUtils
+import com.fabxdi.dibadge.util.UserColorUtils
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 private fun isEmoji(codePoint: Int): Boolean {
-    return (codePoint in 0x1F600..0x1F64F) || // Emoticons
-           (codePoint in 0x1F300..0x1F5FF) || // Misc Symbols and Pictographs
-           (codePoint in 0x1F680..0x1F6FF) || // Transport and Map
-           (codePoint in 0x2600..0x26FF)   || // Misc Symbols
-           (codePoint in 0x2700..0x27BF)   || // Dingbats
-           (codePoint in 0xFE00..0xFE0F)   || // Variation Selectors
-           (codePoint in 0x1F900..0x1F9FF) || // Supplemental Symbols and Pictographs
-           (codePoint in 0x1F1E6..0x1F1FF) || // Flags
-           (codePoint in 0x1F004..0x1F0CF) || // Mahjong and Domino Tiles
-           (codePoint in 0x1F01C..0x1F02B) || // Playing Cards
-           (codePoint in 0x231A..0x231B)   || // Watch & Hourglass
-           (codePoint in 0x23E9..0x23F3)   || // Multimedia
-           (codePoint in 0x23F8..0x23FA)   || // Multimedia buttons
-           (codePoint in 0x25AA..0x25AB)   || // Black/White small square
-           (codePoint in 0x25FB..0x25FE)   || // Squares
-           (codePoint in 0x2B05..0x2B07)   || // Arrows
-           (codePoint in 0x2B1B..0x2B1C)   || // Squares
-           (codePoint == 0x2B50)           || // Star
-           (codePoint == 0x2B55)           || // Circle
-           (codePoint == 0x3030)           || // Wavy dash
-           (codePoint == 0x303D)           || // Part alternation mark
-           (codePoint == 0x3297)           || // Registered designation
-           (codePoint == 0x3299)              // Secret designation
+    return (codePoint in 0x1F600..0x1F64F) ||
+           (codePoint in 0x1F300..0x1F5FF) ||
+           (codePoint in 0x1F680..0x1F6FF) ||
+           (codePoint in 0x2600..0x26FF)   ||
+           (codePoint in 0x2700..0x27BF)   ||
+           (codePoint in 0xFE00..0xFE0F)   ||
+           (codePoint in 0x1F900..0x1F9FF) ||
+           (codePoint in 0x1F1E6..0x1F1FF) ||
+           (codePoint in 0x1F004..0x1F0CF) ||
+           (codePoint in 0x1F01C..0x1F02B) ||
+           (codePoint in 0x231A..0x231B)   ||
+           (codePoint in 0x23E9..0x23F3)   ||
+           (codePoint in 0x23F8..0x23FA)   ||
+           (codePoint in 0x25AA..0x25AB)   ||
+           (codePoint in 0x25FB..0x25FE)   ||
+           (codePoint in 0x2B05..0x2B07)   ||
+           (codePoint in 0x2B1B..0x2B1C)   ||
+           (codePoint == 0x2B50)           ||
+           (codePoint == 0x2B55)           ||
+           (codePoint == 0x3030)           ||
+           (codePoint == 0x303D)           ||
+           (codePoint == 0x3297)           ||
+           (codePoint == 0x3299)
 }
 
 private fun isOnlyEmojis(text: String): Boolean {
@@ -85,9 +89,33 @@ fun MessageBubble(
     onMediaClick: (List<Uri>, Int) -> Unit,
     onSwipeToReply: (String?) -> Unit = {}
 ) {
-    val timeFormatter = remember { DateTimeFormatter.ofPattern("hh:mm a") }
+    val timeFormatter = remember { DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()) }
     val context = LocalContext.current
     val alignment = if (message.isSentByMe) Alignment.End else Alignment.Start
+
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val outlineColor = colors.outline
+    val tealAccent = diBadgeColors.accent
+    val isDark = primaryTextColor.red > 0.5f
+
+    // Bubble Background Colors:
+    // Light Theme: Incoming #E8ECEF, Own #FFFFFF (both raised with soft shadow)
+    // Dark Theme: Incoming #181C21, Own #272F39
+    val bubbleColor = if (message.isSentByMe) {
+        if (isDark) Color(0xFF272F39) else Color(0xFFFFFFFF)
+    } else {
+        if (isDark) Color(0xFF181C21) else Color(0xFFE8ECEF)
+    }
+
+    val bubbleShape = if (message.isSentByMe) {
+        RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = 14.dp, bottomEnd = 2.dp)
+    } else {
+        RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = 2.dp, bottomEnd = 14.dp)
+    }
 
     val isEmojiOnly = remember(message.text) {
         isOnlyEmojis(message.text) && message.attachments.isEmpty() && message.replyingTo == null
@@ -127,7 +155,7 @@ fun MessageBubble(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.Reply,
                     contentDescription = null,
-                    tint = Color.White.copy(alpha = (offsetX / swipeThreshold).coerceIn(0f, 1f)),
+                    tint = secondaryTextColor.copy(alpha = (offsetX / swipeThreshold).coerceIn(0f, 1f)),
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -139,8 +167,8 @@ fun MessageBubble(
                 .offset { IntOffset(offsetX.toInt(), 0) }
                 .background(
                     when {
-                        isSelected -> Color(0xFF00A884).copy(alpha = 0.2f)
-                        isHighlighted -> Color.White.copy(alpha = 0.15f)
+                        isSelected -> tealAccent.copy(alpha = 0.18f)
+                        isHighlighted -> primaryTextColor.copy(alpha = 0.15f)
                         else -> Color.Transparent
                     }
                 )
@@ -148,19 +176,17 @@ fun MessageBubble(
                     onClick = onClick,
                     onLongClick = { onLongClick(null) }
                 )
-                .padding(vertical = 4.dp, horizontal = 12.dp),
+                .padding(vertical = 3.dp, horizontal = 12.dp),
             horizontalAlignment = alignment
         ) {
+            // Sender Name (12sp SemiBold teal) sits ABOVE the bubble outside it for incoming messages
             if (!message.isSentByMe) {
-                val nameColor = UserColorUtils.getColorForName(message.senderName)
                 Text(
                     text = message.senderName,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Bold, 
-                        fontSize = 11.sp
-                    ),
-                    color = nameColor,
-                    modifier = Modifier.padding(start = 40.dp, bottom = 4.dp)
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = tealAccent,
+                    modifier = Modifier.padding(start = 36.dp, bottom = 2.dp)
                 )
             }
 
@@ -170,32 +196,53 @@ fun MessageBubble(
                 verticalAlignment = Alignment.Bottom
             ) {
                 if (!message.isSentByMe) {
-                    AvatarIcon(message.senderName)
+                    // 28dp Round Avatar
+                    Surface(
+                        modifier = Modifier.size(28.dp),
+                        shape = CircleShape,
+                        color = UserColorUtils.getColorForName(message.senderName),
+                        border = BorderStroke(1.dp, outlineColor)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = message.senderName.take(1).uppercase(),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.width(8.dp))
                 }
 
                 if (isEmojiOnly) {
-                    EmojiMessage(message.text, message.timestamp.format(timeFormatter).lowercase(), alignment)
+                    EmojiMessage(message.text, message.timestamp.format(timeFormatter).lowercase(), alignment, secondaryTextColor, primaryTextColor)
                 } else {
-                    val bubbleColor = if (message.isSentByMe) Color.White else Color(0xFFE3E4E8)
-                    val contentColor = SlateCharcoal
-                    
                     Surface(
                         color = bubbleColor,
-                        shape = RoundedCornerShape(
-                            topStart = 16.dp,
-                            topEnd = 16.dp,
-                            bottomStart = if (message.isSentByMe) 16.dp else 4.dp,
-                            bottomEnd = if (message.isSentByMe) 4.dp else 16.dp
-                        ),
-                        modifier = Modifier.widthIn(min = 40.dp, max = 280.dp)
+                        shape = bubbleShape,
+                        shadowElevation = if (!isDark) 2.dp else 0.dp,
+                        modifier = Modifier.widthIn(min = 40.dp, max = 272.dp)
                     ) {
-                        Column {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
                             if (message.replyingTo != null) {
-                                ReplySection(message, onReplyClick, contentColor)
+                                ReplySection(message, onReplyClick, primaryTextColor, secondaryTextColor, tealAccent)
                             }
 
-                            AttachmentAndTextSection(message, player, isAnySelected, onLongClick, onMediaClick, timeFormatter, contentColor)
+                            AttachmentAndTextSection(
+                                message = message,
+                                player = player,
+                                isAnySelected = isAnySelected,
+                                onLongClick = onLongClick,
+                                onMediaClick = onMediaClick,
+                                timeFormatter = timeFormatter,
+                                primaryTextColor = primaryTextColor,
+                                secondaryTextColor = secondaryTextColor,
+                                tealAccent = tealAccent,
+                                isDark = isDark
+                            )
                         }
                     }
                 }
@@ -205,25 +252,13 @@ fun MessageBubble(
 }
 
 @Composable
-private fun AvatarIcon(senderName: String) {
-    val avatarColor = UserColorUtils.getColorForName(senderName)
-    Surface(
-        modifier = Modifier.size(28.dp),
-        shape = CircleShape,
-        color = avatarColor
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                text = senderName.take(1).uppercase(),
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 10.sp),
-                color = Color.White
-            )
-        }
-    }
-}
-
-@Composable
-private fun EmojiMessage(text: String, time: String, alignment: Alignment.Horizontal) {
+private fun EmojiMessage(
+    text: String,
+    time: String,
+    alignment: Alignment.Horizontal,
+    secondaryTextColor: Color,
+    primaryTextColor: Color
+) {
     Column(horizontalAlignment = alignment) {
         val emojiFontSize = when (text.codePointCount(0, text.length)) {
             1 -> 48.sp
@@ -234,65 +269,57 @@ private fun EmojiMessage(text: String, time: String, alignment: Alignment.Horizo
         Text(text = text, fontSize = emojiFontSize, modifier = Modifier.padding(4.dp))
         Text(
             text = time,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+            fontSize = 10.sp,
+            color = secondaryTextColor,
             modifier = Modifier.padding(horizontal = 4.dp)
         )
     }
 }
 
 @Composable
-private fun ReplySection(message: ChatMessage, onReplyClick: (String, String?) -> Unit, contentColor: Color) {
-    val context = LocalContext.current
+private fun ReplySection(
+    message: ChatMessage,
+    onReplyClick: (String, String?) -> Unit,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    tealAccent: Color
+) {
     val replyingTo = message.replyingTo!!
-    val replyColor = UserColorUtils.getColorForName(replyingTo.senderName)
     Surface(
-        color = contentColor.copy(alpha = 0.1f),
+        color = secondaryTextColor.copy(alpha = 0.12f),
+        shape = RoundedCornerShape(8.dp),
         modifier = Modifier
-            .padding(4.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable { onReplyClick(replyingTo.id, message.replyingToAttachmentUri) },
-        shape = RoundedCornerShape(8.dp)
+            .fillMaxWidth()
+            .clickable { onReplyClick(replyingTo.id, message.replyingToAttachmentUri) }
+            .padding(bottom = 6.dp)
     ) {
-        Row(modifier = Modifier.height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp).weight(1f)) {
+        Row(
+            modifier = Modifier
+                .height(IntrinsicSize.Min)
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .fillMaxHeight()
+                    .background(tealAccent, shape = RoundedCornerShape(1.5.dp))
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = replyingTo.senderName,
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
-                    color = replyColor
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = tealAccent
                 )
                 Text(
-                    text = replyingTo.text.ifBlank {
-                        val uri = message.replyingToAttachmentUri ?: replyingTo.attachments.firstOrNull()
-                        if (uri != null) {
-                            val fileName = FilePickerUtils.getFileName(context, Uri.parse(uri)).lowercase()
-                            when {
-                                fileName.endsWith(".jpg") || fileName.endsWith(".png") || fileName.endsWith(".jpeg") -> "Photo"
-                                fileName.endsWith(".mp4") -> "Video"
-                                fileName.endsWith(".pdf") -> "PDF"
-                                else -> "Attachment"
-                            }
-                        } else "Attachment"
-                    },
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                    color = contentColor.copy(alpha = 0.6f),
+                    text = replyingTo.text.ifBlank { "Attachment" },
+                    fontSize = 12.sp,
+                    color = secondaryTextColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-            }
-            val replyUriString = message.replyingToAttachmentUri ?: replyingTo.attachments.firstOrNull()
-            if (replyUriString != null) {
-                val replyUri = Uri.parse(replyUriString)
-                val mimeType = try { context.contentResolver.getType(replyUri) } catch (e: Exception) { null }
-                if (mimeType?.startsWith("image/") == true || mimeType?.startsWith("video/") == true ||
-                    replyUri.path?.lowercase()?.let { it.endsWith(".jpg") || it.endsWith(".jpeg") || it.endsWith(".png") || it.endsWith(".mp4") } == true) {
-                    AsyncImage(
-                        model = replyUri,
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp).clip(RoundedCornerShape(topEnd = 8.dp, bottomEnd = 8.dp)),
-                        contentScale = ContentScale.Crop
-                    )
-                }
             }
         }
     }
@@ -306,162 +333,137 @@ private fun AttachmentAndTextSection(
     onLongClick: (String?) -> Unit,
     onMediaClick: (List<Uri>, Int) -> Unit,
     timeFormatter: DateTimeFormatter,
-    contentColor: Color
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    tealAccent: Color,
+    isDark: Boolean
 ) {
     val context = LocalContext.current
-    val formattedTime = message.timestamp.format(timeFormatter).lowercase()
-    
-    Column(
-        modifier = Modifier.padding(
-            horizontal = if (message.attachments.isNotEmpty()) 0.dp else 10.dp,
-            vertical = if (message.attachments.isNotEmpty() && message.text.isBlank()) 0.dp else 6.dp
-        ),
-        horizontalAlignment = Alignment.Start
-    ) {
-        if (message.attachments.isNotEmpty()) {
-            AttachmentsView(message, player, isAnySelected, onLongClick, onMediaClick)
-            if (message.text.isNotBlank()) Spacer(modifier = Modifier.height(4.dp))
+    val formattedTime = remember(message.timestamp) { message.timestamp.format(timeFormatter).lowercase() }
+
+    Column {
+        // Attachments
+        message.attachments.forEachIndexed { index, uriStr ->
+            val uri = Uri.parse(uriStr)
+            val fileName = FilePickerUtils.getFileName(context, uri)
+            val ext = fileName.substringAfterLast('.', "").lowercase()
+
+            val isImage = uriStr.contains("jpg") || uriStr.contains("png") || uriStr.contains("jpeg") || ext in listOf("jpg", "png", "jpeg")
+            val isPdf = ext == "pdf"
+            val isDoc = ext in listOf("doc", "docx")
+            val isXls = ext in listOf("xls", "xlsx", "csv")
+            val isPpt = ext in listOf("ppt", "pptx")
+
+            if (isImage) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .clickable {
+                            val mediaUris = message.attachments.map { Uri.parse(it) }
+                            onMediaClick(mediaUris, index)
+                        }
+                        .padding(bottom = 6.dp)
+                ) {
+                    AsyncImage(
+                        model = uri,
+                        contentDescription = "Photo",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            } else {
+                // Document Tile
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { FilePickerUtils.openFile(context, uri) }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    DocumentTypeTile(extension = ext, isDark = isDark)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = fileName,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = primaryTextColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "${ext.uppercase()} · Document",
+                            fontSize = 12.sp,
+                            color = secondaryTextColor
+                        )
+                    }
+                }
+            }
         }
 
+        // Message Text
         if (message.text.isNotBlank()) {
             Text(
                 text = message.text,
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, fontWeight = FontWeight.Normal),
-                color = contentColor,
-                modifier = Modifier.padding(horizontal = if (message.attachments.isNotEmpty()) 10.dp else 0.dp)
+                fontSize = 15.sp,
+                lineHeight = 21.sp,
+                color = primaryTextColor,
+                modifier = Modifier.padding(bottom = 2.dp)
             )
-            TimestampRow(message.isEdited, formattedTime, true, contentColor, Modifier.align(Alignment.End))
-        } else if (message.attachments.isNotEmpty()) {
-            TimestampRow(message.isEdited, formattedTime, false, contentColor, Modifier.align(Alignment.End))
         }
-    }
-}
 
-@Composable
-private fun AttachmentsView(
-    message: ChatMessage,
-    player: AudioPlayer,
-    isAnySelected: Boolean,
-    onLongClick: (String?) -> Unit,
-    onMediaClick: (List<Uri>, Int) -> Unit
-) {
-    val context = LocalContext.current
-    val attachments = remember(message.attachments) { message.attachments.map { Uri.parse(it) } }
-    
-    val imageAttachments = attachments.filter { uri ->
-        val mimeType = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
-        mimeType?.startsWith("image/") == true || uri.path?.lowercase()?.let { it.endsWith(".jpg") || it.endsWith(".jpeg") || it.endsWith(".png") } == true
-    }
-    val videoAttachments = attachments.filter { uri ->
-        val mimeType = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
-        mimeType?.startsWith("video/") == true || uri.path?.lowercase()?.endsWith(".mp4") == true
-    }
-    val audioAttachments = attachments.filter { uri ->
-        val mimeType = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
-        mimeType?.startsWith("audio/") == true || uri.path?.lowercase()?.endsWith(".m4a") == true
-    }
-    val otherAttachments = attachments.filter { !imageAttachments.contains(it) && !videoAttachments.contains(it) && !audioAttachments.contains(it) }
-    
-    val otherGroups = otherAttachments.groupBy { uri ->
-        val fileName = FilePickerUtils.getFileName(context, uri).lowercase()
-        when {
-            fileName.endsWith(".pdf") -> "PDFs"
-            fileName.endsWith(".xls") || fileName.endsWith(".xlsx") -> "Excel"
-            fileName.endsWith(".doc") || fileName.endsWith(".docx") -> "Word"
-            fileName.endsWith(".ppt") || fileName.endsWith(".pptx") -> "PowerPoint"
-            fileName.endsWith(".zip") || fileName.endsWith(".rar") -> "Archives"
-            else -> "Other Files"
-        }
-    }
-
-    if (imageAttachments.isNotEmpty()) {
-        ImageGrid(imageAttachments, message.isSentByMe, player, isAnySelected, onLongClick, onMediaClick)
-    }
-    if (videoAttachments.isNotEmpty()) {
-        videoAttachments.forEachIndexed { index, uri ->
-            ChatAttachmentView(context, uri, message.isSentByMe, player, Modifier.fillMaxWidth().height(200.dp).padding(vertical = 2.dp), null, null, { onLongClick(uri.toString()) }, { if (isAnySelected) Unit else onMediaClick(videoAttachments, index) })
-        }
-    }
-    if (audioAttachments.isNotEmpty()) {
-        audioAttachments.forEach { uri ->
-            ChatAttachmentView(context, uri, message.isSentByMe, player, Modifier.fillMaxWidth().padding(vertical = 2.dp), null, message.attachmentDurations[uri.toString()], { onLongClick(uri.toString()) }, { if (isAnySelected) Unit else FilePickerUtils.openFile(context, uri) })
-        }
-    }
-    otherGroups.forEach { (_, uris) ->
-        uris.forEach { uri ->
-            ChatAttachmentView(context, uri, message.isSentByMe, player, Modifier.fillMaxWidth().padding(vertical = 2.dp), null, null, { onLongClick(uri.toString()) }, { if (isAnySelected) Unit else FilePickerUtils.openFile(context, uri) })
-        }
-    }
-}
-
-@Composable
-private fun ImageGrid(
-    images: List<Uri>,
-    isSentByMe: Boolean,
-    player: AudioPlayer,
-    isAnySelected: Boolean,
-    onLongClick: (String?) -> Unit,
-    onMediaClick: (List<Uri>, Int) -> Unit
-) {
-    val columns = 3
-    val rows = (images.size + columns - 1) / columns
-    Column(modifier = Modifier.width(if (images.size == 1) 220.dp else 260.dp).padding(vertical = 2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        for (i in 0 until rows) {
-            val startIndex = i * columns
-            val endIndex = minOf(startIndex + columns, images.size)
-            val itemsInRow = images.subList(startIndex, endIndex)
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                for (indexInRow in itemsInRow.indices) {
-                    val uri = itemsInRow[indexInRow]
-                    val globalIndex = startIndex + indexInRow
-                    ChatAttachmentView(
-                        context = LocalContext.current,
-                        uri = uri,
-                        isSentByMe = isSentByMe,
-                        player = player,
-                        modifier = if (images.size == 1) Modifier.fillMaxWidth().height(200.dp) else Modifier.weight(1f).aspectRatio(1f),
-                        timestamp = null,
-                        onLongClick = { onLongClick(uri.toString()) },
-                        onClick = { if (isAnySelected) Unit else onMediaClick(images, globalIndex) }
-                    )
-                }
+        // Timestamp & Read Ticks at Bottom Right
+        Row(
+            modifier = Modifier.align(Alignment.End),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = formattedTime,
+                fontSize = 11.sp,
+                color = secondaryTextColor
+            )
+            if (message.isSentByMe) {
+                Spacer(modifier = Modifier.width(4.dp))
+                // Two Teal Ticks for Read
+                Icon(
+                    imageVector = Icons.Default.DoneAll,
+                    contentDescription = "Read",
+                    tint = tealAccent,
+                    modifier = Modifier.size(14.dp)
+                )
             }
         }
     }
 }
 
 @Composable
-private fun TimestampRow(
-    isEdited: Boolean, 
-    time: String, 
-    hasText: Boolean, 
-    contentColor: Color,
-    modifier: Modifier = Modifier
+fun DocumentTypeTile(
+    extension: String,
+    isDark: Boolean
 ) {
-    Row(
-        modifier = modifier
-            .padding(
-                top = if (hasText) 0.dp else 2.dp, 
-                end = if (hasText) 2.dp else 6.dp, 
-                bottom = if (hasText) 0.dp else 4.dp,
-                start = 24.dp
-            )
-            .padding(bottom = 2.dp),
-        horizontalArrangement = Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically
+    val (label, color) = when (extension.lowercase()) {
+        "pdf" -> "PDF" to if (isDark) Color(0xFFE5584F) else Color(0xFFC4433A)
+        "doc", "docx" -> "DOC" to if (isDark) Color(0xFF4A8FE0) else Color(0xFF2F6FBF)
+        "xls", "xlsx", "csv" -> "XLS" to if (isDark) Color(0xFF3FA66B) else Color(0xFF2C8A55)
+        "ppt", "pptx" -> "PPT" to if (isDark) Color(0xFFE08A3C) else Color(0xFFC2681E)
+        else -> "FILE" to MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Surface(
+        modifier = Modifier.size(40.dp),
+        shape = RoundedCornerShape(10.dp),
+        color = color.copy(alpha = 0.16f)
     ) {
-        if (isEdited) {
+        Box(contentAlignment = Alignment.Center) {
             Text(
-                text = "edited",
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
-                color = contentColor.copy(alpha = 0.4f),
-                modifier = Modifier.padding(end = 4.dp)
+                text = label,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp,
+                color = color
             )
         }
-        Text(
-            text = time,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-            color = contentColor.copy(alpha = 0.5f)
-        )
     }
 }

@@ -44,13 +44,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.GroupMediaItem
 import com.fabxdi.dibadge.viewmodel.GroupMember
 
@@ -185,65 +188,127 @@ fun EditDescriptionDialog(
     )
 }
 
-@Composable
-fun GroupCodeDialog(
-    show: Boolean,
-    groupCode: String,
-    onDismiss: () -> Unit,
-    onCopy: (String) -> Unit
-) {
-    if (!show) return
-    val displayCode = groupCode.ifBlank { "A7B9-K2%X" }
+fun maskGroupCode(code: String): String {
+    val clean = code.ifBlank { "7N4K-!HVE" }
+    if (clean.length < 4) return clean
+    val chars = clean.toCharArray()
+    chars[2] = '*'
+    chars[3] = '*'
+    return String(chars)
+}
 
-    AlertDialog(
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GroupCodeSheet(
+    groupCode: String,
+    onCopy: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val fullCode = groupCode.ifBlank { "7N4K-!HVE" }
+    val maskedCode = maskGroupCode(fullCode)
+
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val cardBgColor = colors.surface
+    val outlineColor = colors.outline
+    val tealAccent = diBadgeColors.accent
+
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = Color.White,
-        shape = RoundedCornerShape(24.dp),
-        title = null,
-        text = {
-            Column {
-                TextField(
-                    value = displayCode,
-                    onValueChange = {},
-                    readOnly = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                        color = Color.Black,
-                        fontWeight = FontWeight.Bold
-                    ),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
-                    )
-                )
-                HorizontalDivider(
-                    modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
-                    thickness = 1.dp,
-                    color = Color.LightGray.copy(alpha = 0.6f)
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onCopy(displayCode) },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFE8ECEF),
-                    contentColor = Color.Black
-                ),
-                shape = CircleShape
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        containerColor = cardBgColor,
+        scrimColor = Color.Black.copy(alpha = 0.45f),
+        tonalElevation = 0.dp,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp, bottom = 8.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Text("Copy", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = Color.Black, fontWeight = FontWeight.Bold)
+                Surface(
+                    modifier = Modifier.size(width = 32.dp, height = 4.dp),
+                    shape = RoundedCornerShape(2.dp),
+                    color = secondaryTextColor.copy(alpha = 0.40f)
+                ) {}
             }
         }
-    )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 28.dp)
+        ) {
+            Text(
+                text = "Group code",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
+                color = primaryTextColor,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+
+            Text(
+                text = "Share this code so another group can connect with this group",
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                color = secondaryTextColor,
+                modifier = Modifier.padding(top = 4.dp, bottom = 22.dp)
+            )
+
+            Text(
+                text = maskedCode,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 1.sp,
+                color = primaryTextColor,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+            )
+
+            HorizontalDivider(thickness = 1.dp, color = outlineColor)
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Cancel",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = secondaryTextColor,
+                    modifier = Modifier
+                        .clickable { onDismiss() }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+
+                Spacer(modifier = Modifier.width(28.dp))
+
+                Text(
+                    text = "Copy",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = tealAccent,
+                    modifier = Modifier
+                        .clickable {
+                            onDismiss()
+                            onCopy(fullCode)
+                        }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
+        }
+    }
 }
 
 @Composable
