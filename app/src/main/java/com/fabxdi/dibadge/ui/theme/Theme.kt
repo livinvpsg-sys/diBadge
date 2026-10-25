@@ -32,13 +32,22 @@ data class DiBadgeColors(
     val accent: Color,
     val tabInactive: Color,
     val well: Color,
+    val fabContainer: Color,
+    val fabIcon: Color,
     val isDark: Boolean
 )
 
 val LocalSpacing = staticCompositionLocalOf { DiBadgeSpacing() }
 
 val LocalDiBadgeColors = staticCompositionLocalOf {
-    DiBadgeColors(accent = DarkAccent, tabInactive = DarkTabInactive, well = Color(0xFF12161A), isDark = true)
+    DiBadgeColors(
+        accent = DarkAccent,
+        tabInactive = DarkTabInactive,
+        well = Color(0xFF12161A),
+        fabContainer = Color(0xFFF2F5F7),
+        fabIcon = Color(0xFF0E1114),
+        isDark = true
+    )
 }
 
 object DiBadgeTheme {
@@ -113,6 +122,8 @@ private val DarkDiBadgeColors = DiBadgeColors(
     accent = DarkAccent,
     tabInactive = DarkTabInactive,
     well = Color(0xFF12161A),
+    fabContainer = Color(0xFFF2F5F7),
+    fabIcon = Color(0xFF0E1114),
     isDark = true
 )
 
@@ -120,6 +131,8 @@ private val LightDiBadgeColors = DiBadgeColors(
     accent = LightAccent,
     tabInactive = LightTabInactive,
     well = Color(0xFFECEFF2),
+    fabContainer = Color(0xFF14181C),
+    fabIcon = Color(0xFFFFFFFF),
     isDark = false
 )
 

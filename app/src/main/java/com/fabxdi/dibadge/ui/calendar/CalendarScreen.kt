@@ -26,8 +26,9 @@ import com.fabxdi.dibadge.data.ClaimEntity
 import com.fabxdi.dibadge.data.LeaveEntity
 import com.fabxdi.dibadge.data.OvertimeEntity
 import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
-import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
+import com.fabxdi.dibadge.ui.calendar.extrahours.ExtraHoursFormScreen
 import com.fabxdi.dibadge.ui.calendar.claim.ClaimFormScreen
+import com.fabxdi.dibadge.ui.components.DiBadgeFab
 import com.fabxdi.dibadge.ui.my_tasks.CalendarHeaderIcon
 import com.fabxdi.dibadge.ui.my_tasks.MonthPickerSheet
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
@@ -139,7 +140,7 @@ fun CalendarScreen(
     }
 
     if (showOvertimeForm) {
-        OvertimeFormScreen(
+        ExtraHoursFormScreen(
             existingLeaves = allLeaves,
             overtimeToEdit = editingOvertime,
             onApply = { date, start, end, description, id ->
@@ -254,24 +255,11 @@ fun CalendarScreen(
         },
         floatingActionButton = {
             if (!showNewRequestSheet && !showDayPopupSheet && !showSummarySheet) {
-                Surface(
+                DiBadgeFab(
                     onClick = { showNewRequestSheet = true },
-                    modifier = Modifier
-                        .padding(bottom = 28.dp, end = 4.dp)
-                        .size(52.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    color = cardBgColor,
-                    border = BorderStroke(1.dp, outlineColor)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "New request",
-                            tint = primaryTextColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
+                    contentDescription = "New request",
+                    modifier = Modifier.padding(end = 16.dp, bottom = 36.dp)
+                )
             }
         }
     ) { innerPadding ->

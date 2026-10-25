@@ -699,6 +699,23 @@ fun FormBuilderPreviewScreen(
                             Text("${idx + 1}. ${q.label.ifBlank { q.type }}", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = primaryTextColor)
                             if (q.isRequired) Text(" *", fontSize = 16.sp, color = colors.error)
                         }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        when (q.type) {
+                            "short_answer", "long_answer", "number" -> {
+                                Box(modifier = Modifier.fillMaxWidth().height(28.dp))
+                                HorizontalDivider(thickness = 1.dp, color = colors.outline.copy(alpha = 0.60f))
+                            }
+                            "photos" -> {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Outlined.AttachFile, contentDescription = null, tint = secondaryTextColor, modifier = Modifier.size(20.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Attach image", fontSize = 14.sp, color = secondaryTextColor)
+                                }
+                            }
+                            else -> {}
+                        }
                     }
                 }
             }

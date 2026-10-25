@@ -228,7 +228,8 @@ fun VoiceNotePreviewItem(
 @Composable
 fun ChatScreen(
     entry: HomeEntryEntity,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenMyForms: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -269,6 +270,10 @@ fun ChatScreen(
             entry = currentEntry,
             messages = messages,
             onBack = { showGroupDetails = false },
+            onOpenMyForms = {
+                showGroupDetails = false
+                onOpenMyForms()
+            },
             onReplyMedia = { mediaUrl: String ->
                 showGroupDetails = false
                 val targetMsg = messages.find { msg -> msg.attachments.contains(mediaUrl) }

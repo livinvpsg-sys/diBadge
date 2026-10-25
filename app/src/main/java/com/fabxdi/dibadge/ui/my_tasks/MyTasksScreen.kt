@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.data.ReminderEntity
+import com.fabxdi.dibadge.ui.components.DiBadgeFab
 import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
@@ -280,27 +281,14 @@ fun MyTasksScreen(
         },
         bottomBar = bottomBar,
         floatingActionButton = {
-            Surface(
+            DiBadgeFab(
                 onClick = {
                     editingReminder = null
                     showReminderForm = true
                 },
-                modifier = Modifier
-                    .padding(bottom = 16.dp, end = 4.dp)
-                    .size(52.dp),
-                shape = RoundedCornerShape(14.dp),
-                color = cardBgColor,
-                border = BorderStroke(1.dp, outlineColor)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Add task",
-                        tint = primaryTextColor,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
+                contentDescription = "Add task",
+                modifier = Modifier.padding(end = 16.dp, bottom = 16.dp)
+            )
         }
     ) { innerPadding ->
         Box(
@@ -326,7 +314,7 @@ fun MyTasksScreen(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 88.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 itemsIndexed(monthDays, key = { _, date -> date.toString() }) { index, date ->

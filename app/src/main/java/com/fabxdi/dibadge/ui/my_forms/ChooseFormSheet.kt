@@ -13,13 +13,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.R
 import com.fabxdi.dibadge.data.GroupFormEntity
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
-import com.fabxdi.dibadge.viewmodel.parseQuestionsFromJson
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -30,7 +30,10 @@ import java.util.Locale
 fun ChooseFormSheet(
     groupForms: List<GroupFormEntity>,
     canUserManage: Boolean,
+    isOrgGroup: Boolean = false,
+    orgName: String = "",
     onSelectForm: (GroupFormEntity) -> Unit,
+    onOpenMyForms: (() -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
@@ -40,7 +43,7 @@ fun ChooseFormSheet(
     val secondaryTextColor = colors.onSurfaceVariant
     val cardBgColor = colors.surface
     val outlineColor = colors.outline
-    val dimColor = diBadgeColors.tabInactive
+    val tealAccent = diBadgeColors.accent
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -62,36 +65,56 @@ fun ChooseFormSheet(
                 color = primaryTextColor
             )
 
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = "Forms in this group",
-                fontSize = 13.sp,
-                color = secondaryTextColor
-            )
-
             Spacer(modifier = Modifier.height(16.dp))
 
             if (groupForms.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(140.dp),
+                        .height(160.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        val emptyTitle = when {
+                            isOrgGroup -> "Forms will appear here"
+                            canUserManage -> "No forms in this group yet"
+                            else -> "Forms will appear here"
+                        }
+                        val emptySubtitle = when {
+                            isOrgGroup -> "${if (orgName.isNotBlank()) orgName else "The organisation"} adds the forms for this group"
+                            canUserManage -> "Open My Forms from the side menu and choose Add to group"
+                            else -> "The owner or an admin adds the forms for this group"
+                        }
+
                         Text(
-                            text = if (canUserManage) "Import your first form" else "Forms will appear here",
+                            text = emptyTitle,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Medium,
-                            color = primaryTextColor
+                            color = primaryTextColor,
+                            textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = if (canUserManage) "Tap Import form to bring in a form from My Forms" else "The owner or an admin adds the forms for this group",
+                            text = emptySubtitle,
                             fontSize = 13.sp,
-                            color = secondaryTextColor
+                            color = secondaryTextColor,
+                            textAlign = TextAlign.Center
                         )
+                        if (!isOrgGroup && canUserManage && onOpenMyForms != null) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Open My Forms",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = tealAccent,
+                                modifier = Modifier
+                                    .clickable {
+                                        onDismiss()
+                                        onOpenMyForms()
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
                     }
                 }
             } else {
@@ -101,10 +124,6 @@ fun ChooseFormSheet(
                         .heightIn(max = 280.dp)
                 ) {
                     items(groupForms, key = { it.id }) { gForm ->
-                        val questions = remember(gForm.questionsJson) {
-                            parseQuestionsFromJson(gForm.questionsJson)
-                        }
-
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()

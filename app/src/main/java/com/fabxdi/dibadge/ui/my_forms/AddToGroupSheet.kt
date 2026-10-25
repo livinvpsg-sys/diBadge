@@ -20,7 +20,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.data.FormEntity
-import com.fabxdi.dibadge.data.HomeEntryEntity
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.UserColorUtils
 import com.fabxdi.dibadge.viewmodel.FormViewModel
@@ -58,6 +57,14 @@ fun AddToGroupSheet(
         parseStringListFromJson(form.addedGroupIdsJson).toSet()
     }
 
+    // Filter out organisation groups so only personal groups appear
+    val personalGroups = remember(homeEntries) {
+        homeEntries.filter { entry ->
+            val sub = entry.subtitle.lowercase()
+            !sub.contains("organisation") && !sub.startsWith("from ")
+        }
+    }
+
     val canConfirm = selectedGroupIds.isNotEmpty()
 
     ModalBottomSheet(
@@ -92,14 +99,18 @@ fun AddToGroupSheet(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            if (homeEntries.isEmpty()) {
+            if (personalGroups.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(120.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("No groups found", fontSize = 15.sp, color = secondaryTextColor)
+                    Text(
+                        text = "You have no groups where you can add forms",
+                        fontSize = 15.sp,
+                        color = secondaryTextColor
+                    )
                 }
             } else {
                 LazyColumn(
@@ -107,7 +118,7 @@ fun AddToGroupSheet(
                         .fillMaxWidth()
                         .heightIn(max = 280.dp)
                 ) {
-                    items(homeEntries, key = { it.id }) { entry ->
+                    items(personalGroups, key = { it.id }) { entry ->
                         val entryIdStr = entry.id.toString()
                         val isAlreadyAdded = alreadyAddedGroupIds.contains(entryIdStr)
                         val isSelected = selectedGroupIds.contains(entryIdStr)

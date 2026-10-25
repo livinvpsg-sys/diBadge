@@ -171,8 +171,8 @@ fun CalendarGrid(
                                 if (isToday) append(", Today")
                                 if (summary.hasApprovedLeave) append(", Leave approved")
                                 if (summary.hasPendingLeave) append(", Leave pending")
-                                if (summary.hasApprovedOt) append(", Overtime approved")
-                                if (summary.hasPendingOt) append(", Overtime pending")
+                                if (summary.hasApprovedOt) append(", Extra hours approved")
+                                if (summary.hasPendingOt) append(", Extra hours pending")
                                 if (summary.hasApprovedClaim) append(", Claim approved")
                                 if (summary.hasPendingClaim) append(", Claim pending")
                             }

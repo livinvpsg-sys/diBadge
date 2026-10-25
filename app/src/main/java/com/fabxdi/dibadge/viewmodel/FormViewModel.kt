@@ -43,6 +43,9 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun getSubmissionsForGroup(groupId: String): Flow<List<FormSubmissionEntity>> {
+        viewModelScope.launch(Dispatchers.IO) {
+            syncFormSubmissionsFromFirestore(groupId)
+        }
         return formDao.getSubmissionsForGroup(groupId)
     }
 
@@ -206,6 +209,7 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
     fun submitForm(
         groupId: String,
         formId: String,
+        formTitle: String = "",
         version: Int,
         submitterUid: String,
         submitterName: String,
@@ -215,6 +219,7 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
         submitFormWithSignatures(
             groupId = groupId,
             formId = formId,
+            formTitle = formTitle,
             version = version,
             submitterUid = submitterUid,
             submitterName = submitterName,
@@ -229,6 +234,7 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
     fun submitFormWithSignatures(
         groupId: String,
         formId: String,
+        formTitle: String = "",
         version: Int,
         submitterUid: String,
         submitterName: String,
@@ -243,6 +249,7 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
                 id = UUID.randomUUID().toString(),
                 groupId = groupId,
                 formId = formId,
+                formTitle = formTitle,
                 version = version,
                 submitterUid = submitterUid,
                 submitterName = submitterName,
@@ -300,6 +307,24 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
                 val groupForm = mapData.toGroupFormEntity(doc.id)
                 if (groupForm != null) {
                     formDao.insertGroupForm(groupForm)
+                }
+            }
+        } catch (e: Exception) {}
+    }
+
+    private suspend fun syncFormSubmissionsFromFirestore(groupId: String) {
+        try {
+            val snapshot = firestore.collection("groups")
+                .document(groupId)
+                .collection("formSubmissions")
+                .get()
+                .await()
+
+            for (doc in snapshot.documents) {
+                val mapData = doc.data ?: continue
+                val submission = mapData.toFormSubmissionEntity(doc.id, groupId)
+                if (submission != null) {
+                    formDao.insertFormSubmission(submission)
                 }
             }
         } catch (e: Exception) {}
@@ -504,6 +529,39 @@ fun encodeLogosToJson(logos: FormLogosData): String {
     return obj.toString()
 }
 
+fun Map<String, Any?>.toFormSubmissionEntity(id: String, defaultGroupId: String): FormSubmissionEntity? {
+    val groupId = (this["groupId"] as? String) ?: defaultGroupId
+    val formId = (this["formId"] as? String) ?: return null
+    val formTitle = (this["formTitle"] as? String) ?: ""
+    val version = (this["version"] as? Number)?.toInt() ?: 1
+    val submitterUid = (this["submitterUid"] as? String) ?: ""
+    val submitterName = (this["submitterName"] as? String) ?: ""
+    val answersJson = (this["answersJson"] as? String) ?: "{}"
+    val logosJson = (this["logosJson"] as? String) ?: "{}"
+    val status = (this["status"] as? String) ?: "submitted"
+    val workersJson = (this["workersJson"] as? String) ?: "[]"
+    val supervisorJson = (this["supervisorJson"] as? String) ?: "{}"
+    val isComplete = (this["isComplete"] as? Boolean) ?: (status == "submitted")
+    val submittedAtMs = (this["submittedAtMs"] as? Number)?.toLong() ?: System.currentTimeMillis()
+
+    return FormSubmissionEntity(
+        id = id,
+        groupId = groupId,
+        formId = formId,
+        formTitle = formTitle,
+        version = version,
+        submitterUid = submitterUid,
+        submitterName = submitterName,
+        answersJson = answersJson,
+        logosJson = logosJson,
+        status = status,
+        workersJson = workersJson,
+        supervisorJson = supervisorJson,
+        isComplete = isComplete,
+        submittedAtMs = submittedAtMs
+    )
+}
+
 fun parseLogosFromJson(jsonStr: String): FormLogosData {
     if (jsonStr.isBlank() || jsonStr == "{}") return FormLogosData()
     return try {
@@ -612,10 +670,15 @@ fun FormSubmissionEntity.toFirestoreMap(): Map<String, Any?> {
         "id" to id,
         "groupId" to groupId,
         "formId" to formId,
+        "formTitle" to formTitle,
         "version" to version,
         "submitterUid" to submitterUid,
         "submitterName" to submitterName,
         "answersJson" to answersJson,
+        "logosJson" to logosJson,
+        "status" to status,
+        "workersJson" to workersJson,
+        "supervisorJson" to supervisorJson,
         "isComplete" to isComplete,
         "submittedAtMs" to submittedAtMs
     )

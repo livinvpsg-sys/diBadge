@@ -31,8 +31,9 @@ import com.fabxdi.dibadge.viewmodel.GroupMember
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SelectSignersSheet(
-    isSupervisor: Boolean = false,
+    isMultiple: Boolean = true,
     members: List<GroupMember>,
+    linkedGroupMembers: Map<String, List<GroupMember>> = emptyMap(),
     initialSelected: List<FormSigner>,
     onDone: (List<FormSigner>) -> Unit,
     onDismiss: () -> Unit
@@ -50,15 +51,25 @@ fun SelectSignersSheet(
     val dimColor = diBadgeColors.tabInactive
     val tealAccent = diBadgeColors.accent
     val isDark = primaryTextColor.red > 0.5f
-    val searchBgColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
 
-    val canAdd = selectedSigners.isNotEmpty()
+    val canSend = selectedSigners.isNotEmpty()
 
-    val filteredMembers = remember(members, searchQuery) {
+    // Filter members by search query (name or badge number)
+    val filteredThisGroup = remember(members, searchQuery) {
         if (searchQuery.isBlank()) members
         else {
             val q = searchQuery.trim().lowercase()
-            members.filter { it.name.lowercase().contains(q) }
+            members.filter { it.name.lowercase().contains(q) || it.badgeNumber.lowercase().contains(q) }
+        }
+    }
+
+    val filteredLinkedGroups = remember(linkedGroupMembers, searchQuery) {
+        if (searchQuery.isBlank()) linkedGroupMembers
+        else {
+            val q = searchQuery.trim().lowercase()
+            linkedGroupMembers.mapValues { (_, list) ->
+                list.filter { it.name.lowercase().contains(q) || it.badgeNumber.lowercase().contains(q) }
+            }.filterValues { it.isNotEmpty() }
         }
     }
 
@@ -72,39 +83,28 @@ fun SelectSignersSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp)
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 24.dp)
         ) {
-            // Header Row: Title + Subtitle
+            // 1. Title (No Subtitle)
             Text(
-                text = if (isSupervisor) "Select supervisor" else "Select workers",
+                text = if (isMultiple) "Select members" else "Select member",
                 fontSize = 18.sp,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.SemiBold,
                 color = primaryTextColor
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = if (isSupervisor) "Choose one person from this group or linked groups" else "Choose one or more from this group and linked groups",
-                fontSize = 13.sp,
-                color = secondaryTextColor
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Search Bar (48dp, rounded)
-            Surface(
+            // 2. Search Line (Bottom line only, no box)
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
-                shape = RoundedCornerShape(24.dp),
-                color = searchBgColor
+                    .height(44.dp),
+                contentAlignment = Alignment.CenterStart
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 14.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
@@ -113,164 +113,302 @@ fun SelectSignersSheet(
                         tint = secondaryTextColor,
                         modifier = Modifier.size(22.dp)
                     )
-                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
                     Box(modifier = Modifier.weight(1f)) {
                         if (searchQuery.isEmpty()) {
-                            Text("Search names", fontSize = 16.sp, color = dimColor)
+                            Text("Search members", fontSize = 15.sp, color = dimColor)
                         }
                         BasicTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
                             singleLine = true,
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, color = primaryTextColor),
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp, color = primaryTextColor),
                             cursorBrush = SolidColor(tealAccent),
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
+
                     if (searchQuery.isNotEmpty()) {
                         IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(28.dp)) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear search", tint = secondaryTextColor, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.Close, contentDescription = "Clear", tint = secondaryTextColor, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
             }
 
+            HorizontalDivider(thickness = 1.dp, color = outlineColor.copy(alpha = 0.60f))
+
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Section Header: "Site team"
-            Text(
-                text = "Site team",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = secondaryTextColor,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
+            // 3. Lists with Sections
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 280.dp)
+                    .heightIn(max = 300.dp)
             ) {
-                items(filteredMembers, key = { it.id }) { member ->
-                    val isSelected = selectedSigners.any { it.uid == member.uid }
-                    val avatarColor = remember(member.name) { UserColorUtils.getColorForName(member.name) }
+                // Section 1: THIS GROUP
+                if (filteredThisGroup.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "THIS GROUP (${filteredThisGroup.size})",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = secondaryTextColor,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp)
-                            .clickable {
-                                if (isSupervisor) {
-                                    selectedSigners = listOf(FormSigner(uid = member.uid, name = member.name, isSupervisor = true))
-                                } else {
-                                    selectedSigners = if (isSelected) {
-                                        selectedSigners.filter { it.uid != member.uid }
-                                    } else {
-                                        selectedSigners + FormSigner(uid = member.uid, name = member.name, isSupervisor = false)
-                                    }
-                                }
-                            },
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                    items(filteredThisGroup, key = { "this_${it.uid}" }) { member ->
+                        val isSelected = selectedSigners.any { it.uid == member.uid }
+                        val avatarColor = remember(member.name) { UserColorUtils.getColorForName(member.name) }
+
                         Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .clickable {
+                                    if (isMultiple) {
+                                        selectedSigners = if (isSelected) {
+                                            selectedSigners.filter { it.uid != member.uid }
+                                        } else {
+                                            selectedSigners + FormSigner(uid = member.uid, name = member.name)
+                                        }
+                                    } else {
+                                        selectedSigners = listOf(FormSigner(uid = member.uid, name = member.name, isSupervisor = true))
+                                    }
+                                },
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Surface(
-                                modifier = Modifier.size(40.dp),
-                                shape = CircleShape,
-                                color = avatarColor
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = member.name.take(1).uppercase(),
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.width(14.dp))
-
-                            Text(
-                                text = member.name,
-                                fontSize = 16.sp,
-                                color = primaryTextColor,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-
-                        if (isSupervisor) {
-                            // Radio circle for supervisor
-                            Surface(
-                                modifier = Modifier.size(22.dp),
-                                shape = CircleShape,
-                                color = Color.Transparent,
-                                border = BorderStroke(1.5.dp, if (isSelected) tealAccent else dimColor)
-                            ) {
-                                if (isSelected) {
+                                Surface(
+                                    modifier = Modifier.size(36.dp),
+                                    shape = CircleShape,
+                                    color = avatarColor
+                                ) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        Surface(
-                                            modifier = Modifier.size(10.dp),
-                                            shape = CircleShape,
-                                            color = tealAccent
-                                        ) {}
+                                        Text(
+                                            text = member.name.take(1).uppercase(),
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
                                     }
                                 }
-                            }
-                        } else {
-                            // Checkbox circle for workers
-                            Surface(
-                                modifier = Modifier.size(24.dp),
-                                shape = CircleShape,
-                                color = if (isSelected) tealAccent else Color.Transparent,
-                                border = BorderStroke(1.5.dp, if (isSelected) tealAccent else dimColor)
-                            ) {
-                                if (isSelected) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = "Selected",
-                                            tint = if (isDark) Color(0xFF0E1114) else Color.White,
-                                            modifier = Modifier.size(16.dp)
+
+                                Spacer(modifier = Modifier.width(14.dp))
+
+                                Column {
+                                    Text(
+                                        text = member.name,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = primaryTextColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (member.badgeNumber.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = member.badgeNumber,
+                                            fontSize = 12.sp,
+                                            color = secondaryTextColor
                                         )
                                     }
                                 }
                             }
+
+                            if (isMultiple) {
+                                // Checkbox: 22dp with 6dp rounded corners
+                                Surface(
+                                    modifier = Modifier.size(22.dp),
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isSelected) tealAccent else Color.Transparent,
+                                    border = BorderStroke(if (isSelected) 0.dp else 2.dp, if (isSelected) tealAccent else secondaryTextColor)
+                                ) {
+                                    if (isSelected) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "Selected",
+                                                tint = if (isDark) Color(0xFF0E1114) else Color.White,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Radio: 22dp circle
+                                Surface(
+                                    modifier = Modifier.size(22.dp),
+                                    shape = CircleShape,
+                                    color = Color.Transparent,
+                                    border = BorderStroke(2.dp, if (isSelected) tealAccent else secondaryTextColor)
+                                ) {
+                                    if (isSelected) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Surface(
+                                                modifier = Modifier.size(10.dp),
+                                                shape = CircleShape,
+                                                color = tealAccent
+                                            ) {}
+                                        }
+                                    }
+                                }
+                            }
                         }
+
+                        HorizontalDivider(thickness = 1.dp, color = outlineColor)
+                    }
+                }
+
+                // Linked Groups Sections
+                filteredLinkedGroups.forEach { (groupName, linkedMembers) ->
+                    item {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "${groupName.uppercase()} (${linkedMembers.size})",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = secondaryTextColor,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
                     }
 
-                    HorizontalDivider(thickness = 1.dp, color = outlineColor)
+                    items(linkedMembers, key = { "linked_${groupName}_${it.uid}" }) { member ->
+                        val isSelected = selectedSigners.any { it.uid == member.uid }
+                        val avatarColor = remember(member.name) { UserColorUtils.getColorForName(member.name) }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(56.dp)
+                                .clickable {
+                                    if (isMultiple) {
+                                        selectedSigners = if (isSelected) {
+                                            selectedSigners.filter { it.uid != member.uid }
+                                        } else {
+                                            selectedSigners + FormSigner(uid = member.uid, name = member.name)
+                                        }
+                                    } else {
+                                        selectedSigners = listOf(FormSigner(uid = member.uid, name = member.name, isSupervisor = true))
+                                    }
+                                },
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Surface(
+                                    modifier = Modifier.size(36.dp),
+                                    shape = CircleShape,
+                                    color = avatarColor
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = member.name.take(1).uppercase(),
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(14.dp))
+
+                                Column {
+                                    Text(
+                                        text = member.name,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = primaryTextColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (member.badgeNumber.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = member.badgeNumber,
+                                            fontSize = 12.sp,
+                                            color = secondaryTextColor
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (isMultiple) {
+                                Surface(
+                                    modifier = Modifier.size(22.dp),
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isSelected) tealAccent else Color.Transparent,
+                                    border = BorderStroke(if (isSelected) 0.dp else 2.dp, if (isSelected) tealAccent else secondaryTextColor)
+                                ) {
+                                    if (isSelected) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "Selected",
+                                                tint = if (isDark) Color(0xFF0E1114) else Color.White,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                Surface(
+                                    modifier = Modifier.size(22.dp),
+                                    shape = CircleShape,
+                                    color = Color.Transparent,
+                                    border = BorderStroke(2.dp, if (isSelected) tealAccent else secondaryTextColor)
+                                ) {
+                                    if (isSelected) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Surface(
+                                                modifier = Modifier.size(10.dp),
+                                                shape = CircleShape,
+                                                color = tealAccent
+                                            ) {}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(thickness = 1.dp, color = outlineColor)
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Footer: "{n} selected" left, Add (teal text) right
-            Row(
+            // 5. Send Request Bar pinned at bottom (centered teal text action)
+            val sendText = when {
+                !isMultiple -> "Send request"
+                selectedSigners.isEmpty() -> "Send request"
+                else -> "Send request (${selectedSigners.size})"
+            }
+
+            Box(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "${selectedSigners.size} selected",
-                    fontSize = 14.sp,
-                    color = secondaryTextColor
-                )
-
-                Text(
-                    text = "Add",
-                    fontSize = 15.sp,
+                    text = sendText,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (canAdd) tealAccent else dimColor,
+                    color = if (canSend) tealAccent else dimColor,
                     modifier = Modifier
-                        .clickable(enabled = canAdd) {
+                        .clickable(enabled = canSend) {
                             onDone(selectedSigners)
                         }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .padding(horizontal = 24.dp, vertical = 8.dp)
                 )
             }
         }

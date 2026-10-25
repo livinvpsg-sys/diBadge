@@ -62,7 +62,7 @@ fun RequestDetailsScreen(
     // Title based on request type
     val titleText = when (requestItem) {
         is LeaveEntity -> "Leave request"
-        is OvertimeEntity -> "Overtime request"
+        is OvertimeEntity -> "Extra hours request"
         is ClaimEntity -> "Claim"
         else -> "Request details"
     }

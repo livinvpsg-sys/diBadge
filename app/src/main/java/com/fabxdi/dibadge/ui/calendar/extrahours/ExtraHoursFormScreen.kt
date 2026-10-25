@@ -1,4 +1,4 @@
-package com.fabxdi.dibadge.ui.calendar.overtime
+package com.fabxdi.dibadge.ui.calendar.extrahours
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -12,7 +12,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.*
@@ -40,7 +39,7 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OvertimeFormScreen(
+fun ExtraHoursFormScreen(
     existingLeaves: List<LeaveEntity>,
     overtimeToEdit: OvertimeEntity? = null,
     initialDate: LocalDate = LocalDate.now(),
@@ -60,7 +59,6 @@ fun OvertimeFormScreen(
     var showStartTimePicker by remember { mutableStateOf(false) }
     var showEndTimePicker by remember { mutableStateOf(false) }
 
-    var showOrgSheet by remember { mutableStateOf(false) }
     var showDiscardDialog by remember { mutableStateOf(false) }
 
     val hasChanges = remember(selectedDate, startTime, endTime, description) {
@@ -83,7 +81,6 @@ fun OvertimeFormScreen(
 
     val primaryTextColor = colors.onBackground
     val secondaryTextColor = colors.onSurfaceVariant
-    val cardBgColor = colors.surface
     val outlineColor = colors.outline
     val tealAccent = diBadgeColors.accent
     val tabInactiveColor = diBadgeColors.tabInactive
@@ -129,7 +126,7 @@ fun OvertimeFormScreen(
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = if (isEditing) "Edit overtime" else "New overtime",
+                        text = if (isEditing) "Edit extra hours" else "New extra hours",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Normal,
                         color = primaryTextColor
@@ -143,7 +140,7 @@ fun OvertimeFormScreen(
                     color = if (canSubmit) tealAccent else tabInactiveColor,
                     modifier = Modifier
                         .clickable(enabled = canSubmit) {
-                            if (selectedDate != null && startTime != null && endTime != null) {
+                            if (startTime != null && endTime != null) {
                                 onApply(
                                     selectedDate,
                                     startTime!!,
@@ -413,7 +410,7 @@ fun OvertimeFormScreen(
                     )
                 }
             },
-            containerColor = cardBgColor,
+            containerColor = colors.surface,
             shape = RoundedCornerShape(20.dp)
         )
     }

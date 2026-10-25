@@ -87,7 +87,7 @@ object PdfSharingUtils {
 
                 val title = when (log) {
                     is LeaveEntity -> "${log.leaveType} (${log.status})"
-                    is OvertimeEntity -> "Overtime ${log.date.format(dateFormatter)} (${log.status})"
+                    is OvertimeEntity -> "Extra hours ${log.date.format(dateFormatter)} (${log.status})"
                     else -> ""
                 }
                 val detail = when (log) {

@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,11 +15,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
 import com.fabxdi.dibadge.data.FormLogosData
 import com.fabxdi.dibadge.data.FormSubmissionEntity
 import com.fabxdi.dibadge.data.GroupFormEntity
@@ -193,12 +197,33 @@ fun FormSubmissionDetailScreen(
 
                         Spacer(modifier = Modifier.height(6.dp))
 
-                        Text(
-                            text = answer,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Normal,
-                            color = primaryTextColor
-                        )
+                        if (q.type == "photos" && rawAnswer.isNotBlank()) {
+                            val photoList = rawAnswer.split(",")
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState())
+                            ) {
+                                photoList.forEach { photoUrl ->
+                                    AsyncImage(
+                                        model = photoUrl,
+                                        contentDescription = "Submitted photo",
+                                        modifier = Modifier
+                                            .size(72.dp)
+                                            .clip(RoundedCornerShape(12.dp)),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                            }
+                        } else {
+                            Text(
+                                text = answer,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = primaryTextColor
+                            )
+                        }
                     }
                 }
             }

@@ -56,6 +56,7 @@ data class FormSubmissionEntity(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     val groupId: String,
     val formId: String,
+    val formTitle: String = "",
     val version: Int = 1,
     val submitterUid: String,
     val submitterName: String,

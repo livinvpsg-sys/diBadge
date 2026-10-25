@@ -1,26 +1,35 @@
 package com.fabxdi.dibadge.ui.my_forms
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
 import com.fabxdi.dibadge.data.FormQuestionData
 import com.fabxdi.dibadge.data.FormSigner
 import com.fabxdi.dibadge.data.GroupFormEntity
@@ -70,6 +79,22 @@ fun FormFillScreen(
 
     var activeDatePickerQuestionId by remember { mutableStateOf<String?>(null) }
     var activeTimePickerQuestionId by remember { mutableStateOf<String?>(null) }
+    var activePhotoQuestionId by remember { mutableStateOf<String?>(null) }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents(),
+        onResult = { uris ->
+            if (uris.isNotEmpty() && activePhotoQuestionId != null) {
+                val qId = activePhotoQuestionId!!
+                val existingListStr = answersMap[qId] ?: ""
+                val existingList = if (existingListStr.isNotBlank()) existingListStr.split(",") else emptyList()
+                val newUrisStr = uris.map { it.toString() }
+                val combined = (existingList + newUrisStr).distinct()
+                answersMap = answersMap + (qId to combined.joinToString(","))
+                validationErrorIds = validationErrorIds - qId
+            }
+        }
+    )
 
     val scrollState = rememberScrollState()
 
@@ -122,6 +147,7 @@ fun FormFillScreen(
             formViewModel.submitFormWithSignatures(
                 groupId = groupForm.groupId,
                 formId = groupForm.formId,
+                formTitle = groupForm.title,
                 version = groupForm.version,
                 submitterUid = submitterUid,
                 submitterName = submitterName,
@@ -339,32 +365,119 @@ fun FormFillScreen(
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
 
                             when (q.type) {
                                 "short_answer" -> {
-                                    OutlinedTextField(
+                                    DimLineTextField(
                                         value = currentAns,
                                         onValueChange = { newText ->
                                             answersMap = answersMap + (q.id to newText)
                                             if (newText.isNotBlank()) validationErrorIds = validationErrorIds - q.id
                                         },
-                                        placeholder = { Text("Your answer") },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        singleLine = true
+                                        isError = hasError,
+                                        isSingleLine = true
                                     )
                                 }
                                 "long_answer" -> {
-                                    OutlinedTextField(
+                                    DimLineTextField(
                                         value = currentAns,
                                         onValueChange = { newText ->
                                             answersMap = answersMap + (q.id to newText)
                                             if (newText.isNotBlank()) validationErrorIds = validationErrorIds - q.id
                                         },
-                                        placeholder = { Text("Your answer") },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        maxLines = 4
+                                        isError = hasError,
+                                        isSingleLine = false
                                     )
+                                }
+                                "number" -> {
+                                    DimLineTextField(
+                                        value = currentAns,
+                                        onValueChange = { newText ->
+                                            val filtered = filterNumberInput(newText)
+                                            answersMap = answersMap + (q.id to filtered)
+                                            if (filtered.isNotBlank()) validationErrorIds = validationErrorIds - q.id
+                                        },
+                                        isError = hasError,
+                                        isSingleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                    )
+                                }
+                                "photos" -> {
+                                    val photoUris = remember(currentAns) {
+                                        if (currentAns.isNotBlank()) currentAns.split(",") else emptyList()
+                                    }
+
+                                    Column {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(44.dp)
+                                                .clickable {
+                                                    activePhotoQuestionId = q.id
+                                                    photoPickerLauncher.launch("image/*")
+                                                },
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.AttachFile,
+                                                contentDescription = "Attach image",
+                                                tint = if (hasError) colors.error else secondaryTextColor,
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Text(
+                                                text = "Attach image",
+                                                fontSize = 15.sp,
+                                                color = if (hasError) colors.error else secondaryTextColor
+                                            )
+                                        }
+
+                                        if (photoUris.isNotEmpty()) {
+                                            Spacer(modifier = Modifier.height(10.dp))
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .horizontalScroll(rememberScrollState())
+                                            ) {
+                                                photoUris.forEachIndexed { pIdx, uriStr ->
+                                                    Box(modifier = Modifier.size(72.dp)) {
+                                                        AsyncImage(
+                                                            model = uriStr,
+                                                            contentDescription = "Photo thumbnail",
+                                                            modifier = Modifier
+                                                                .fillMaxSize()
+                                                                .clip(RoundedCornerShape(12.dp)),
+                                                            contentScale = ContentScale.Crop
+                                                        )
+                                                        Surface(
+                                                            modifier = Modifier
+                                                                .align(Alignment.TopEnd)
+                                                                .padding(2.dp)
+                                                                .size(20.dp)
+                                                                .clickable {
+                                                                    val updatedList = photoUris.toMutableList()
+                                                                    updatedList.removeAt(pIdx)
+                                                                    answersMap = answersMap + (q.id to updatedList.joinToString(","))
+                                                                },
+                                                            shape = CircleShape,
+                                                            color = Color.Black.copy(alpha = 0.60f)
+                                                        ) {
+                                                            Box(contentAlignment = Alignment.Center) {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.Close,
+                                                                    contentDescription = "Remove photo",
+                                                                    tint = Color.White,
+                                                                    modifier = Modifier.size(12.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                                 "date" -> {
                                     Box(
@@ -428,15 +541,14 @@ fun FormFillScreen(
                                     }
                                 }
                                 else -> {
-                                    OutlinedTextField(
+                                    DimLineTextField(
                                         value = currentAns,
                                         onValueChange = { newText ->
                                             answersMap = answersMap + (q.id to newText)
                                             if (newText.isNotBlank()) validationErrorIds = validationErrorIds - q.id
                                         },
-                                        placeholder = { Text("Your answer") },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        singleLine = true
+                                        isError = hasError,
+                                        isSingleLine = true
                                     )
                                 }
                             }
@@ -482,7 +594,7 @@ fun FormFillScreen(
 
     if (showSelectWorkersSheet) {
         SelectSignersSheet(
-            isSupervisor = false,
+            isMultiple = true,
             members = groupMembers,
             initialSelected = selectedWorkers,
             onDone = { signers ->
@@ -495,7 +607,7 @@ fun FormFillScreen(
 
     if (showSelectSupervisorSheet) {
         SelectSignersSheet(
-            isSupervisor = true,
+            isMultiple = false,
             members = groupMembers,
             initialSelected = if (selectedSupervisor != null) listOf(selectedSupervisor!!) else emptyList(),
             onDone = { signers ->

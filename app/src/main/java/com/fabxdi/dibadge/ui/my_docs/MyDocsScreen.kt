@@ -33,6 +33,7 @@ import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import com.fabxdi.dibadge.ui.components.DiBadgeFab
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -315,24 +316,11 @@ fun MyDocsScreen(
         },
         floatingActionButton = {
             if (!isSelectionMode && !showNewDocForm && activeDocForDetail == null) {
-                Surface(
+                DiBadgeFab(
                     onClick = { showAddDocSheet = true },
-                    modifier = Modifier
-                        .padding(bottom = 28.dp, end = 4.dp)
-                        .size(52.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    color = cardBgColor,
-                    border = BorderStroke(1.dp, outlineColor)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = "Add document",
-                            tint = primaryTextColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
+                    contentDescription = "Add document",
+                    modifier = Modifier.padding(end = 16.dp, bottom = 36.dp)
+                )
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
@@ -426,7 +414,8 @@ fun MyDocsScreen(
                 }
             } else {
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 88.dp)
                 ) {
                     items(sortedDocs, key = { it.id }) { doc ->
                         val isItemSelected = selectedDocs.contains(doc)

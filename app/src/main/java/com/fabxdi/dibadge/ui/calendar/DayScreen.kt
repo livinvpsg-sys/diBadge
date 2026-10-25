@@ -108,7 +108,7 @@ fun OvertimeItemCard(overtime: OvertimeEntity, onClick: () -> Unit) {
 
                 Column {
                     Text(
-                        text = "Overtime",
+                        text = "Extra hours",
                         style = MaterialTheme.typography.bodyLarge
                     )
                     Text(

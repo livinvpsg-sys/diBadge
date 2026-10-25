@@ -35,7 +35,8 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
     private var currentSyncedUserId: String? = null
 
     val allReminders: Flow<List<ToDoEntity>> = reminderDao.getAllReminders()
-    val allHomeEntries: Flow<List<HomeEntryEntity>> = reminderDao.getAllHomeEntries()
+    val allHomeEntries: StateFlow<List<HomeEntryEntity>> = reminderDao.getAllHomeEntries()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val currentDateFlow = flow {
         while (true) {

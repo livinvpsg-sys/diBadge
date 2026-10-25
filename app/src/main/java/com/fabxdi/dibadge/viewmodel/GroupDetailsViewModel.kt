@@ -30,6 +30,7 @@ data class GroupMember(
     val displayName: String,
     val email: String = "",
     val phoneNumber: String = "",
+    val badgeNumber: String = "",
     val isYou: Boolean = false,
     val isAdmin: Boolean = false,
     val role: String = "member"

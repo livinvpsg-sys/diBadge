@@ -107,6 +107,7 @@ fun ChatDetailsScreen(
     entry: HomeEntryEntity,
     messages: List<ChatMessage> = emptyList(),
     onBack: () -> Unit,
+    onOpenMyForms: () -> Unit = {},
     onReplyMedia: (String) -> Unit = {},
     onShowInChat: (String) -> Unit = {},
     detailsViewModel: GroupDetailsViewModel = viewModel()
@@ -234,7 +235,8 @@ fun ChatDetailsScreen(
             groupId = entry.id.toString(),
             groupName = groupName,
             canUserManage = canUserManage,
-            onBack = { showGroupFormsScreen = false }
+            onBack = { showGroupFormsScreen = false },
+            onOpenMyForms = onOpenMyForms
         )
         return
     }
@@ -509,6 +511,31 @@ fun ChatDetailsScreen(
 
                     Spacer(modifier = Modifier.height(2.dp))
 
+                    // Line 2: Description (14sp Secondary, max 3 lines; "Add group description" if blank)
+                    val isMemberCountStr = remember(groupSubtitle) {
+                        val sub = groupSubtitle.trim().lowercase()
+                        sub.endsWith("member") || sub.endsWith("members")
+                    }
+                    val displayDescription = if (groupSubtitle == "test" || isMemberCountStr) "" else groupSubtitle
+                    Text(
+                        text = displayDescription.ifBlank { "Add group description" },
+                        fontSize = 14.sp,
+                        color = secondaryTextColor,
+                        textAlign = TextAlign.Center,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            editDescriptionInput = displayDescription
+                            showEditDescriptionDialog = true
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    // Line 3: Member Count (13sp Secondary)
                     val memberCountText = if (members.size == 1) "1 member" else "${members.size} members"
                     Text(
                         text = memberCountText,

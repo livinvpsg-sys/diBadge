@@ -39,8 +39,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.R
 import com.fabxdi.dibadge.data.HomeEntryEntity
 import com.fabxdi.dibadge.ui.theme.AppThemeMode
+import com.fabxdi.dibadge.ui.components.DiBadgeFab
 import com.fabxdi.dibadge.ui.calendar.leave.LeaveFormScreen
-import com.fabxdi.dibadge.ui.calendar.overtime.OvertimeFormScreen
+import com.fabxdi.dibadge.ui.calendar.extrahours.ExtraHoursFormScreen
 import com.fabxdi.dibadge.ui.connections.ConnectionsScreen
 import com.fabxdi.dibadge.data.InboxEntity
 import com.fabxdi.dibadge.ui.inbox.InboxScreen
@@ -224,7 +225,7 @@ fun MainDashboard(
 
     if (showOvertimeForm) {
         val allLeaves by leaveOvertimeViewModel.allLeaves.collectAsState(initial = emptyList())
-        OvertimeFormScreen(
+        ExtraHoursFormScreen(
             existingLeaves = allLeaves,
             onApply = { date, start, end, description, id ->
                 leaveOvertimeViewModel.saveOvertime(date, start, end, description, id)
@@ -251,7 +252,11 @@ fun MainDashboard(
     if (selectedEntryForChat != null) {
         ChatScreen(
             entry = selectedEntryForChat!!,
-            onBack = { selectedEntryForChat = null }
+            onBack = { selectedEntryForChat = null },
+            onOpenMyForms = {
+                selectedEntryForChat = null
+                showMyFormsScreen = true
+            }
         )
         return
     }
@@ -344,23 +349,11 @@ fun MainDashboard(
                         )
                     },
                     floatingActionButton = {
-                        Surface(
-                            modifier = Modifier
-                                .size(52.dp)
-                                .clickable { showNewGroupSheet = true },
-                            shape = RoundedCornerShape(14.dp),
-                            color = MaterialTheme.colorScheme.surface,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = "New group",
-                                    tint = MaterialTheme.colorScheme.onBackground,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-                        }
+                        DiBadgeFab(
+                            onClick = { showNewGroupSheet = true },
+                            contentDescription = "New group",
+                            modifier = Modifier.padding(end = 16.dp, bottom = 16.dp)
+                        )
                     }
                 ) { innerPadding ->
                     Box(
@@ -376,7 +369,7 @@ fun MainDashboard(
                     ) {
                         when (selectedTab) {
                             HomeTab.Home -> {
-                                val homeEntries by viewModel.allHomeEntries.collectAsState(initial = emptyList())
+                                val homeEntries by viewModel.allHomeEntries.collectAsState()
 
                                 LaunchedEffect(homeEntries) {
                                     val defaultEntries = homeEntries.filter { it.title == "diBadge Group" }
@@ -392,32 +385,27 @@ fun MainDashboard(
                                     }
                                 }
 
-                                Crossfade(
-                                    targetState = filteredEntries.isEmpty(),
-                                    animationSpec = tween(300),
-                                    label = "HomeEmptyStateCrossfade"
-                                ) { isEmpty ->
-                                    if (isEmpty) {
-                                        Box(
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (homeSearchQuery.isEmpty()) {
-                                                HomeEmptyState()
-                                            } else {
-                                                Text(
-                                                    text = "No matches found",
-                                                    fontSize = 16.sp,
-                                                    fontWeight = FontWeight.Normal,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
+                                if (filteredEntries.isEmpty()) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (homeSearchQuery.isEmpty()) {
+                                            HomeEmptyState()
+                                        } else {
+                                            Text(
+                                                text = "No matches found",
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.Normal,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
                                         }
-                                    } else {
-                                        LazyColumn(
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentPadding = PaddingValues(vertical = 8.dp)
-                                        ) {
+                                    }
+                                } else {
+                                    LazyColumn(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)
+                                    ) {
                                             items(filteredEntries.size) { index ->
                                                 val entry = filteredEntries[index]
                                                 HomeEntryCard(
@@ -441,7 +429,6 @@ fun MainDashboard(
                                             }
                                         }
                                     }
-                                }
                             }
                             HomeTab.Connections -> {}
                             HomeTab.MyTasks -> {}

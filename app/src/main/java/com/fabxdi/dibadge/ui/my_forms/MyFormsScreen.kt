@@ -7,13 +7,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FileCopy
 import androidx.compose.material.icons.outlined.Group
@@ -32,11 +33,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.R
 import com.fabxdi.dibadge.data.FormEntity
+import com.fabxdi.dibadge.ui.components.DiBadgeExtendedFab
+import com.fabxdi.dibadge.ui.components.DiBadgeFab
 import com.fabxdi.dibadge.ui.theme.AppThemeMode
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.FormViewModel
-import com.fabxdi.dibadge.viewmodel.parseQuestionsFromJson
-import com.fabxdi.dibadge.viewmodel.parseStringListFromJson
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -53,8 +54,8 @@ fun MyFormsScreen(
 
     val userForms by formViewModel.allUserForms.collectAsState(initial = emptyList())
 
-    var showFormBuilder by remember { mutableStateOf(false) }
     var formToEdit by remember { mutableStateOf<FormEntity?>(null) }
+    var showFormBuilder by remember { mutableStateOf(false) }
     var formForOptions by remember { mutableStateOf<FormEntity?>(null) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     var showAddToGroupSheet by remember { mutableStateOf(false) }
@@ -70,7 +71,6 @@ fun MyFormsScreen(
     val cardBgColor = colors.surface
     val outlineColor = colors.outline
     val dimColor = diBadgeColors.tabInactive
-    val tealAccent = diBadgeColors.accent
 
     if (showFormBuilder) {
         FormBuilderScreen(
@@ -79,7 +79,7 @@ fun MyFormsScreen(
                 showFormBuilder = false
                 formToEdit = null
             },
-            onSave = { form ->
+            onSave = {
                 showFormBuilder = false
                 formToEdit = null
                 coroutineScope.launch {
@@ -159,41 +159,29 @@ fun MyFormsScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(top = 8.dp, bottom = 120.dp)
+                    contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)
                 ) {
-                    items(userForms, key = { it.id }) { form ->
+                    itemsIndexed(userForms, key = { _, form -> form.id }) { index, form ->
                         FormRowItem(
                             form = form,
-                            formViewModel = formViewModel,
+                            showDivider = index < userForms.size - 1,
                             onClick = { formForOptions = form }
                         )
                     }
                 }
             }
 
-            // Shared App FAB Style: 52dp rounded square, 14dp corners, fill #2C2C2E, 1dp #8A8A8E outline
-            Surface(
+            DiBadgeExtendedFab(
+                text = "Create",
+                onClick = {
+                    formToEdit = null
+                    showFormBuilder = true
+                },
+                contentDescription = "Create form",
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 20.dp, bottom = 36.dp)
-                    .size(52.dp)
-                    .clickable {
-                        formToEdit = null
-                        showFormBuilder = true
-                    },
-                shape = RoundedCornerShape(14.dp),
-                color = cardBgColor,
-                border = BorderStroke(1.dp, outlineColor)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Create form",
-                        tint = primaryTextColor,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
+                    .padding(end = 16.dp, bottom = 36.dp)
+            )
         }
     }
 
@@ -217,103 +205,158 @@ fun MyFormsScreen(
                     text = selectedForm.title,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Medium,
-                    color = primaryTextColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    color = primaryTextColor
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Edit
+                // 1. Edit
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp)
+                        .height(52.dp)
                         .clickable {
-                            val form = selectedForm
                             formForOptions = null
-                            formToEdit = form
+                            formToEdit = selectedForm
                             showFormBuilder = true
                         },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Outlined.Edit, contentDescription = null, tint = secondaryTextColor, modifier = Modifier.size(22.dp))
+                    Icon(
+                        imageVector = Icons.Outlined.Edit,
+                        contentDescription = null,
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(22.dp)
+                    )
                     Spacer(modifier = Modifier.width(16.dp))
-                    Text("Edit", fontSize = 16.sp, color = primaryTextColor)
+                    Text(
+                        text = "Edit",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = primaryTextColor
+                    )
                 }
 
-                // Add to group
+                // 2. Add to group
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp)
+                        .height(52.dp)
                         .clickable {
                             showAddToGroupSheet = true
                         },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Outlined.Group, contentDescription = null, tint = secondaryTextColor, modifier = Modifier.size(22.dp))
+                    Icon(
+                        imageVector = Icons.Outlined.Group,
+                        contentDescription = null,
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(22.dp)
+                    )
                     Spacer(modifier = Modifier.width(16.dp))
-                    Text("Add to group", fontSize = 16.sp, color = primaryTextColor)
+                    Text(
+                        text = "Add to group",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = primaryTextColor
+                    )
                 }
 
-                // Duplicate
+                // 3. Duplicate
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp)
+                        .height(52.dp)
                         .clickable {
-                            val form = selectedForm
                             formForOptions = null
-                            formViewModel.duplicateUserForm(form) {
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar("Form duplicated")
-                                }
+                            formViewModel.duplicateUserForm(selectedForm)
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar("Duplicated form")
                             }
                         },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Outlined.FileCopy, contentDescription = null, tint = secondaryTextColor, modifier = Modifier.size(22.dp))
+                    Icon(
+                        imageVector = Icons.Outlined.FileCopy,
+                        contentDescription = null,
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(22.dp)
+                    )
                     Spacer(modifier = Modifier.width(16.dp))
-                    Text("Duplicate", fontSize = 16.sp, color = primaryTextColor)
+                    Text(
+                        text = "Duplicate",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = primaryTextColor
+                    )
                 }
 
-                // Delete
+                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+
+                // 4. Delete
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp)
+                        .height(52.dp)
                         .clickable {
                             showDeleteConfirmDialog = true
                         },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Outlined.Delete, contentDescription = null, tint = colors.error, modifier = Modifier.size(22.dp))
+                    Icon(
+                        imageVector = Icons.Outlined.Delete,
+                        contentDescription = null,
+                        tint = colors.error,
+                        modifier = Modifier.size(22.dp)
+                    )
                     Spacer(modifier = Modifier.width(16.dp))
-                    Text("Delete", fontSize = 16.sp, color = colors.error)
+                    Text(
+                        text = "Delete",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = colors.error
+                    )
                 }
             }
         }
     }
 
     if (showDeleteConfirmDialog && formForOptions != null) {
-        val form = formForOptions!!
+        val targetForm = formForOptions!!
         AlertDialog(
             onDismissRequest = { showDeleteConfirmDialog = false },
-            title = { Text("Delete this form?", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = primaryTextColor) },
-            text = { Text("It will be removed from your groups. Submitted forms stay.", fontSize = 14.sp, color = secondaryTextColor) },
+            title = {
+                Text(
+                    text = "Delete this form?",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = primaryTextColor
+                )
+            },
+            text = {
+                Text(
+                    text = "It will be removed from your groups. Submitted forms stay.",
+                    fontSize = 14.sp,
+                    color = secondaryTextColor
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showDeleteConfirmDialog = false
                         formForOptions = null
-                        formViewModel.deleteUserForm(form)
+                        formViewModel.deleteUserForm(targetForm)
                         coroutineScope.launch {
                             snackbarHostState.showSnackbar("Form deleted")
                         }
                     }
                 ) {
-                    Text("Delete", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = colors.error)
+                    Text(
+                        text = "Delete",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.error
+                    )
                 }
             },
             dismissButton = {
@@ -348,7 +391,7 @@ fun MyFormsScreen(
 @Composable
 fun FormRowItem(
     form: FormEntity,
-    formViewModel: FormViewModel,
+    showDivider: Boolean = true,
     onClick: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
@@ -356,24 +399,9 @@ fun FormRowItem(
     val secondaryTextColor = colors.onSurfaceVariant
     val outlineColor = colors.outline
 
-    val questions = remember(form.questionsJson) {
-        parseQuestionsFromJson(form.questionsJson)
-    }
-    val addedGroupIds = remember(form.addedGroupIdsJson) {
-        parseStringListFromJson(form.addedGroupIdsJson)
-    }
-
     val updatedDateStr = remember(form.updatedAtMs) {
         val date = Instant.ofEpochMilli(form.updatedAtMs).atZone(ZoneId.systemDefault()).toLocalDate()
         date.format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))
-    }
-
-    val groupsStr = remember(addedGroupIds) {
-        when (addedGroupIds.size) {
-            0 -> ""
-            1 -> "1 group"
-            else -> "${addedGroupIds.size} groups"
-        }
     }
 
     Column(
@@ -386,66 +414,54 @@ fun FormRowItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(68.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
+            // 44dp Rounded Icon Tile
+            Surface(
+                modifier = Modifier.size(44.dp),
+                shape = RoundedCornerShape(10.dp),
+                color = colors.surface,
+                border = BorderStroke(1.dp, outlineColor)
             ) {
-                // 44dp Rounded Icon Tile
-                Surface(
-                    modifier = Modifier.size(44.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    color = colors.surface,
-                    border = BorderStroke(1.dp, outlineColor)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_forms_outline),
-                            contentDescription = null,
-                            tint = secondaryTextColor,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(14.dp))
-
-                Column {
-                    Text(
-                        text = form.title,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = primaryTextColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "${questions.size} questions · Updated $updatedDateStr",
-                        fontSize = 13.sp,
-                        color = secondaryTextColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_forms_outline),
+                        contentDescription = null,
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
             }
 
-            if (groupsStr.isNotBlank()) {
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column {
                 Text(
-                    text = groupsStr,
+                    text = form.title,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = primaryTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Updated $updatedDateStr",
                     fontSize = 13.sp,
-                    color = secondaryTextColor
+                    color = secondaryTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
 
-        HorizontalDivider(
-            modifier = Modifier.padding(start = 58.dp),
-            thickness = 1.dp,
-            color = outlineColor
-        )
+        if (showDivider) {
+            HorizontalDivider(
+                modifier = Modifier.padding(start = 58.dp),
+                thickness = 1.dp,
+                color = outlineColor
+            )
+        }
     }
 }
 

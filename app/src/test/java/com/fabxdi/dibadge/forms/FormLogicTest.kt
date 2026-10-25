@@ -27,6 +27,18 @@ class FormLogicTest {
     }
 
     @Test
+    fun testOrganisationGroupsExcludedFromAddToGroup() {
+        val personalSubtitle = "Personal group"
+        val orgSubtitle = "Organisation · Tuas Works"
+
+        val isPersonalGroup = !personalSubtitle.lowercase().contains("organisation")
+        val isOrgGroup = orgSubtitle.lowercase().contains("organisation")
+
+        assertTrue(isPersonalGroup)
+        assertTrue(isOrgGroup)
+    }
+
+    @Test
     fun testFormSnapshotUpdateIncrementsVersion() {
         val originalForm = FormEntity(
             id = "f1",

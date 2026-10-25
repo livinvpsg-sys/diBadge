@@ -107,12 +107,6 @@ fun NewRequestSheet(
                     Text("Leave", fontSize = 16.sp, fontWeight = FontWeight.Normal, color = primaryTextColor)
                     Text("Request days off", fontSize = 13.sp, color = secondaryTextColor)
                 }
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = secondaryTextColor,
-                    modifier = Modifier.size(20.dp)
-                )
             }
 
             HorizontalDivider(thickness = 1.dp, color = outlineColor)
@@ -136,15 +130,9 @@ fun NewRequestSheet(
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Overtime", fontSize = 16.sp, fontWeight = FontWeight.Normal, color = primaryTextColor)
+                    Text("Extra hours", fontSize = 16.sp, fontWeight = FontWeight.Normal, color = primaryTextColor)
                     Text("Log extra hours", fontSize = 13.sp, color = secondaryTextColor)
                 }
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = secondaryTextColor,
-                    modifier = Modifier.size(20.dp)
-                )
             }
 
             HorizontalDivider(thickness = 1.dp, color = outlineColor)
@@ -171,12 +159,6 @@ fun NewRequestSheet(
                     Text("Claim", fontSize = 16.sp, fontWeight = FontWeight.Normal, color = primaryTextColor)
                     Text("Submit an expense", fontSize = 13.sp, color = secondaryTextColor)
                 }
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = secondaryTextColor,
-                    modifier = Modifier.size(20.dp)
-                )
             }
         }
     }
@@ -333,11 +315,11 @@ fun DayPopupSheet(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // 2. Overtime Section
+                // 2. Extra hours Section
                 if (overtimes.isNotEmpty()) {
                     val hasApproved = overtimes.any { it.status.equals("Approved", ignoreCase = true) }
                     val hasPending = overtimes.any { it.status.equals("Pending", ignoreCase = true) }
-                    val isExpanded = expandedType == "Overtime"
+                    val isExpanded = expandedType == "Extra hours"
                     val totalHrs = overtimes.sumOf {
                         val duration = Duration.between(it.startTime, it.endTime).toMinutes() / 60.0
                         if (duration < 0) duration + 24.0 else duration
@@ -348,12 +330,12 @@ fun DayPopupSheet(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(48.dp)
-                                .clickable { expandedType = if (isExpanded) null else "Overtime" },
+                                .clickable { expandedType = if (isExpanded) null else "Extra hours" },
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Overtime", fontSize = 16.sp, fontWeight = FontWeight.Normal, color = primaryTextColor)
+                                Text("Extra hours", fontSize = 16.sp, fontWeight = FontWeight.Normal, color = primaryTextColor)
                                 if (!isExpanded) {
                                     Spacer(modifier = Modifier.width(8.dp))
                                     if (hasApproved) {
@@ -593,14 +575,14 @@ fun MonthSummarySheet(
 
             HorizontalDivider(thickness = 1.dp, color = outlineColor)
 
-            // Overtime Row
+            // Extra hours Row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Overtime", fontSize = 15.sp, color = primaryTextColor, modifier = Modifier.weight(1f))
+                Text("Extra hours", fontSize = 15.sp, color = primaryTextColor, modifier = Modifier.weight(1f))
                 Text("$approvedOtHours hrs", fontSize = 14.sp, color = primaryTextColor, modifier = Modifier.weight(1f), alignment = Alignment.Center)
                 Text("$pendingOtHours hrs", fontSize = 14.sp, color = primaryTextColor, modifier = Modifier.weight(1f), alignment = Alignment.CenterEnd)
             }
