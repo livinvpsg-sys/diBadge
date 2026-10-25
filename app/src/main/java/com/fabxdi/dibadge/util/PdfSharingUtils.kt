@@ -9,6 +9,7 @@ import android.os.Environment
 import androidx.core.content.FileProvider
 import com.fabxdi.dibadge.data.FormQuestionData
 import com.fabxdi.dibadge.data.FormSigner
+import com.fabxdi.dibadge.data.FormStamp
 import com.fabxdi.dibadge.data.LeaveEntity
 import com.fabxdi.dibadge.data.OvertimeEntity
 import java.io.File
@@ -135,7 +136,8 @@ object PdfSharingUtils {
         questions: List<FormQuestionData>,
         answersMap: Map<String, String>,
         workers: List<FormSigner> = emptyList(),
-        supervisor: FormSigner? = null
+        supervisor: FormSigner? = null,
+        applicantStamp: FormStamp? = null
     ): File? {
         val pdfDocument = PdfDocument()
         val titlePaint = Paint().apply {
@@ -232,6 +234,14 @@ object PdfSharingUtils {
                 val stampStr = if (supervisor.stamp != null) {
                     "${supervisor.stamp.fullName} (${supervisor.stamp.badgeNumber}) - Signed ${supervisor.stamp.tzOffset}"
                 } else "${supervisor.name} - Pending"
+                canvas.drawText("• $stampStr", margin + 15f, yPos, answerPaint)
+                yPos += lineSpacing + 10f
+            }
+
+            if (applicantStamp != null) {
+                canvas.drawText("Applicant Signature", margin, yPos, labelPaint)
+                yPos += lineSpacing
+                val stampStr = "${applicantStamp.fullName} (${applicantStamp.badgeNumber}) - Signed ${applicantStamp.tzOffset}"
                 canvas.drawText("• $stampStr", margin + 15f, yPos, answerPaint)
                 yPos += lineSpacing
             }

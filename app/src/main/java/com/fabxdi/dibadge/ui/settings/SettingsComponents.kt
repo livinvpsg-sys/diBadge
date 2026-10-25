@@ -57,7 +57,7 @@ fun SettingsHeader(
         Spacer(modifier = Modifier.width(12.dp))
         Text(
             text = title,
-            fontSize = 20.sp,
+            fontSize = 24.sp,
             fontWeight = FontWeight.Normal,
             color = primaryTextColor
         )

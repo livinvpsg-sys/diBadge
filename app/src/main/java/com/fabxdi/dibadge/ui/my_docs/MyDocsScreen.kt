@@ -306,7 +306,7 @@ fun MyDocsScreen(
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
                             text = "My Docs",
-                            fontSize = 20.sp,
+                            fontSize = 24.sp,
                             fontWeight = FontWeight.Normal,
                             color = primaryTextColor
                         )

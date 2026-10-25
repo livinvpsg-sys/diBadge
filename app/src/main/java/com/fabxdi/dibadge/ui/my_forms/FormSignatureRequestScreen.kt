@@ -1,6 +1,5 @@
 package com.fabxdi.dibadge.ui.my_forms
 
-import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -12,7 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,7 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -30,8 +29,8 @@ import com.fabxdi.dibadge.data.FormSigner
 import com.fabxdi.dibadge.data.FormStamp
 import com.fabxdi.dibadge.data.FormSubmissionEntity
 import com.fabxdi.dibadge.data.GroupFormEntity
+import com.fabxdi.dibadge.ui.inbox.RejectRequestDialog
 import com.fabxdi.dibadge.ui.profile.parseSignatureImageBitmap
-import com.fabxdi.dibadge.ui.theme.AppThemeMode
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.UserColorUtils
 import com.fabxdi.dibadge.viewmodel.FormViewModel
@@ -72,6 +71,7 @@ fun FormSignatureRequestScreen(
 
     var currentSubmission by remember { mutableStateOf(submission) }
     var showNoSignatureDialog by remember { mutableStateOf(false) }
+    var showRejectDialog by remember { mutableStateOf(false) }
 
     val colors = MaterialTheme.colorScheme
     val diBadgeColors = DiBadgeTheme.colors
@@ -81,7 +81,7 @@ fun FormSignatureRequestScreen(
     val cardBgColor = colors.surface
     val outlineColor = colors.outline
     val tealAccent = diBadgeColors.accent
-    val dimColor = diBadgeColors.tabInactive
+    val errorColor = colors.error
 
     val formTitle = groupForm?.title ?: "Signature Request"
     val questions = remember(groupForm?.questionsJson) {
@@ -89,6 +89,16 @@ fun FormSignatureRequestScreen(
     }
     val answersMap = remember(currentSubmission.answersJson) {
         parseMapFromJson(currentSubmission.answersJson)
+    }
+
+    val isApplicant = currentSubmission.submitterUid == currentUserId
+
+    val firstSigIndex = remember(questions) {
+        questions.indexOfFirst { it.type in listOf("signatures", "single_signature", "multiple_signatures") }
+    }
+    val visibleQuestions = remember(questions, isApplicant, firstSigIndex) {
+        if (isApplicant || firstSigIndex == -1) questions
+        else questions.take(firstSigIndex)
     }
 
     val workers = remember(currentSubmission.workersJson) {
@@ -99,17 +109,10 @@ fun FormSignatureRequestScreen(
         parseSingleSignerFromJson(currentSubmission.supervisorJson)
     }
 
-    val signedWorkersCount = workers.count { it.stamp != null }
-    val allWorkersSigned = workers.isNotEmpty() && workers.all { it.stamp != null }
-
     val isUserWorker = workers.any { it.uid == currentUserId }
-    val userWorker = workers.find { it.uid == currentUserId }
-    val hasWorkerSigned = userWorker?.stamp != null
-
     val isUserSupervisor = supervisor?.uid == currentUserId
-    val hasSupervisorSigned = supervisor?.stamp != null
 
-    fun handleSignWorker() {
+    fun handleSignerSign() {
         if (profileData.signatureUrl.isBlank()) {
             showNoSignatureDialog = true
             return
@@ -123,57 +126,56 @@ fun FormSignatureRequestScreen(
 
         val stamp = FormStamp(
             signatureUrl = profileData.signatureUrl,
-            fullName = userFullName.ifBlank { submitterNameForUser(currentUser?.displayName) },
+            fullName = userFullName.ifBlank { currentUser?.displayName ?: "User" },
             badgeNumber = profileData.badgeNumber,
             signedAtMs = System.currentTimeMillis(),
             tzOffset = tzOffsetStr
         )
 
-        val updatedWorkers = workers.map { w ->
-            if (w.uid == currentUserId) w.copy(stamp = stamp) else w
+        var updatedWorkers = workers
+        var updatedSupervisor = supervisor
+
+        if (isUserWorker) {
+            updatedWorkers = workers.map { w ->
+                if (w.uid == currentUserId) w.copy(stamp = stamp, isRejected = false) else w
+            }
+        } else if (isUserSupervisor) {
+            updatedSupervisor = supervisor?.copy(stamp = stamp, isRejected = false)
         }
 
+        val checkWorkersSigned = updatedWorkers.isEmpty() || updatedWorkers.all { it.stamp != null && !it.isRejected }
+        val checkSupervisorSigned = updatedSupervisor == null || (updatedSupervisor.stamp != null && !updatedSupervisor.isRejected)
+        val newStatus = if (checkWorkersSigned && checkSupervisorSigned) "submitted" else "awaitingSignatures"
+
         val updatedSubmission = currentSubmission.copy(
-            workersJson = encodeSignersToJson(updatedWorkers)
+            workersJson = encodeSignersToJson(updatedWorkers),
+            supervisorJson = encodeSingleSignerToJson(updatedSupervisor),
+            status = newStatus,
+            submittedAtMs = if (newStatus == "submitted") System.currentTimeMillis() else currentSubmission.submittedAtMs
         )
         currentSubmission = updatedSubmission
 
         coroutineScope.launch {
-            snackbarHostState.showSnackbar("Signed")
+            val msg = if (newStatus == "submitted") "Form submitted" else "Signed"
+            snackbarHostState.showSnackbar(msg)
+            onBack()
         }
     }
 
-    fun handleSignAndSubmitSupervisor() {
-        if (!allWorkersSigned) return
-        if (profileData.signatureUrl.isBlank()) {
-            showNoSignatureDialog = true
-            return
+    fun handleReject(reason: String) {
+        if (isUserWorker) {
+            val updatedWorkers = workers.map { w ->
+                if (w.uid == currentUserId) w.copy(isRejected = true, rejectionReason = reason, handledAtMs = System.currentTimeMillis()) else w
+            }
+            currentSubmission = currentSubmission.copy(workersJson = encodeSignersToJson(updatedWorkers))
+        } else if (isUserSupervisor) {
+            val updatedSupervisor = supervisor?.copy(isRejected = true, rejectionReason = reason, handledAtMs = System.currentTimeMillis())
+            currentSubmission = currentSubmission.copy(supervisorJson = encodeSingleSignerToJson(updatedSupervisor))
         }
-
-        val tzOffsetStr = ZoneId.systemDefault().rules.getOffset(Instant.now()).id.let {
-            if (it == "Z") "GMT+0" else "GMT$it"
-        }
-
-        val userFullName = profileData.firstName + if (profileData.lastName.isNotBlank()) " ${profileData.lastName}" else ""
-
-        val stamp = FormStamp(
-            signatureUrl = profileData.signatureUrl,
-            fullName = userFullName.ifBlank { submitterNameForUser(currentUser?.displayName) },
-            badgeNumber = profileData.badgeNumber,
-            signedAtMs = System.currentTimeMillis(),
-            tzOffset = tzOffsetStr
-        )
-
-        val updatedSupervisor = supervisor?.copy(stamp = stamp)
-        val updatedSubmission = currentSubmission.copy(
-            supervisorJson = encodeSingleSignerToJson(updatedSupervisor),
-            status = "submitted",
-            submittedAtMs = System.currentTimeMillis()
-        )
-        currentSubmission = updatedSubmission
 
         coroutineScope.launch {
-            snackbarHostState.showSnackbar("Form signed and submitted")
+            snackbarHostState.showSnackbar("Request rejected")
+            onBack()
         }
     }
 
@@ -183,16 +185,68 @@ fun FormSignatureRequestScreen(
                 title = {
                     Column {
                         Text(text = formTitle, fontSize = 18.sp, fontWeight = FontWeight.Medium, color = primaryTextColor)
-                        Text(text = "${submission.submitterName} asked for your signature", fontSize = 12.sp, color = secondaryTextColor)
+                        Text(text = "Requested by ${submission.submitterName}", fontSize = 12.sp, color = secondaryTextColor)
                     }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = primaryTextColor)
+                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = primaryTextColor)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
+        },
+        bottomBar = {
+            if (!isApplicant) {
+                // Bottom bar for signer: "Accept signs with your Profile stamp", Reject & Accept
+                Surface(
+                    color = colors.surface,
+                    border = BorderStroke(1.dp, outlineColor)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 20.dp, vertical = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Accept signs with your Profile stamp",
+                            fontSize = 12.sp,
+                            color = secondaryTextColor,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Reject",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = errorColor,
+                                modifier = Modifier
+                                    .clickable { showRejectDialog = true }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+
+                            Text(
+                                text = "Accept",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = tealAccent,
+                                modifier = Modifier
+                                    .clickable { handleSignerSign() }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
+                }
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
@@ -211,8 +265,8 @@ fun FormSignatureRequestScreen(
         ) {
             FormHeaderLogosStrip(logos = logosData)
 
-            // Read-only fields
-            questions.forEachIndexed { idx, q ->
+            // Form fields above signature question for signers, or full form for applicant
+            visibleQuestions.forEachIndexed { idx, q ->
                 val ans = answersMap[q.id]?.ifBlank { "N/A" } ?: "N/A"
                 Surface(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
@@ -228,152 +282,93 @@ fun FormSignatureRequestScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            // Signer states rendered ONLY for Applicant
+            if (isApplicant) {
+                Spacer(modifier = Modifier.height(16.dp))
 
-            // Workers Block
-            Text("Workers", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = primaryTextColor)
-            Spacer(modifier = Modifier.height(8.dp))
+                Text("Workers", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = primaryTextColor)
+                Spacer(modifier = Modifier.height(8.dp))
 
-            workers.forEach { worker ->
-                val isYou = worker.uid == currentUserId
-                val displayName = if (isYou) "You" else worker.name
+                workers.forEach { worker ->
+                    val isYou = worker.uid == currentUserId
+                    val displayName = if (isYou) "${worker.name} (You)" else worker.name
 
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    color = cardBgColor,
-                    border = BorderStroke(1.dp, outlineColor)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp).fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        val avatarColor = remember(worker.name) { UserColorUtils.getColorForName(worker.name) }
-                        Surface(modifier = Modifier.size(36.dp), shape = CircleShape, color = avatarColor) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(worker.name.take(1).uppercase(), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(displayName, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = primaryTextColor)
-                            Spacer(modifier = Modifier.height(2.dp))
-                            if (worker.stamp != null) {
-                                val dateStr = remember(worker.stamp.signedAtMs) {
-                                    val dt = Instant.ofEpochMilli(worker.stamp.signedAtMs).atZone(ZoneId.systemDefault()).toLocalDateTime()
-                                    dt.format(DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a", Locale.getDefault()))
+                    if (worker.isRejected) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            color = cardBgColor,
+                            border = BorderStroke(1.dp, errorColor)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text("$displayName · Rejected", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = errorColor)
+                                if (worker.rejectionReason.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text("Reason: ${worker.rejectionReason}", fontSize = 12.sp, color = secondaryTextColor)
                                 }
-                                Text("${worker.stamp.fullName} · ${worker.stamp.badgeNumber} · $dateStr ${worker.stamp.tzOffset}", fontSize = 12.sp, color = secondaryTextColor)
-                            } else {
-                                Text("Signature pending", fontSize = 12.sp, color = secondaryTextColor)
                             }
                         }
+                    } else {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            color = cardBgColor,
+                            border = BorderStroke(1.dp, outlineColor)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val avatarColor = remember(worker.name) { UserColorUtils.getColorForName(worker.name) }
+                                Surface(modifier = Modifier.size(36.dp), shape = CircleShape, color = avatarColor) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(worker.name.take(1).uppercase(), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    }
+                                }
 
-                        if (worker.stamp != null && worker.stamp.signatureUrl.isNotBlank()) {
-                            val sigBitmap = remember(worker.stamp.signatureUrl) { parseSignatureImageBitmap(worker.stamp.signatureUrl) }
-                            if (sigBitmap != null) {
-                                Image(
-                                    bitmap = sigBitmap,
-                                    contentDescription = "Stamp",
-                                    modifier = Modifier.size(width = 72.dp, height = 36.dp).clip(RoundedCornerShape(4.dp))
-                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(displayName, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = primaryTextColor)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    if (worker.stamp != null) {
+                                        val dateStr = remember(worker.stamp.signedAtMs) {
+                                            val dt = Instant.ofEpochMilli(worker.stamp.signedAtMs).atZone(ZoneId.systemDefault()).toLocalDateTime()
+                                            dt.format(DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a", Locale.getDefault()))
+                                        }
+                                        Text("${worker.stamp.fullName} · ${worker.stamp.badgeNumber} · $dateStr ${worker.stamp.tzOffset}", fontSize = 12.sp, color = secondaryTextColor)
+                                    } else {
+                                        Text("$displayName · Waiting", fontSize = 12.sp, color = secondaryTextColor)
+                                    }
+                                }
+
+                                if (worker.stamp != null && worker.stamp.signatureUrl.isNotBlank()) {
+                                    val sigBitmap = remember(worker.stamp.signatureUrl) { parseSignatureImageBitmap(worker.stamp.signatureUrl) }
+                                    if (sigBitmap != null) {
+                                        Image(
+                                            bitmap = sigBitmap,
+                                            contentDescription = "Stamp",
+                                            modifier = Modifier.size(width = 72.dp, height = 36.dp).clip(RoundedCornerShape(4.dp))
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Supervisor Block
-            Text("Supervisor", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = primaryTextColor)
-            Spacer(modifier = Modifier.height(8.dp))
-
-            if (supervisor != null) {
-                val isYou = supervisor.uid == currentUserId
-                val displayName = if (isYou) "You" else supervisor.name
-
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    color = cardBgColor,
-                    border = BorderStroke(1.dp, outlineColor)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp).fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        val avatarColor = remember(supervisor.name) { UserColorUtils.getColorForName(supervisor.name) }
-                        Surface(modifier = Modifier.size(36.dp), shape = CircleShape, color = avatarColor) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(supervisor.name.take(1).uppercase(), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(displayName, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = primaryTextColor)
-                            Spacer(modifier = Modifier.height(2.dp))
-                            if (supervisor.stamp != null) {
-                                val dateStr = remember(supervisor.stamp.signedAtMs) {
-                                    val dt = Instant.ofEpochMilli(supervisor.stamp.signedAtMs).atZone(ZoneId.systemDefault()).toLocalDateTime()
-                                    dt.format(DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a", Locale.getDefault()))
-                                }
-                                Text("${supervisor.stamp.fullName} · ${supervisor.stamp.badgeNumber} · $dateStr ${supervisor.stamp.tzOffset}", fontSize = 12.sp, color = secondaryTextColor)
-                            } else if (!allWorkersSigned) {
-                                Text("Opens after all workers have signed ($signedWorkersCount of ${workers.size})", fontSize = 12.sp, color = secondaryTextColor)
-                            } else {
-                                Text("Ready to sign", fontSize = 12.sp, color = secondaryTextColor)
-                            }
-                        }
-
-                        if (supervisor.stamp != null && supervisor.stamp.signatureUrl.isNotBlank()) {
-                            val sigBitmap = remember(supervisor.stamp.signatureUrl) { parseSignatureImageBitmap(supervisor.stamp.signatureUrl) }
-                            if (sigBitmap != null) {
-                                Image(
-                                    bitmap = sigBitmap,
-                                    contentDescription = "Stamp",
-                                    modifier = Modifier.size(width = 72.dp, height = 36.dp).clip(RoundedCornerShape(4.dp))
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Action Buttons
-            if (isUserWorker && !hasWorkerSigned) {
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "Sign",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = tealAccent,
-                        modifier = Modifier
-                            .clickable { handleSignWorker() }
-                            .padding(horizontal = 24.dp, vertical = 12.dp)
-                    )
-                }
-            } else if (isUserSupervisor && !hasSupervisorSigned) {
-                val canSubmit = allWorkersSigned
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "Sign and submit",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (canSubmit) tealAccent else dimColor.copy(alpha = 0.40f),
-                        modifier = Modifier
-                            .clickable(enabled = canSubmit) { handleSignAndSubmitSupervisor() }
-                            .padding(horizontal = 24.dp, vertical = 12.dp)
-                    )
                 }
             }
         }
+    }
+
+    if (showRejectDialog) {
+        RejectRequestDialog(
+            requesterName = submission.submitterName,
+            onConfirmReject = { reason ->
+                showRejectDialog = false
+                handleReject(reason)
+            },
+            onDismiss = { showRejectDialog = false }
+        )
     }
 
     if (showNoSignatureDialog) {
@@ -397,93 +392,5 @@ fun FormSignatureRequestScreen(
             containerColor = cardBgColor,
             shape = RoundedCornerShape(20.dp)
         )
-    }
-}
-
-private fun submitterNameForUser(displayName: String?): String {
-    return displayName?.ifBlank { null } ?: "Livin Varghese"
-}
-
-// ---------------------------------------------------------------------------
-// PREVIEWS
-// ---------------------------------------------------------------------------
-
-@Preview(name = "Signature Request Worker Ready - Light", widthDp = 412, showBackground = true)
-@Composable
-fun FormSignatureRequestWorkerReadyLightPreview() {
-    val sampleSubmission = FormSubmissionEntity(
-        id = "sub1",
-        groupId = "g1",
-        formId = "f1",
-        submitterUid = "owner",
-        submitterName = "Project Admin",
-        status = "awaitingSignatures",
-        workersJson = "[{\"uid\":\"me\",\"name\":\"Livin Varghese\",\"isSupervisor\":false}]",
-        supervisorJson = "{\"uid\":\"sup1\",\"name\":\"John Director\",\"isSupervisor\":true}"
-    )
-
-    DiBadgeTheme(themeMode = AppThemeMode.LIGHT) {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            FormSignatureRequestScreen(
-                submission = sampleSubmission,
-                groupForm = null,
-                onBack = {}
-            )
-        }
-    }
-}
-
-@Preview(name = "Signature Request Supervisor Waiting - Light", widthDp = 412, showBackground = true)
-@Composable
-fun FormSignatureRequestSupervisorWaitingLightPreview() {
-    val sampleSubmission = FormSubmissionEntity(
-        id = "sub2",
-        groupId = "g1",
-        formId = "f1",
-        submitterUid = "owner",
-        submitterName = "Project Admin",
-        status = "awaitingSignatures",
-        workersJson = "[{\"uid\":\"w1\",\"name\":\"Worker One\",\"isSupervisor\":false}]",
-        supervisorJson = "{\"uid\":\"me\",\"name\":\"Livin Varghese\",\"isSupervisor\":true}"
-    )
-
-    DiBadgeTheme(themeMode = AppThemeMode.LIGHT) {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            FormSignatureRequestScreen(
-                submission = sampleSubmission,
-                groupForm = null,
-                onBack = {}
-            )
-        }
-    }
-}
-
-@Preview(
-    name = "Signature Request - Dark",
-    widthDp = 412,
-    showBackground = true,
-    uiMode = Configuration.UI_MODE_NIGHT_YES
-)
-@Composable
-fun FormSignatureRequestDarkPreview() {
-    val sampleSubmission = FormSubmissionEntity(
-        id = "sub3",
-        groupId = "g1",
-        formId = "f1",
-        submitterUid = "owner",
-        submitterName = "Project Admin",
-        status = "awaitingSignatures",
-        workersJson = "[{\"uid\":\"w1\",\"name\":\"Worker One\",\"isSupervisor\":false}]",
-        supervisorJson = "{\"uid\":\"sup1\",\"name\":\"John Director\",\"isSupervisor\":true}"
-    )
-
-    DiBadgeTheme(themeMode = AppThemeMode.DARK) {
-        Surface(color = MaterialTheme.colorScheme.background) {
-            FormSignatureRequestScreen(
-                submission = sampleSubmission,
-                groupForm = null,
-                onBack = {}
-            )
-        }
     }
 }

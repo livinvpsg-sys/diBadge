@@ -453,6 +453,33 @@ fun parseMapFromJson(jsonStr: String): Map<String, String> {
     return map
 }
 
+fun encodeStampToJson(stamp: FormStamp?): String {
+    if (stamp == null) return "{}"
+    val obj = JSONObject()
+    obj.put("signatureUrl", stamp.signatureUrl)
+    obj.put("fullName", stamp.fullName)
+    obj.put("badgeNumber", stamp.badgeNumber)
+    obj.put("signedAtMs", stamp.signedAtMs)
+    obj.put("tzOffset", stamp.tzOffset)
+    return obj.toString()
+}
+
+fun parseStampFromJson(jsonStr: String): FormStamp? {
+    if (jsonStr.isBlank() || jsonStr == "{}") return null
+    return try {
+        val obj = JSONObject(jsonStr)
+        FormStamp(
+            signatureUrl = obj.optString("signatureUrl"),
+            fullName = obj.optString("fullName"),
+            badgeNumber = obj.optString("badgeNumber"),
+            signedAtMs = obj.optLong("signedAtMs", System.currentTimeMillis()),
+            tzOffset = obj.optString("tzOffset", "GMT+8")
+        )
+    } catch (e: Exception) {
+        null
+    }
+}
+
 fun encodeSignersToJson(signers: List<FormSigner>): String {
     val array = JSONArray()
     for (s in signers) {
@@ -461,6 +488,9 @@ fun encodeSignersToJson(signers: List<FormSigner>): String {
         obj.put("name", s.name)
         obj.put("groupId", s.groupId)
         obj.put("isSupervisor", s.isSupervisor)
+        obj.put("isRejected", s.isRejected)
+        obj.put("rejectionReason", s.rejectionReason)
+        obj.put("handledAtMs", s.handledAtMs)
         if (s.stamp != null) {
             val stampObj = JSONObject()
             stampObj.put("signatureUrl", s.stamp.signatureUrl)
@@ -486,6 +516,9 @@ fun parseSignersFromJson(jsonStr: String): List<FormSigner> {
             val name = obj.optString("name")
             val groupId = obj.optString("groupId")
             val isSupervisor = obj.optBoolean("isSupervisor")
+            val isRejected = obj.optBoolean("isRejected", false)
+            val rejectionReason = obj.optString("rejectionReason", "")
+            val handledAtMs = obj.optLong("handledAtMs", 0L)
 
             var stamp: FormStamp? = null
             val stampObj = obj.optJSONObject("stamp")
@@ -499,7 +532,18 @@ fun parseSignersFromJson(jsonStr: String): List<FormSigner> {
                 )
             }
 
-            list.add(FormSigner(uid = uid, name = name, groupId = groupId, isSupervisor = isSupervisor, stamp = stamp))
+            list.add(
+                FormSigner(
+                    uid = uid,
+                    name = name,
+                    groupId = groupId,
+                    isSupervisor = isSupervisor,
+                    stamp = stamp,
+                    isRejected = isRejected,
+                    rejectionReason = rejectionReason,
+                    handledAtMs = handledAtMs
+                )
+            )
         }
     } catch (e: Exception) {}
     return list

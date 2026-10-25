@@ -96,8 +96,8 @@ fun MyFormsScreen(
                 title = {
                     Text(
                         text = "My Forms",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Medium,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Normal,
                         color = primaryTextColor
                     )
                 },

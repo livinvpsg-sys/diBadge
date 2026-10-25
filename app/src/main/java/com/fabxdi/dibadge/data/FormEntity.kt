@@ -65,6 +65,7 @@ data class FormSubmissionEntity(
     val status: String = "submitted", // "draft", "awaitingSignatures", "submitted", "cancelled"
     val workersJson: String = "[]", // List of FormSigner
     val supervisorJson: String = "{}", // FormSigner
+    val applicantStampJson: String = "{}", // FormStamp
     val isComplete: Boolean = true,
     val submittedAtMs: Long = System.currentTimeMillis()
 )
@@ -84,7 +85,10 @@ data class FormSigner(
     val name: String,
     val groupId: String = "",
     val isSupervisor: Boolean = false,
-    val stamp: FormStamp? = null
+    val stamp: FormStamp? = null,
+    val isRejected: Boolean = false,
+    val rejectionReason: String = "",
+    val handledAtMs: Long = 0L
 )
 
 data class FormStamp(

@@ -228,7 +228,7 @@ fun CalendarScreen(
                         ) {
                             Text(
                                 text = currentYearMonth.format(monthYearFormatter),
-                                fontSize = 20.sp,
+                                fontSize = 24.sp,
                                 fontWeight = FontWeight.Normal,
                                 color = primaryTextColor
                             )
