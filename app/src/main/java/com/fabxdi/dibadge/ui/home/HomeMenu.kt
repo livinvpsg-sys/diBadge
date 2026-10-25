@@ -54,6 +54,7 @@ fun HomeMenu(
     onMyActivityClick: () -> Unit = {},
     onCalendarClick: () -> Unit = {},
     onMyDocsClick: () -> Unit = {},
+    onFormsClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
     onSignOut: () -> Unit = {}
 ) {
@@ -82,7 +83,8 @@ fun HomeMenu(
         MenuRowData("Profile", "Profile", iconVector = Icons.Outlined.Person),
         MenuRowData("My Activity", "My Activity", iconRes = R.drawable.ic_my_activity),
         MenuRowData("Calendar", "Calendar", iconVector = Icons.Outlined.CalendarMonth),
-        MenuRowData("My Docs", "My Docs", iconVector = Icons.Outlined.Description)
+        MenuRowData("My Docs", "My Docs", iconVector = Icons.Outlined.Description),
+        MenuRowData("My Forms", "My Forms", iconRes = R.drawable.ic_forms_outline)
     )
 
     val bottomNavGroup = listOf(
@@ -215,6 +217,7 @@ fun HomeMenu(
                                     "My Activity" -> onMyActivityClick()
                                     "Calendar" -> onCalendarClick()
                                     "My Docs" -> onMyDocsClick()
+                                    "My Forms", "Forms" -> onFormsClick()
                                 }
                             }
                         )

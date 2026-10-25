@@ -51,6 +51,7 @@ import com.fabxdi.dibadge.ui.home.QrScannerScreen
 import com.fabxdi.dibadge.ui.home.MyQrCodeScreen
 import com.fabxdi.dibadge.ui.my_activity.MyActivityScreen
 import com.fabxdi.dibadge.ui.my_docs.MyDocsScreen
+import com.fabxdi.dibadge.ui.my_forms.MyFormsScreen
 import com.fabxdi.dibadge.ui.my_tasks.MyTasksScreen
 import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
 import com.fabxdi.dibadge.ui.profile.ProfileScreen
@@ -116,6 +117,7 @@ fun MainDashboard(
     var showReminderForm by remember { mutableStateOf(false) }
     var showMyActivityScreen by remember { mutableStateOf(false) }
     var showMyDocsScreen by remember { mutableStateOf(false) }
+    var showMyFormsScreen by remember { mutableStateOf(false) }
     var showProfileScreen by remember { mutableStateOf(false) }
     var showSettingsScreen by remember { mutableStateOf(false) }
     var showQrScannerScreen by remember { mutableStateOf(false) }
@@ -143,6 +145,13 @@ fun MainDashboard(
     if (showMyDocsScreen) {
         MyDocsScreen(
             onBack = { showMyDocsScreen = false }
+        )
+        return
+    }
+
+    if (showMyFormsScreen) {
+        MyFormsScreen(
+            onBack = { showMyFormsScreen = false }
         )
         return
     }
@@ -300,6 +309,7 @@ fun MainDashboard(
                         onCalendarClick = onCalendarTabClick,
                         onMyActivityClick = { showMyActivityScreen = true },
                         onMyDocsClick = { showMyDocsScreen = true },
+                        onFormsClick = { showMyFormsScreen = true },
                         onSettingsClick = { showSettingsScreen = true },
                         onSignOut = onSignOut
                     )

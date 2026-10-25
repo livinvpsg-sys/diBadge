@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -81,8 +82,11 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.R
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.tooling.preview.Preview
 import com.fabxdi.dibadge.data.HomeEntryEntity
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatMessage
+import com.fabxdi.dibadge.ui.my_forms.GroupFormsScreen
+import com.fabxdi.dibadge.ui.theme.AppThemeMode
 import com.fabxdi.dibadge.viewmodel.GroupFolderFile
 import com.fabxdi.dibadge.viewmodel.GroupMediaItem
 import com.fabxdi.dibadge.util.FilePickerUtils
@@ -161,6 +165,8 @@ fun ChatDetailsScreen(
     var showMembersSheet by remember { mutableStateOf(false) }
     var showGroupsSheet by remember { mutableStateOf(false) }
     var showTasksSheet by remember { mutableStateOf(false) }
+    var showGroupFormsScreen by remember { mutableStateOf(false) }
+    var showGroupFoldersScreen by remember { mutableStateOf(false) }
     var isMuted by remember { mutableStateOf(false) }
     var showMuteSheet by remember { mutableStateOf(false) }
     var showClearChatDialog by remember { mutableStateOf(false) }
@@ -210,6 +216,38 @@ fun ChatDetailsScreen(
             }
         }
     )
+
+    val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: "me"
+    val resolvedUserRole = remember(members, currentUserId, isAdmin) {
+        resolveUserRole(
+            members = members,
+            currentUserId = currentUserId,
+            isAdmin = isAdmin
+        )
+    }
+    val canUserManage = remember(resolvedUserRole) {
+        canUserAssignTasks(resolvedUserRole)
+    }
+
+    if (showGroupFormsScreen) {
+        GroupFormsScreen(
+            groupId = entry.id.toString(),
+            groupName = groupName,
+            canUserManage = canUserManage,
+            onBack = { showGroupFormsScreen = false }
+        )
+        return
+    }
+
+    if (showGroupFoldersScreen) {
+        GroupFoldersScreen(
+            groupId = entry.id.toString(),
+            groupName = groupName,
+            canUserManage = canUserManage,
+            onBack = { showGroupFoldersScreen = false }
+        )
+        return
+    }
 
     Scaffold(
         topBar = {
@@ -471,26 +509,13 @@ fun ChatDetailsScreen(
 
                     Spacer(modifier = Modifier.height(2.dp))
 
-                    // Description (14sp Secondary, max 3 lines)
-                    val isMemberCount = remember(groupSubtitle) {
-                        val sub = groupSubtitle.trim().lowercase()
-                        sub.endsWith("member") || sub.endsWith("members")
-                    }
-                    val displaySubtitle = if (groupSubtitle == "test" || isMemberCount) "" else groupSubtitle
+                    val memberCountText = if (members.size == 1) "1 member" else "${members.size} members"
                     Text(
-                        text = displaySubtitle.ifBlank { "Add group description" },
-                        fontSize = 14.sp,
+                        text = memberCountText,
+                        fontSize = 13.sp,
                         color = secondaryTextColor,
                         textAlign = TextAlign.Center,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            editDescriptionInput = displaySubtitle
-                            showEditDescriptionDialog = true
-                        }
+                        modifier = Modifier.clickable { showMembersSheet = true }
                     )
                 }
 
@@ -568,291 +593,7 @@ fun ChatDetailsScreen(
                     HorizontalDivider(thickness = 1.dp, color = outlineColor)
                 }
 
-                // IF AN ACTION ICON IS SELECTED: SHOW CARD LIST ABOVE MEDIA
-                if (selectedActionTab != null) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            when (selectedActionTab) {
-                                1 -> {
-                                    // TAB 1: Members
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "Members (${members.size})",
-                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-
-                                        TextButton(onClick = { showAddMemberDialog = true }) {
-                                            Icon(Icons.Default.PersonAdd, contentDescription = "Add Member", modifier = Modifier.size(18.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("Add")
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(12.dp))
-
-                                    members.forEach { member ->
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(vertical = 8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Surface(
-                                                modifier = Modifier.size(36.dp),
-                                                shape = CircleShape,
-                                                color = UserColorUtils.getColorForName(member.displayName)
-                                            ) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    Text(
-                                                        text = member.displayName.take(1).uppercase(),
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = Color.White
-                                                    )
-                                                }
-                                            }
-
-                                            Spacer(modifier = Modifier.width(12.dp))
-
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = member.displayName,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                                if (member.email.isNotBlank() || member.phoneNumber.isNotBlank()) {
-                                                    Text(
-                                                        text = member.email.ifBlank { member.phoneNumber },
-                                                        fontSize = 12.sp,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                                    }
-                                }
-
-                                2 -> {
-                                    // TAB 2: Groups (Connections)
-                                    Text(
-                                        text = "Connected Groups",
-                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-
-                                    Spacer(modifier = Modifier.height(12.dp))
-
-                                    OutlinedTextField(
-                                        value = groupCodeSearchQuery,
-                                        onValueChange = {
-                                            groupCodeSearchQuery = it
-                                            detailsViewModel.lookupGroupCode(it)
-                                        },
-                                        placeholder = { Text("Paste group code (e.g. ABCD-1234)") },
-                                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        singleLine = true,
-                                        shape = RoundedCornerShape(12.dp)
-                                    )
-
-                                    if (codeLookupResult != null) {
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Surface(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(12.dp).fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Column(modifier = Modifier.weight(1f)) {
-                                                    Text(
-                                                        text = codeLookupResult!!.otherEntityName,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = MaterialTheme.colorScheme.onSurface
-                                                    )
-                                                    Text(
-                                                        text = "Type: ${codeLookupResult!!.otherEntityType}",
-                                                        fontSize = 12.sp,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                    )
-                                                }
-
-                                                Button(
-                                                    onClick = {
-                                                        detailsViewModel.sendConnectRequest(
-                                                            targetEntityId = codeLookupResult!!.otherEntityId,
-                                                            targetEntityType = codeLookupResult!!.otherEntityType,
-                                                            onDone = {
-                                                                groupCodeSearchQuery = ""
-                                                                Toast.makeText(context, "Connect request sent!", Toast.LENGTH_SHORT).show()
-                                                            }
-                                                        )
-                                                    }
-                                                ) {
-                                                    Text("Connect")
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    if (pendingRequests.isNotEmpty()) {
-                                        Spacer(modifier = Modifier.height(16.dp))
-                                        Text(
-                                            text = "Pending Incoming Requests",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-
-                                        pendingRequests.forEach { req ->
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    text = req.otherEntityName,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    modifier = Modifier.weight(1f)
-                                                )
-
-                                                Row {
-                                                    IconButton(onClick = { detailsViewModel.updateConnectionStatus(req.connectionId, "accepted") }) {
-                                                        Icon(Icons.Default.Check, contentDescription = "Accept", tint = MaterialTheme.colorScheme.primary)
-                                                    }
-                                                    IconButton(onClick = { detailsViewModel.updateConnectionStatus(req.connectionId, "declined") }) {
-                                                        Icon(Icons.Default.Close, contentDescription = "Decline", tint = MaterialTheme.colorScheme.error)
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    if (acceptedConnections.isEmpty()) {
-                                        Text(
-                                            text = "No connected groups yet.",
-                                            fontSize = 13.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    } else {
-                                        acceptedConnections.forEach { conn ->
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    text = conn.otherEntityName,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = MaterialTheme.colorScheme.onSurface,
-                                                    modifier = Modifier.weight(1f)
-                                                )
-
-                                                IconButton(onClick = { detailsViewModel.updateConnectionStatus(conn.connectionId, "removed") }) {
-                                                    Icon(Icons.Default.Delete, contentDescription = "Remove", tint = MaterialTheme.colorScheme.error)
-                                                }
-                                            }
-                                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                                        }
-                                    }
-                                }
-
-                                3 -> {
-                                    // TAB 3: Forms
-                                    Text(
-                                        text = "Forms",
-                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Text(
-                                        text = "Organization connected forms will appear here once connected.",
-                                        fontSize = 13.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-
-                                4 -> {
-                                    // TAB 4: Folders
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "Folders (${files.size})",
-                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-
-                                        Button(onClick = { filePickerLauncher.launch("*/*") }) {
-                                            Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(18.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("Upload")
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(12.dp))
-
-                                    if (files.isEmpty()) {
-                                        Text(
-                                            text = "No files uploaded to this group folder yet.",
-                                            fontSize = 13.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    } else {
-                                        files.forEach { file ->
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .clickable {
-                                                        FilePickerUtils.openFile(context, Uri.parse(file.downloadUrl))
-                                                    }
-                                                    .padding(vertical = 8.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.InsertDriveFile,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(24.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(12.dp))
-                                                Text(
-                                                    text = file.name,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = MaterialTheme.colorScheme.onSurface,
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                            }
-                                            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // THIN DIVIDER LINE AFTER ACTION ICONS
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-                    thickness = 1.dp,
-                    modifier = Modifier.padding(vertical = 2.dp)
-                )
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // MEDIA CONTENT (ALWAYS VISIBLE BELOW DIVIDER LINE)
                 Box(
@@ -1086,8 +827,8 @@ fun ChatDetailsScreen(
                     }
                 }
             }
-        } // end Box
-    } // end else isLoading
+        }
+    }
 
     // Edit Name Popup
     EditNameDialog(
@@ -1129,18 +870,6 @@ fun ChatDetailsScreen(
         )
     }
 
-    val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: "me"
-    val resolvedUserRole = remember(members, currentUserId, isAdmin) {
-        resolveUserRole(
-            members = members,
-            currentUserId = currentUserId,
-            isAdmin = isAdmin
-        )
-    }
-    val canUserManage = remember(resolvedUserRole) {
-        canUserAssignTasks(resolvedUserRole)
-    }
-
     if (showHeaderDropdown) {
         ChatDetailsMenuSheet(
             isMuted = isMuted,
@@ -1149,9 +878,9 @@ fun ChatDetailsScreen(
             isConnectedToOrg = acceptedConnections.isNotEmpty(),
             onSelectMembers = { showMembersSheet = true },
             onSelectGroups = { showGroupsSheet = true },
-            onSelectForms = {},
+            onSelectForms = { showGroupFormsScreen = true },
             onSelectTasks = { showTasksSheet = true },
-            onSelectFolders = {},
+            onSelectFolders = { showGroupFoldersScreen = true },
             onSelectMute = { showMuteSheet = true },
             onSelectUnmute = {
                 isMuted = false
@@ -1400,4 +1129,52 @@ fun ChatDetailsScreen(
     )
 }
 }
+}
+
+// ---------------------------------------------------------------------------
+// PREVIEWS
+// ---------------------------------------------------------------------------
+
+@Preview(name = "Chat Details Media - Light", widthDp = 412, showBackground = true)
+@Composable
+fun ChatDetailsScreenMediaLightPreview() {
+    DiBadgeTheme(themeMode = AppThemeMode.LIGHT) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            ChatDetailsScreen(
+                entry = HomeEntryEntity(id = 1, title = "Site Alpha", subtitle = "Project group", initials = "SA"),
+                onBack = {}
+            )
+        }
+    }
+}
+
+@Preview(name = "Chat Details Docs - Light", widthDp = 412, showBackground = true)
+@Composable
+fun ChatDetailsScreenDocsLightPreview() {
+    DiBadgeTheme(themeMode = AppThemeMode.LIGHT) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            ChatDetailsScreen(
+                entry = HomeEntryEntity(id = 1, title = "Site Alpha", subtitle = "Project group", initials = "SA"),
+                onBack = {}
+            )
+        }
+    }
+}
+
+@Preview(
+    name = "Chat Details - Dark",
+    widthDp = 412,
+    showBackground = true,
+    uiMode = Configuration.UI_MODE_NIGHT_YES
+)
+@Composable
+fun ChatDetailsScreenDarkPreview() {
+    DiBadgeTheme(themeMode = AppThemeMode.DARK) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            ChatDetailsScreen(
+                entry = HomeEntryEntity(id = 1, title = "Site Alpha", subtitle = "Project group", initials = "SA"),
+                onBack = {}
+            )
+        }
+    }
 }

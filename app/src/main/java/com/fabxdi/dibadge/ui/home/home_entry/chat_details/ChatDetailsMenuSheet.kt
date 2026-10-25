@@ -1,5 +1,6 @@
 package com.fabxdi.dibadge.ui.home.home_entry.chat_details
 
+import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -21,9 +22,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.R
+import com.fabxdi.dibadge.ui.theme.AppThemeMode
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -146,32 +149,30 @@ fun ChatDetailsMenuSheet(
                 }
             }
 
-            // 3. Forms (Only shown when group is connected to an organisation)
-            if (isConnectedToOrg) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .clickable {
-                            onDismiss()
-                            onSelectForms()
-                        },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_forms_outline),
-                        contentDescription = null,
-                        tint = secondaryTextColor,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text(
-                        text = "Forms",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = primaryTextColor
-                    )
-                }
+            // 3. Forms (Always shown for every group)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .clickable {
+                        onDismiss()
+                        onSelectForms()
+                    },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_forms_outline),
+                    contentDescription = null,
+                    tint = secondaryTextColor,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = "Forms",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = primaryTextColor
+                )
             }
 
             // 4. Tasks
@@ -440,6 +441,90 @@ fun MuteChoiceSheet(
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 )
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PREVIEWS
+// ---------------------------------------------------------------------------
+
+@Preview(name = "Three-dot Sheet Owner with Invitation - Light", widthDp = 412, showBackground = true)
+@Composable
+fun ChatDetailsMenuSheetOwnerPreview() {
+    DiBadgeTheme(themeMode = AppThemeMode.LIGHT) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            ChatDetailsMenuSheet(
+                isMuted = false,
+                canUserManage = true,
+                waitingInvitesCount = 2,
+                isConnectedToOrg = false,
+                onSelectMembers = {},
+                onSelectGroups = {},
+                onSelectForms = {},
+                onSelectTasks = {},
+                onSelectFolders = {},
+                onSelectMute = {},
+                onSelectUnmute = {},
+                onSelectClearChat = {},
+                onSelectGroupCode = {},
+                onDismiss = {}
+            )
+        }
+    }
+}
+
+@Preview(name = "Three-dot Sheet Member - Light", widthDp = 412, showBackground = true)
+@Composable
+fun ChatDetailsMenuSheetMemberPreview() {
+    DiBadgeTheme(themeMode = AppThemeMode.LIGHT) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            ChatDetailsMenuSheet(
+                isMuted = false,
+                canUserManage = false,
+                waitingInvitesCount = 0,
+                isConnectedToOrg = false,
+                onSelectMembers = {},
+                onSelectGroups = {},
+                onSelectForms = {},
+                onSelectTasks = {},
+                onSelectFolders = {},
+                onSelectMute = {},
+                onSelectUnmute = {},
+                onSelectClearChat = {},
+                onSelectGroupCode = {},
+                onDismiss = {}
+            )
+        }
+    }
+}
+
+@Preview(
+    name = "Three-dot Sheet Owner - Dark",
+    widthDp = 412,
+    showBackground = true,
+    uiMode = Configuration.UI_MODE_NIGHT_YES
+)
+@Composable
+fun ChatDetailsMenuSheetDarkPreview() {
+    DiBadgeTheme(themeMode = AppThemeMode.DARK) {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            ChatDetailsMenuSheet(
+                isMuted = false,
+                canUserManage = true,
+                waitingInvitesCount = 0,
+                isConnectedToOrg = false,
+                onSelectMembers = {},
+                onSelectGroups = {},
+                onSelectForms = {},
+                onSelectTasks = {},
+                onSelectFolders = {},
+                onSelectMute = {},
+                onSelectUnmute = {},
+                onSelectClearChat = {},
+                onSelectGroupCode = {},
+                onDismiss = {}
+            )
         }
     }
 }
