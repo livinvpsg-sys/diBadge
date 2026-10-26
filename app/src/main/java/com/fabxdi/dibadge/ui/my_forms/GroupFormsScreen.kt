@@ -115,7 +115,7 @@ fun GroupFormsScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = if (submissionsList.isEmpty()) "Submitted forms" else "Submitted forms (${submissionsList.size})",
+                        text = "Forms (${submissionsList.size})",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Medium,
                         color = primaryTextColor
@@ -189,10 +189,7 @@ fun GroupFormsScreen(
                             dt.format(DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a", Locale.getDefault()))
                         }
 
-                        val workersList = remember(sub.workersJson) { parseSignersFromJson(sub.workersJson) }
-                        val supervisorSigner = remember(sub.supervisorJson) { parseSingleSignerFromJson(sub.supervisorJson) }
-                        val totalSigners = workersList.size + (if (supervisorSigner != null) 1 else 0)
-                        val signedCount = workersList.count { it.stamp != null } + (if (supervisorSigner?.stamp != null) 1 else 0)
+
 
                         Column(
                             modifier = Modifier
@@ -232,9 +229,9 @@ fun GroupFormsScreen(
                                     )
                                 }
 
-                                if (sub.status == "awaitingSignatures" && totalSigners > 0) {
+                                if (sub.status == "awaitingSignatures") {
                                     Text(
-                                        text = "$signedCount of $totalSigners signed",
+                                        text = "In progress",
                                         fontSize = 13.sp,
                                         color = secondaryTextColor
                                     )

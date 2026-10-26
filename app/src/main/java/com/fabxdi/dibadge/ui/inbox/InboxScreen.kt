@@ -719,28 +719,46 @@ fun SignatureRequestRowCard(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "Accept",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = tealAccent,
-                    modifier = Modifier
-                        .clickable(onClick = onAccept)
-                        .padding(vertical = 4.dp)
-                )
+            when (item.actionStatus) {
+                "signed" -> {
+                    Text(
+                        text = "Signed",
+                        fontSize = 13.sp,
+                        color = secondaryTextColor
+                    )
+                }
+                "declined", "rejected" -> {
+                    Text(
+                        text = "Rejected",
+                        fontSize = 13.sp,
+                        color = secondaryTextColor
+                    )
+                }
+                else -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Accept",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = tealAccent,
+                            modifier = Modifier
+                                .clickable(onClick = onAccept)
+                                .padding(vertical = 4.dp)
+                        )
 
-                Spacer(modifier = Modifier.width(26.dp))
+                        Spacer(modifier = Modifier.width(26.dp))
 
-                Text(
-                    text = "Reject",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = errorColor,
-                    modifier = Modifier
-                        .clickable(onClick = onReject)
-                        .padding(vertical = 4.dp)
-                )
+                        Text(
+                            text = "Reject",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = errorColor,
+                            modifier = Modifier
+                                .clickable(onClick = onReject)
+                                .padding(vertical = 4.dp)
+                        )
+                    }
+                }
             }
         }
     }

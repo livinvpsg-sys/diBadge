@@ -14,6 +14,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import com.fabxdi.dibadge.ui.calendar.GroupScheduleScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.GroupTaskViewModel
 import androidx.compose.foundation.layout.*
@@ -168,6 +169,7 @@ fun ChatDetailsScreen(
     var showTasksSheet by remember { mutableStateOf(false) }
     var showGroupFormsScreen by remember { mutableStateOf(false) }
     var showGroupFoldersScreen by remember { mutableStateOf(false) }
+    var showGroupCalendarScreen by remember { mutableStateOf(false) }
     var isMuted by remember { mutableStateOf(false) }
     var showMuteSheet by remember { mutableStateOf(false) }
     var showClearChatDialog by remember { mutableStateOf(false) }
@@ -247,6 +249,17 @@ fun ChatDetailsScreen(
             groupName = groupName,
             canUserManage = canUserManage,
             onBack = { showGroupFoldersScreen = false }
+        )
+        return
+    }
+
+    if (showGroupCalendarScreen) {
+        GroupScheduleScreen(
+            groupId = entry.id.toString(),
+            groupName = groupName,
+            canUserManage = canUserManage,
+            members = members,
+            onBack = { showGroupCalendarScreen = false }
         )
         return
     }
@@ -389,25 +402,42 @@ fun ChatDetailsScreen(
                         }
                     },
                     actions = {
-                        IconButton(
-                            onClick = { showHeaderDropdown = true },
-                            modifier = Modifier.size(44.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(18.dp)
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
+                            IconButton(
+                                onClick = { showGroupCalendarScreen = true },
+                                modifier = Modifier.size(48.dp)
+                            ) {
                                 Icon(
-                                    imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "More options",
+                                    painter = painterResource(id = R.drawable.ic_calendar),
+                                    contentDescription = "Schedule",
                                     tint = primaryTextColor,
                                     modifier = Modifier.size(22.dp)
                                 )
-                                if (isAdmin && pendingRequests.isNotEmpty()) {
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .offset(x = 2.dp, y = (-2).dp)
-                                            .size(9.dp)
-                                            .background(tealAccent, shape = CircleShape)
+                            }
+
+                            IconButton(
+                                onClick = { showHeaderDropdown = true },
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.MoreVert,
+                                        contentDescription = "More options",
+                                        tint = primaryTextColor,
+                                        modifier = Modifier.size(22.dp)
                                     )
+                                    if (isAdmin && pendingRequests.isNotEmpty()) {
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .offset(x = 2.dp, y = (-2).dp)
+                                                .size(9.dp)
+                                                .background(tealAccent, shape = CircleShape)
+                                        )
+                                    }
                                 }
                             }
                         }

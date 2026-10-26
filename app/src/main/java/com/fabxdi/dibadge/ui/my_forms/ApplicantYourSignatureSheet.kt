@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -83,16 +84,15 @@ fun ApplicantYourSignatureSheet(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Stamp Preview Card
+            // Stamp Preview Card (Identical stamp layout: signature at top, full name, badge number directly below, date/time/timezone in 11sp secondary text)
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 color = colors.background,
                 border = BorderStroke(1.dp, outlineColor)
             ) {
-                Row(
-                    modifier = Modifier.padding(14.dp).fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier.padding(16.dp).fillMaxWidth()
                 ) {
                     if (profileSignatureUrl.isNotBlank()) {
                         val sigBitmap = remember(profileSignatureUrl) { parseSignatureImageBitmap(profileSignatureUrl) }
@@ -100,26 +100,35 @@ fun ApplicantYourSignatureSheet(
                             Image(
                                 bitmap = sigBitmap,
                                 contentDescription = "Signature stamp",
-                                modifier = Modifier.size(width = 72.dp, height = 36.dp).clip(RoundedCornerShape(4.dp))
+                                modifier = Modifier
+                                    .widthIn(min = 96.dp, max = 120.dp)
+                                    .height(48.dp)
+                                    .clip(RoundedCornerShape(4.dp)),
+                                contentScale = ContentScale.Fit
                             )
-                            Spacer(modifier = Modifier.width(14.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
                         }
                     }
 
-                    Column {
-                        Text(
-                            text = profileFullName,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = primaryTextColor
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "$profileBadgeNumber · $nowStr",
-                            fontSize = 12.sp,
-                            color = secondaryTextColor
-                        )
-                    }
+                    Text(
+                        text = profileFullName,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = primaryTextColor
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = profileBadgeNumber,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = primaryTextColor
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = nowStr,
+                        fontSize = 11.sp,
+                        color = secondaryTextColor
+                    )
                 }
             }
 

@@ -334,27 +334,27 @@ fun SelectSignersSheet(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
+                    val signedSigners = remember(selectedSigners) { selectedSigners.filter { it.stamp != null } }
+                    val waitingSigners = remember(selectedSigners) { selectedSigners.filter { it.stamp == null } }
+
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(max = 280.dp)
                     ) {
-                        // SELECTED (n) Section at Top
-                        if (selectedSigners.isNotEmpty()) {
+                        // SIGNED Section
+                        if (signedSigners.isNotEmpty()) {
                             item {
-                                val selectedTitle = if (isMultiple) "SELECTED (${selectedSigners.size})" else "SELECTED"
                                 Text(
-                                    text = selectedTitle,
+                                    text = "SIGNED",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = secondaryTextColor,
                                     modifier = Modifier.padding(bottom = 8.dp)
                                 )
                             }
-
-                            items(selectedSigners, key = { "selected_${it.uid}" }) { signer ->
+                            items(signedSigners, key = { "signed_${it.uid}" }) { signer ->
                                 val avatarColor = remember(signer.name) { UserColorUtils.getColorForName(signer.name) }
-                                val isInThisGroup = members.any { it.uid == signer.uid }
                                 val memberInfo = allKnownMembers.find { it.uid == signer.uid }
                                 val badgeText = memberInfo?.badgeNumber ?: ""
                                 val displayNameStr = if (signer.uid == currentUserId) "${signer.name} (You)" else signer.name
@@ -362,13 +362,7 @@ fun SelectSignersSheet(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(56.dp)
-                                        .clickable {
-                                            if (isMultiple) {
-                                                selectedSigners = selectedSigners.filter { it.uid != signer.uid }
-                                                addedOutsidePeople = addedOutsidePeople.filter { it.uid != signer.uid }
-                                            }
-                                        },
+                                        .height(56.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
@@ -382,44 +376,87 @@ fun SelectSignersSheet(
                                         Column {
                                             Text(displayNameStr, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = primaryTextColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                             Spacer(modifier = Modifier.height(2.dp))
-                                            val subLine = if (isInThisGroup || signer.uid == currentUserId) {
-                                                if (badgeText.isNotBlank()) badgeText else "Member"
-                                            } else {
-                                                if (badgeText.isNotBlank()) "$badgeText · Not in this group" else "Not in this group"
-                                            }
-                                            Text(subLine, fontSize = 12.sp, color = secondaryTextColor)
+                                            Text(badgeText.ifBlank { "Signed" }, fontSize = 12.sp, color = secondaryTextColor)
                                         }
                                     }
 
-                                    if (isMultiple) {
-                                        Surface(
-                                            modifier = Modifier.size(22.dp),
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = tealAccent,
-                                            border = BorderStroke(0.dp, tealAccent)
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(Icons.Default.Check, contentDescription = "Selected", tint = if (isDark) Color(0xFF0E1114) else Color.White, modifier = Modifier.size(14.dp))
-                                            }
-                                        }
-                                    } else {
-                                        Surface(
-                                            modifier = Modifier.size(22.dp),
-                                            shape = CircleShape,
-                                            color = Color.Transparent,
-                                            border = BorderStroke(2.dp, tealAccent)
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Surface(modifier = Modifier.size(10.dp), shape = CircleShape, color = tealAccent) {}
-                                            }
-                                        }
-                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Signed",
+                                        tint = tealAccent,
+                                        modifier = Modifier.size(18.dp)
+                                    )
                                 }
-
                                 HorizontalDivider(thickness = 1.dp, color = outlineColor)
                             }
-
                             item { Spacer(modifier = Modifier.height(12.dp)) }
+                        }
+
+                        // WAITING Section
+                        if (waitingSigners.isNotEmpty()) {
+                            item {
+                                Text(
+                                    text = "WAITING",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = secondaryTextColor,
+                                    modifier = Modifier.padding(bottom = 8.dp)
+                                )
+                            }
+                            items(waitingSigners, key = { "waiting_${it.uid}" }) { signer ->
+                                val avatarColor = remember(signer.name) { UserColorUtils.getColorForName(signer.name) }
+                                val memberInfo = allKnownMembers.find { it.uid == signer.uid }
+                                val badgeText = memberInfo?.badgeNumber ?: ""
+                                val displayNameStr = if (signer.uid == currentUserId) "${signer.name} (You)" else signer.name
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(56.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                        Surface(modifier = Modifier.size(36.dp), shape = CircleShape, color = avatarColor) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text(signer.name.take(1).uppercase(), fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(14.dp))
+                                        Column {
+                                            Text(displayNameStr, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = primaryTextColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(badgeText.ifBlank { "Waiting" }, fontSize = 12.sp, color = secondaryTextColor)
+                                        }
+                                    }
+
+                                    Text(
+                                        text = "Remove",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = colors.error,
+                                        modifier = Modifier
+                                            .clickable {
+                                                selectedSigners = selectedSigners.filter { it.uid != signer.uid }
+                                                addedOutsidePeople = addedOutsidePeople.filter { it.uid != signer.uid }
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                                    )
+                                }
+                                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+                            }
+                            item { Spacer(modifier = Modifier.height(12.dp)) }
+                        }
+
+                        // ADD MORE Section Header
+                        item {
+                            Text(
+                                text = "ADD MORE",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = secondaryTextColor,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
                         }
 
                         // YOU Section (shown when applicant is not currently selected)

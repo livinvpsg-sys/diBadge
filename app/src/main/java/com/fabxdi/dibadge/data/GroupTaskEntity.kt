@@ -14,9 +14,14 @@ data class GroupTaskEntity(
     val assignedBy: String,
     val assignedByUid: String,
     val dueDate: LocalDate? = null,
-    val dueTime: String? = null, // e.g. "5:00 PM" or "17:00"
+    val dueTime: String? = null,
     val note: String = "",
     val isCompleted: Boolean = false,
+    val completedBy: String? = null,
     val completedAt: Long? = null,
-    val createdAt: Long = System.currentTimeMillis()
-)
+    val createdAt: Long = System.currentTimeMillis(),
+    val startDate: LocalDate? = null,
+    val endDate: LocalDate? = null
+) {
+    val notes: String get() = note
+}

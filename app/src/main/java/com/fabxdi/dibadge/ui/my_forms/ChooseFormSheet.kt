@@ -64,6 +64,12 @@ fun ChooseFormSheet(
                 fontWeight = FontWeight.Medium,
                 color = primaryTextColor
             )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Forms in this group",
+                fontSize = 13.sp,
+                color = secondaryTextColor
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
 

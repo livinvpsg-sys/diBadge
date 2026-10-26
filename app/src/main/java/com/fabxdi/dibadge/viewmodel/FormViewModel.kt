@@ -275,6 +275,19 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateSubmission(submission: FormSubmissionEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            formDao.insertFormSubmission(submission)
+            try {
+                firestore.collection("groups")
+                    .document(submission.groupId)
+                    .collection("formSubmissions")
+                    .document(submission.id)
+                    .set(submission.toFirestoreMap(), SetOptions.merge())
+            } catch (e: Exception) {}
+        }
+    }
+
     private suspend fun syncUserFormsFromFirestore() {
         val uid = auth.currentUser?.uid ?: return
         try {

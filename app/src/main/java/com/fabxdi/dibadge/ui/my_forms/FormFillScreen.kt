@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.PersonAdd
@@ -22,16 +23,19 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import com.fabxdi.dibadge.data.FormQuestionData
+import com.fabxdi.dibadge.data.ActivityLogEntity
+import com.fabxdi.dibadge.data.AppDatabase
 import com.fabxdi.dibadge.data.FormSigner
 import com.fabxdi.dibadge.data.GroupFormEntity
 import com.fabxdi.dibadge.ui.components.DiBadgeDatePicker
@@ -43,16 +47,15 @@ import com.fabxdi.dibadge.viewmodel.FormViewModel
 import com.fabxdi.dibadge.viewmodel.GroupDetailsViewModel
 import com.fabxdi.dibadge.viewmodel.ProfileViewModel
 import com.fabxdi.dibadge.viewmodel.encodeSignersToJson
-import com.fabxdi.dibadge.viewmodel.encodeSingleSignerToJson
 import com.fabxdi.dibadge.viewmodel.parseLogosFromJson
 import com.fabxdi.dibadge.viewmodel.parseQuestionsFromJson
 import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,27 +67,31 @@ fun FormFillScreen(
     detailsViewModel: GroupDetailsViewModel = viewModel(),
     profileViewModel: ProfileViewModel = viewModel()
 ) {
+    val context = LocalContext.current
     val questions = remember(groupForm.questionsJson) {
         parseQuestionsFromJson(groupForm.questionsJson)
     }
 
-    val hasSignaturesQuestion = remember(questions) {
-        questions.any { it.type in listOf("signatures", "single_signature", "multiple_signatures") }
+    val sigQuestions = remember(questions) {
+        questions.filter { it.type in listOf("signatures", "single_signature", "multiple_signatures") }
     }
+
+    val hasSignaturesQuestion = sigQuestions.isNotEmpty()
 
     val groupMembers by detailsViewModel.members.collectAsState(initial = emptyList())
     val profileData by profileViewModel.profileData.collectAsState()
 
     var answersMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var selectedWorkers by remember { mutableStateOf<List<FormSigner>>(emptyList()) }
-    var selectedSupervisor by remember { mutableStateOf<FormSigner?>(null) }
+    var signatureSelectionsMap by remember { mutableStateOf<Map<String, List<FormSigner>>>(emptyMap()) }
 
-    var showSelectWorkersSheet by remember { mutableStateOf(false) }
-    var showSelectSupervisorSheet by remember { mutableStateOf(false) }
+    var showSelectSignersSheet by remember { mutableStateOf(false) }
     var showApplicantYourSignatureSheet by remember { mutableStateOf(false) }
     var showNoSignatureDialog by remember { mutableStateOf(false) }
 
+    var activeSignatureQuestionId by remember { mutableStateOf<String?>(null) }
     var activeSignatureFieldLabel by remember { mutableStateOf("Signature") }
+    var activeIsMultiple by remember { mutableStateOf(true) }
+
     var validationErrorIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showDiscardDialog by remember { mutableStateOf(false) }
 
@@ -125,8 +132,12 @@ fun FormFillScreen(
     val submitterUid = currentUser?.uid ?: "me"
     val submitterName = currentUser?.displayName?.ifBlank { null } ?: "Applicant"
 
-    val hasFilledEntries = remember(answersMap, selectedWorkers, selectedSupervisor) {
-        answersMap.values.any { it.isNotBlank() } || selectedWorkers.isNotEmpty() || selectedSupervisor != null
+    val hasFillerSigned = remember(signatureSelectionsMap, submitterUid) {
+        signatureSelectionsMap.values.flatten().any { it.uid == submitterUid && it.stamp != null }
+    }
+
+    val hasFilledEntries = remember(answersMap, signatureSelectionsMap) {
+        answersMap.values.any { it.isNotBlank() } || signatureSelectionsMap.values.any { it.isNotEmpty() }
     }
 
     fun handleClose() {
@@ -140,6 +151,13 @@ fun FormFillScreen(
     BackHandler { handleClose() }
 
     fun handleSubmit() {
+        if (hasSignaturesQuestion && !hasFillerSigned) {
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar("Sign first to submit")
+            }
+            return
+        }
+
         val missingRequiredIds = mutableSetOf<String>()
         for (q in questions) {
             if (q.isRequired && q.type !in listOf("signatures", "single_signature", "multiple_signatures")) {
@@ -155,9 +173,9 @@ fun FormFillScreen(
         } else {
             validationErrorIds = emptySet()
 
-            val allSignersList = selectedWorkers + listOfNotNull(selectedSupervisor)
-            val allSigned = allSignersList.isNotEmpty() && allSignersList.all { it.stamp != null }
-            val submissionStatus = if (hasSignaturesQuestion && !allSigned) "awaitingSignatures" else "submitted"
+            val allSigners = signatureSelectionsMap.values.flatten()
+            val allSigned = allSigners.isNotEmpty() && allSigners.all { it.stamp != null }
+            val submissionStatus = if (hasSignaturesQuestion && !allSigned) "inProgress" else "completed"
 
             formViewModel.submitFormWithSignatures(
                 groupId = groupForm.groupId,
@@ -168,14 +186,10 @@ fun FormFillScreen(
                 submitterName = submitterName,
                 answersMap = answersMap,
                 status = submissionStatus,
-                workersJson = encodeSignersToJson(selectedWorkers),
-                supervisorJson = encodeSingleSignerToJson(selectedSupervisor),
+                workersJson = encodeSignersToJson(allSigners),
+                supervisorJson = "{}",
                 onSubmitted = {
-                    if (submissionStatus == "submitted") {
-                        onSubmitted()
-                    } else {
-                        onSubmitted()
-                    }
+                    onSubmitted()
                 }
             )
         }
@@ -246,16 +260,28 @@ fun FormFillScreen(
                 } else currentAns
 
                 if (q.type in listOf("signatures", "single_signature", "multiple_signatures")) {
+                    val sigIdx = sigQuestions.indexOfFirst { it.id == q.id }
+                    val signers = signatureSelectionsMap[q.id] ?: emptyList()
+
+                    val isCompleted = signers.isNotEmpty() && signers.all { it.stamp != null }
+                    val isEnabled = sigIdx == 0 || (sigQuestions[sigIdx - 1].let { prevQ ->
+                        val prevSigners = signatureSelectionsMap[prevQ.id] ?: emptyList()
+                        prevSigners.isNotEmpty() && prevSigners.all { it.stamp != null }
+                    })
+                    val isDim = !isEnabled && !isCompleted
+                    val isTappable = isEnabled || (isDim && hasFillerSigned)
+
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 14.dp),
+                            .padding(bottom = 14.dp)
+                            .alpha(if (isDim) 0.45f else 1.0f),
                         shape = RoundedCornerShape(14.dp),
                         color = cardBgColor,
                         border = BorderStroke(1.dp, outlineColor)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            // Question / Signature Field Header
+                            // Header
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -265,28 +291,22 @@ fun FormFillScreen(
                                     text = q.label.ifBlank { "Signature" },
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = primaryTextColor
-                                )
-                                Text(
-                                    text = if (q.type == "single_signature") "Select one" else "Select one or more",
-                                    fontSize = 12.sp,
-                                    color = secondaryTextColor
+                                    color = if (isDim) secondaryTextColor else primaryTextColor
                                 )
                             }
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            val signersList = if (q.type == "single_signature") listOfNotNull(selectedSupervisor) else selectedWorkers
-
-                            if (signersList.isEmpty()) {
+                            if (signers.isEmpty()) {
                                 Surface(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(48.dp)
-                                        .clickable {
+                                        .clickable(enabled = isTappable) {
+                                            activeSignatureQuestionId = q.id
                                             activeSignatureFieldLabel = q.label.ifBlank { "Signature" }
-                                            if (q.type == "single_signature") showSelectSupervisorSheet = true
-                                            else showSelectWorkersSheet = true
+                                            activeIsMultiple = q.type != "single_signature"
+                                            showSelectSignersSheet = true
                                         },
                                     shape = RoundedCornerShape(10.dp),
                                     color = colors.background,
@@ -296,37 +316,25 @@ fun FormFillScreen(
                                         modifier = Modifier.padding(horizontal = 14.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(Icons.Outlined.PersonAdd, contentDescription = null, tint = dimColor, modifier = Modifier.size(20.dp))
+                                        Icon(Icons.Outlined.PersonAdd, contentDescription = null, tint = tealAccent, modifier = Modifier.size(20.dp))
                                         Spacer(modifier = Modifier.width(10.dp))
                                         Text(
                                             text = if (q.type == "single_signature") "Select member" else "Select members",
                                             fontSize = 15.sp,
-                                            color = dimColor
+                                            fontWeight = FontWeight.Bold,
+                                            color = tealAccent
                                         )
                                     }
                                 }
                             } else {
                                 Column {
-                                    signersList.forEach { signer ->
+                                    signers.forEach { signer ->
                                         val isApplicantSigner = signer.uid == submitterUid
                                         val isSigned = signer.stamp != null
 
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .clickable {
-                                                    activeSignatureFieldLabel = q.label.ifBlank { "Signature" }
-                                                    if (isApplicantSigner && !isSigned) {
-                                                        if (profileData.signatureUrl.isBlank()) {
-                                                            showNoSignatureDialog = true
-                                                        } else {
-                                                            showApplicantYourSignatureSheet = true
-                                                        }
-                                                    } else {
-                                                        if (q.type == "single_signature") showSelectSupervisorSheet = true
-                                                        else showSelectWorkersSheet = true
-                                                    }
-                                                }
                                                 .padding(vertical = 6.dp),
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.SpaceBetween
@@ -351,33 +359,58 @@ fun FormFillScreen(
 
                                                     if (isSigned) {
                                                         Text("${signer.stamp!!.fullName} · ${signer.stamp.badgeNumber}", fontSize = 12.sp, color = secondaryTextColor)
-                                                    } else if (isApplicantSigner) {
-                                                        Text("Ready to sign", fontSize = 12.sp, color = secondaryTextColor)
                                                     } else {
                                                         Text("Waiting", fontSize = 12.sp, color = secondaryTextColor)
                                                     }
                                                 }
                                             }
 
-                                            if (isApplicantSigner && !isSigned) {
+                                            // Small teal tick (18dp) at the right only when that person has signed
+                                            if (isSigned) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = "Signed",
+                                                    tint = tealAccent,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            } else if (isApplicantSigner && isEnabled) {
                                                 Text(
                                                     text = "Sign",
                                                     fontSize = 14.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = tealAccent,
-                                                    modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp)
+                                                    modifier = Modifier
+                                                        .clickable {
+                                                            activeSignatureFieldLabel = q.label.ifBlank { "Signature" }
+                                                            if (profileData.signatureUrl.isBlank()) {
+                                                                showNoSignatureDialog = true
+                                                            } else {
+                                                                showApplicantYourSignatureSheet = true
+                                                            }
+                                                        }
+                                                        .padding(horizontal = 8.dp, vertical = 4.dp)
                                                 )
-                                            } else if (isSigned && signer.stamp?.signatureUrl?.isNotBlank() == true) {
-                                                val sigBitmap = remember(signer.stamp.signatureUrl) { parseSignatureImageBitmap(signer.stamp.signatureUrl) }
-                                                if (sigBitmap != null) {
-                                                    Image(
-                                                        bitmap = sigBitmap,
-                                                        contentDescription = "Stamp",
-                                                        modifier = Modifier.size(width = 72.dp, height = 36.dp).clip(RoundedCornerShape(4.dp))
-                                                    )
-                                                }
                                             }
                                         }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    if (isTappable) {
+                                        Text(
+                                            text = "Change members",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = tealAccent,
+                                            modifier = Modifier
+                                                .clickable {
+                                                    activeSignatureQuestionId = q.id
+                                                    activeSignatureFieldLabel = q.label.ifBlank { "Signature" }
+                                                    activeIsMultiple = q.type != "single_signature"
+                                                    showSelectSignersSheet = true
+                                                }
+                                                .padding(vertical = 4.dp)
+                                        )
                                     }
                                 }
                             }
@@ -609,83 +642,55 @@ fun FormFillScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Action Text (Submit / Send for signature)
-            val actionLabel = if (hasSignaturesQuestion && (selectedWorkers.isNotEmpty() || selectedSupervisor != null)) {
-                "Send for signature"
-            } else {
-                "Submit"
-            }
+            val isSubmitEnabled = !hasSignaturesQuestion || hasFillerSigned
 
             Box(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = actionLabel,
+                    text = "Submit",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = tealAccent,
+                    color = if (isSubmitEnabled) tealAccent else dimColor,
                     modifier = Modifier
-                        .clickable { handleSubmit() }
+                        .clickable {
+                            if (!isSubmitEnabled) {
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar("Sign first to submit")
+                                }
+                            } else {
+                                handleSubmit()
+                            }
+                        }
                         .padding(horizontal = 24.dp, vertical = 12.dp)
                 )
             }
         }
     }
 
-    if (showSelectWorkersSheet) {
+    if (showSelectSignersSheet && activeSignatureQuestionId != null) {
+        val qId = activeSignatureQuestionId!!
+        val currentSigners = signatureSelectionsMap[qId] ?: emptyList()
+
         SelectSignersSheet(
-            isMultiple = true,
+            isMultiple = activeIsMultiple,
             members = groupMembers,
-            initialSelected = selectedWorkers,
-            onDone = { signers ->
-                selectedWorkers = signers
-                showSelectWorkersSheet = false
-
-                // Check if applicant included themselves and needs to sign
-                val applicantWorker = signers.find { it.uid == submitterUid }
-                if (applicantWorker != null && applicantWorker.stamp == null) {
-                    if (profileData.signatureUrl.isBlank()) {
-                        showNoSignatureDialog = true
-                    } else {
-                        showApplicantYourSignatureSheet = true
-                    }
-                }
+            initialSelected = currentSigners,
+            onDone = { updatedSigners ->
+                signatureSelectionsMap = signatureSelectionsMap + (qId to updatedSigners)
+                showSelectSignersSheet = false
+                activeSignatureQuestionId = null
             },
-            onDismiss = { showSelectWorkersSheet = false }
-        )
-    }
-
-    if (showSelectSupervisorSheet) {
-        SelectSignersSheet(
-            isMultiple = false,
-            members = groupMembers,
-            initialSelected = if (selectedSupervisor != null) listOf(selectedSupervisor!!) else emptyList(),
-            onDone = { signers ->
-                val sup = signers.firstOrNull()
-                selectedSupervisor = sup
-                showSelectSupervisorSheet = false
-
-                if (sup != null && sup.uid == submitterUid && sup.stamp == null) {
-                    if (profileData.signatureUrl.isBlank()) {
-                        showNoSignatureDialog = true
-                    } else {
-                        showApplicantYourSignatureSheet = true
-                    }
-                }
-            },
-            onDismiss = { showSelectSupervisorSheet = false }
+            onDismiss = {
+                showSelectSignersSheet = false
+                activeSignatureQuestionId = null
+            }
         )
     }
 
     if (showApplicantYourSignatureSheet) {
         val userFullName = profileData.firstName + if (profileData.lastName.isNotBlank()) " ${profileData.lastName}" else ""
-
-        val tzOffsetStr = remember {
-            ZoneId.systemDefault().rules.getOffset(Instant.now()).id.let {
-                if (it == "Z") "GMT+0" else "GMT$it"
-            }
-        }
 
         ApplicantYourSignatureSheet(
             formName = groupForm.title,
@@ -696,12 +701,26 @@ fun FormFillScreen(
             onSignConfirmed = { stamp ->
                 showApplicantYourSignatureSheet = false
 
-                // Apply stamp to applicant in selectedWorkers or selectedSupervisor
-                selectedWorkers = selectedWorkers.map { w ->
-                    if (w.uid == submitterUid) w.copy(stamp = stamp) else w
+                val updatedMap = signatureSelectionsMap.mapValues { (_, signers) ->
+                    signers.map { s ->
+                        if (s.uid == submitterUid && s.stamp == null) s.copy(stamp = stamp) else s
+                    }
                 }
-                if (selectedSupervisor?.uid == submitterUid) {
-                    selectedSupervisor = selectedSupervisor?.copy(stamp = stamp)
+                signatureSelectionsMap = updatedMap
+
+                coroutineScope.launch(Dispatchers.IO) {
+                    val timeStr = DateTimeFormatter.ofPattern("h:mm a").format(LocalTime.now())
+                    val activityLog = ActivityLogEntity(
+                        id = UUID.randomUUID().toString(),
+                        result = "Signed",
+                        kind = "form",
+                        title = "You signed ${groupForm.title}",
+                        source = groupForm.orgName.ifBlank { groupForm.addedBy },
+                        reference = "$activeSignatureFieldLabel · $timeStr",
+                        relatedId = groupForm.formId,
+                        timestamp = System.currentTimeMillis()
+                    )
+                    AppDatabase.getDatabase(context).activityLogDao().insertActivityLog(activityLog)
                 }
 
                 coroutineScope.launch {
