@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.core.content.FileProvider
 import java.io.File
+import java.util.Locale
 
 object FilePickerUtils {
     fun getFileName(context: Context, uri: Uri): String {
@@ -22,6 +23,30 @@ object FilePickerUtils {
             } ?: uri.path?.split("/")?.last() ?: "Unknown File"
         } catch (e: Exception) {
             uri.path?.split("/")?.last() ?: "Unknown File"
+        }
+    }
+
+    fun getFileSizeBytes(context: Context, uri: Uri): Long {
+        return try {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (sizeIndex != -1 && cursor.moveToFirst()) {
+                    cursor.getLong(sizeIndex)
+                } else 0L
+            } ?: 0L
+        } catch (e: Exception) {
+            0L
+        }
+    }
+
+    fun formatFileSize(bytes: Long): String {
+        if (bytes <= 0) return "File"
+        val kb = bytes / 1024.0
+        val mb = kb / 1024.0
+        return when {
+            mb >= 1.0 -> String.format(Locale.getDefault(), "%.1f MB", mb)
+            kb >= 1.0 -> String.format(Locale.getDefault(), "%.0f KB", kb)
+            else -> "$bytes B"
         }
     }
 

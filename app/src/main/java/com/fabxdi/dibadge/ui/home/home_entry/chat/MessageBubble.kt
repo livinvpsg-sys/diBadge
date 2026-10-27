@@ -12,8 +12,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
-import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,8 +25,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -75,6 +82,43 @@ private fun isOnlyEmojis(text: String): Boolean {
     return true
 }
 
+fun buildMentionAnnotatedString(
+    text: String,
+    primaryTextColor: Color,
+    tealAccent: Color,
+    acceptedGroupNames: List<String> = emptyList()
+): AnnotatedString {
+    return buildAnnotatedString {
+        val pattern = Regex("""@([A-Za-z0-9_]+(?:\s+[A-Za-z0-9_]+)*)""")
+        var lastIndex = 0
+
+        pattern.findAll(text).forEach { matchResult ->
+            val range = matchResult.range
+            val mentionText = matchResult.value
+            val nameWithoutAt = matchResult.groupValues[1]
+
+            if (range.first > lastIndex) {
+                append(text.substring(lastIndex, range.first))
+            }
+
+            val isGroupMentionName = nameWithoutAt.equals("All linked groups", ignoreCase = true) ||
+                    acceptedGroupNames.any { it.equals(nameWithoutAt, ignoreCase = true) }
+
+            val spanColor = if (isGroupMentionName) tealAccent else primaryTextColor
+
+            withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = spanColor)) {
+                append(mentionText)
+            }
+
+            lastIndex = range.last + 1
+        }
+
+        if (lastIndex < text.length) {
+            append(text.substring(lastIndex))
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageBubble(
@@ -82,11 +126,14 @@ fun MessageBubble(
     player: AudioPlayer,
     isSelected: Boolean,
     isAnySelected: Boolean,
+    isFirstInRun: Boolean = true,
     isHighlighted: Boolean = false,
     onLongClick: (String?) -> Unit,
     onClick: () -> Unit,
     onReplyClick: (String, String?) -> Unit,
     onMediaClick: (List<Uri>, Int) -> Unit,
+    onCommentsClick: (ChatMessage) -> Unit = {},
+    onSentToClick: (ChatMessage) -> Unit = {},
     onSwipeToReply: (String?) -> Unit = {}
 ) {
     val timeFormatter = remember { DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()) }
@@ -95,15 +142,18 @@ fun MessageBubble(
 
     val colors = MaterialTheme.colorScheme
     val diBadgeColors = DiBadgeTheme.colors
+    val isDark = colors.onBackground.red > 0.5f
 
-    val primaryTextColor = colors.onBackground
-    val secondaryTextColor = colors.onSurfaceVariant
-    val outlineColor = colors.outline
-    val tealAccent = diBadgeColors.accent
-    val isDark = primaryTextColor.red > 0.5f
+    // Theme tokens
+    val primaryTextColor = if (isDark) Color(0xFFF0F3F5) else Color(0xFF11161A)
+    val secondaryTextColor = if (isDark) Color(0xFF8A9199) else Color(0xFF65707A)
+    val outlineColor = if (isDark) Color(0xFF2A3037) else Color(0xFFD3D9DF)
+    val cardFillColor = if (isDark) Color(0xFF181C21) else Color(0xFFF5F7F9)
+    val tealAccent = if (isDark) Color(0xFF58B5AC) else Color(0xFF1B6F69)
+    val errorColor = if (isDark) Color(0xFFE8837A) else Color(0xFFC4433A)
 
-    // Bubble Background Colors:
-    // Light Theme: Incoming #E8ECEF, Own #FFFFFF (both raised with soft shadow)
+    // Bubble Colors:
+    // Light Theme: Incoming #E8ECEF (chat bg), Own #FFFFFF (both raised with soft shadow)
     // Dark Theme: Incoming #181C21, Own #272F39
     val bubbleColor = if (message.isSentByMe) {
         if (isDark) Color(0xFF272F39) else Color(0xFFFFFFFF)
@@ -111,6 +161,7 @@ fun MessageBubble(
         if (isDark) Color(0xFF181C21) else Color(0xFFE8ECEF)
     }
 
+    // Corner radius: 14dp corners with 2dp corner at tail
     val bubbleShape = if (message.isSentByMe) {
         RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = 14.dp, bottomEnd = 2.dp)
     } else {
@@ -176,16 +227,44 @@ fun MessageBubble(
                     onClick = onClick,
                     onLongClick = { onLongClick(null) }
                 )
-                .padding(vertical = 3.dp, horizontal = 12.dp),
+                .padding(vertical = if (isFirstInRun) 4.dp else 1.dp, horizontal = 12.dp),
             horizontalAlignment = alignment
         ) {
-            // Sender Name (12sp SemiBold teal) sits ABOVE the bubble outside it for incoming messages
-            if (!message.isSentByMe) {
+            // Label above bubble
+            if (message.isGroupMention && !message.isSentByMe) {
+                // Incoming Cross-Posted Group-Mention Bubble: Group name in identity name color + 13dp link icon
+                val groupDisplayName = message.sendingGroupName ?: message.senderName
+                val groupTitleColor = remember(groupDisplayName, isDark) {
+                    UserColorUtils.getIdentityColor(groupDisplayName, isDark)
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 36.dp, bottom = 2.dp)
+                ) {
+                    Text(
+                        text = groupDisplayName,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = groupTitleColor
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Default.Link,
+                        contentDescription = "Cross-posted link",
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
+            } else if (!message.isSentByMe && isFirstInRun) {
+                // Normal Incoming Sender Name (using per-identity color palette, never teal)
+                val senderColor = remember(message.senderName, isDark) {
+                    UserColorUtils.getColorForName(message.senderName, isDark)
+                }
                 Text(
                     text = message.senderName,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = tealAccent,
+                    color = senderColor,
                     modifier = Modifier.padding(start = 36.dp, bottom = 2.dp)
                 )
             }
@@ -196,23 +275,29 @@ fun MessageBubble(
                 verticalAlignment = Alignment.Bottom
             ) {
                 if (!message.isSentByMe) {
-                    // 28dp Round Avatar
-                    Surface(
-                        modifier = Modifier.size(28.dp),
-                        shape = CircleShape,
-                        color = UserColorUtils.getColorForName(message.senderName),
-                        border = BorderStroke(1.dp, outlineColor)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = message.senderName.take(1).uppercase(),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
+                    if (isFirstInRun || message.isGroupMention) {
+                        val avatarShape = if (message.isGroupMention) RoundedCornerShape(10.dp) else CircleShape
+                        val avatarText = (message.sendingGroupName ?: message.senderName).take(1).uppercase()
+
+                        Surface(
+                            modifier = Modifier.size(28.dp),
+                            shape = avatarShape,
+                            color = cardFillColor,
+                            border = BorderStroke(1.dp, outlineColor)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = avatarText,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = primaryTextColor
+                                )
+                            }
                         }
+                        Spacer(modifier = Modifier.width(8.dp))
+                    } else {
+                        Spacer(modifier = Modifier.width(36.dp))
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
                 }
 
                 if (isEmojiOnly) {
@@ -221,14 +306,15 @@ fun MessageBubble(
                     Surface(
                         color = bubbleColor,
                         shape = bubbleShape,
-                        shadowElevation = if (!isDark) 2.dp else 0.dp,
-                        modifier = Modifier.widthIn(min = 40.dp, max = 272.dp)
+                        shadowElevation = if (!isDark) 1.5.dp else 1.dp,
+                        tonalElevation = 0.dp,
+                        modifier = Modifier.widthIn(min = if (message.isGroupMention) 180.dp else 40.dp, max = 272.dp)
                     ) {
                         Column(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 6.dp)
                         ) {
                             if (message.replyingTo != null) {
-                                ReplySection(message, onReplyClick, primaryTextColor, secondaryTextColor, tealAccent)
+                                ReplySection(message, onReplyClick, primaryTextColor, secondaryTextColor, tealAccent, isDark)
                             }
 
                             AttachmentAndTextSection(
@@ -237,10 +323,14 @@ fun MessageBubble(
                                 isAnySelected = isAnySelected,
                                 onLongClick = onLongClick,
                                 onMediaClick = onMediaClick,
+                                onCommentsClick = onCommentsClick,
+                                onSentToClick = onSentToClick,
                                 timeFormatter = timeFormatter,
                                 primaryTextColor = primaryTextColor,
                                 secondaryTextColor = secondaryTextColor,
+                                outlineColor = outlineColor,
                                 tealAccent = tealAccent,
+                                errorColor = errorColor,
                                 isDark = isDark
                             )
                         }
@@ -269,7 +359,7 @@ private fun EmojiMessage(
         Text(text = text, fontSize = emojiFontSize, modifier = Modifier.padding(4.dp))
         Text(
             text = time,
-            fontSize = 10.sp,
+            fontSize = 11.sp,
             color = secondaryTextColor,
             modifier = Modifier.padding(horizontal = 4.dp)
         )
@@ -282,7 +372,8 @@ private fun ReplySection(
     onReplyClick: (String, String?) -> Unit,
     primaryTextColor: Color,
     secondaryTextColor: Color,
-    tealAccent: Color
+    tealAccent: Color,
+    isDark: Boolean
 ) {
     val replyingTo = message.replyingTo!!
     Surface(
@@ -307,11 +398,14 @@ private fun ReplySection(
             )
             Spacer(modifier = Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f)) {
+                val replySenderColor = remember(replyingTo.senderName, isDark) {
+                    UserColorUtils.getColorForName(replyingTo.senderName, isDark)
+                }
                 Text(
                     text = replyingTo.senderName,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = tealAccent
+                    color = replySenderColor
                 )
                 Text(
                     text = replyingTo.text.ifBlank { "Attachment" },
@@ -332,10 +426,14 @@ private fun AttachmentAndTextSection(
     isAnySelected: Boolean,
     onLongClick: (String?) -> Unit,
     onMediaClick: (List<Uri>, Int) -> Unit,
+    onCommentsClick: (ChatMessage) -> Unit,
+    onSentToClick: (ChatMessage) -> Unit,
     timeFormatter: DateTimeFormatter,
     primaryTextColor: Color,
     secondaryTextColor: Color,
+    outlineColor: Color,
     tealAccent: Color,
+    errorColor: Color,
     isDark: Boolean
 ) {
     val context = LocalContext.current
@@ -349,16 +447,13 @@ private fun AttachmentAndTextSection(
             val ext = fileName.substringAfterLast('.', "").lowercase()
 
             val isImage = uriStr.contains("jpg") || uriStr.contains("png") || uriStr.contains("jpeg") || ext in listOf("jpg", "png", "jpeg")
-            val isPdf = ext == "pdf"
-            val isDoc = ext in listOf("doc", "docx")
-            val isXls = ext in listOf("xls", "xlsx", "csv")
-            val isPpt = ext in listOf("ppt", "pptx")
 
             if (isImage) {
                 Surface(
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
+                        .widthIn(max = 240.dp)
                         .height(180.dp)
                         .clickable {
                             val mediaUris = message.attachments.map { Uri.parse(it) }
@@ -393,8 +488,15 @@ private fun AttachmentAndTextSection(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
+                        val typeDescription = when (ext) {
+                            "doc", "docx" -> "Word"
+                            "xls", "xlsx", "csv" -> "Excel"
+                            "ppt", "pptx" -> "PowerPoint"
+                            "pdf" -> "PDF"
+                            else -> ext.uppercase()
+                        }
                         Text(
-                            text = "${ext.uppercase()} · Document",
+                            text = "$typeDescription · Document",
                             fontSize = 12.sp,
                             color = secondaryTextColor
                         )
@@ -404,9 +506,23 @@ private fun AttachmentAndTextSection(
         }
 
         // Message Text
-        if (message.text.isNotBlank()) {
+        val rawTextToDisplay = if (!message.isSentByMe && message.isGroupMention) {
+            stripGroupMention(message.text, message.sendingGroupName)
+        } else {
+            message.text
+        }
+
+        if (rawTextToDisplay.isNotBlank()) {
+            val annotatedText = remember(rawTextToDisplay, primaryTextColor, tealAccent, message.mentionedGroupNames) {
+                buildMentionAnnotatedString(
+                    text = rawTextToDisplay,
+                    primaryTextColor = primaryTextColor,
+                    tealAccent = tealAccent,
+                    acceptedGroupNames = message.mentionedGroupNames
+                )
+            }
             Text(
-                text = message.text,
+                text = annotatedText,
                 fontSize = 15.sp,
                 lineHeight = 21.sp,
                 color = primaryTextColor,
@@ -414,25 +530,114 @@ private fun AttachmentAndTextSection(
             )
         }
 
-        // Timestamp & Read Ticks at Bottom Right
+        // In-Bubble Footer Line: 5dp below text
         Row(
-            modifier = Modifier.align(Alignment.End),
-            verticalAlignment = Alignment.CenterVertically
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = if (message.isGroupMention) Arrangement.SpaceBetween else Arrangement.End
         ) {
-            Text(
-                text = formattedTime,
-                fontSize = 11.sp,
-                color = secondaryTextColor
-            )
-            if (message.isSentByMe) {
-                Spacer(modifier = Modifier.width(4.dp))
-                // Two Teal Ticks for Read
-                Icon(
-                    imageVector = Icons.Default.DoneAll,
-                    contentDescription = "Read",
-                    tint = tealAccent,
-                    modifier = Modifier.size(14.dp)
+            if (message.isGroupMention) {
+                Row(
+                    modifier = Modifier.clickable { onCommentsClick(message) },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (message.isCrossPostFailed) {
+                        Text(
+                            text = "Not delivered",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = errorColor
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Outlined.ChatBubbleOutline,
+                            contentDescription = "Replies",
+                            tint = tealAccent,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        val replyWord = if (message.commentCount > 1) "Replies" else "Reply"
+
+                        if (message.unreadCommentCount > 0) {
+                            Text(
+                                text = replyWord,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = tealAccent
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+
+                            val badgeText = if (message.commentCount > 99) "99+" else message.commentCount.toString()
+                            val onTealColor = if (isDark) Color(0xFF0E1114) else Color.White
+
+                            Surface(
+                                shape = CircleShape,
+                                color = tealAccent,
+                                modifier = Modifier
+                                    .height(18.dp)
+                                    .widthIn(min = 18.dp)
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.padding(horizontal = 5.dp)
+                                ) {
+                                    Text(
+                                        text = badgeText,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = onTealColor,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        } else {
+                            val replyLabel = if (message.commentCount > 0) "$replyWord ${message.commentCount}" else replyWord
+                            Text(
+                                text = replyLabel,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = tealAccent
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.widthIn(min = 20.dp))
+            }
+
+            // Right end: Link or Warning icon (Sender side only) + Time + Read ticks
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (message.isSentByMe && message.isGroupMention) {
+                    val linkIcon = if (message.isCrossPostFailed) Icons.Default.Warning else Icons.Default.Link
+                    val linkTint = if (message.isCrossPostFailed) errorColor else secondaryTextColor
+
+                    Icon(
+                        imageVector = linkIcon,
+                        contentDescription = "Sent to details",
+                        tint = linkTint,
+                        modifier = Modifier
+                            .size(13.dp)
+                            .clickable { onSentToClick(message) }
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
+
+                Text(
+                    text = formattedTime,
+                    fontSize = 11.sp,
+                    color = secondaryTextColor
                 )
+                if (message.isSentByMe) {
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Default.DoneAll,
+                        contentDescription = "Read",
+                        tint = tealAccent,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
             }
         }
     }
@@ -448,7 +653,7 @@ fun DocumentTypeTile(
         "doc", "docx" -> "DOC" to if (isDark) Color(0xFF4A8FE0) else Color(0xFF2F6FBF)
         "xls", "xlsx", "csv" -> "XLS" to if (isDark) Color(0xFF3FA66B) else Color(0xFF2C8A55)
         "ppt", "pptx" -> "PPT" to if (isDark) Color(0xFFE08A3C) else Color(0xFFC2681E)
-        else -> "FILE" to MaterialTheme.colorScheme.onSurfaceVariant
+        else -> "FILE" to if (isDark) Color(0xFF8A9199) else Color(0xFF65707A)
     }
 
     Surface(

@@ -241,20 +241,9 @@ fun ChatAttachmentView(
             }
         }
     } else {
-        val icon = FilePickerUtils.getFileIcon(context, uri)
-        val fileColor = remember(fileName) {
-            val name = fileName.lowercase()
-            when {
-                name.endsWith(".pdf") -> Color(0xFFF44336) // Red
-                name.endsWith(".xls") || name.endsWith(".xlsx") -> Color(0xFF4CAF50) // Green
-                name.endsWith(".doc") || name.endsWith(".docx") -> Color(0xFF2196F3) // Blue
-                name.endsWith(".ppt") || name.endsWith(".pptx") -> Color(0xFFFF9800) // Orange
-                name.endsWith(".zip") || name.endsWith(".rar") || name.endsWith(".7z") -> Color(0xFF9C27B0) // Purple
-                else -> Color(0xFF00A884) // Default Teallish
-            }
-        }
-        
-        val contentColor = if (isSentByMe) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+        val ext = fileName.substringAfterLast('.', "").lowercase()
+        val isDark = MaterialTheme.colorScheme.onBackground.red > 0.5f
+        val contentColor = MaterialTheme.colorScheme.onSurface
         
         Box(
             modifier = modifier
@@ -273,29 +262,17 @@ fun ChatAttachmentView(
             Row(
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Surface(
-                    shape = CircleShape,
-                    color = fileColor,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
+                DocumentTypeTile(extension = ext, isDark = isDark)
                 Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = fileName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = contentColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = fileName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = contentColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     }

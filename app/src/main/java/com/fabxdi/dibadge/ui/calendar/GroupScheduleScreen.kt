@@ -777,22 +777,23 @@ fun TaskBarItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val (bgColor, textColor, isDashed) = remember(status, isDark) {
+    val (bgColor, textColor) = remember(status, isDark) {
         when (status) {
             TaskStatus.ONGOING -> {
-                if (isDark) Triple(Color(0xFF1F4A46), Color(0xFFBFE3DF), false)
-                else Triple(Color(0xFFBFE3DF), Color(0xFF1F4A46), false)
+                if (isDark) Pair(Color(0xFF1F4A46), Color(0xFFBFE3DF))
+                else Pair(Color(0xFFBFE3DF), Color(0xFF1F4A46))
             }
             TaskStatus.UPCOMING -> {
-                Triple(Color.Transparent, Color(0xFF1F8A70), true)
+                if (isDark) Pair(Color(0xFF243049), Color(0xFFDCE6FB))
+                else Pair(Color(0xFFD6E0F4), Color(0xFF1D3266))
             }
             TaskStatus.DELAYED -> {
-                if (isDark) Triple(Color(0xFF4A2623), Color(0xFFF4CFCB), false)
-                else Triple(Color(0xFFF4CFCB), Color(0xFF4A2623), false)
+                if (isDark) Pair(Color(0xFF4A2623), Color(0xFFF4CFCB))
+                else Pair(Color(0xFFF4CFCB), Color(0xFF4A2623))
             }
             TaskStatus.COMPLETED -> {
-                if (isDark) Triple(Color(0xFF2A3037), Color(0xFFD6DBE0), false)
-                else Triple(Color(0xFFD6DBE0), Color(0xFF2A3037), false)
+                if (isDark) Pair(Color(0xFF2A3037), Color(0xFFD6DBE0))
+                else Pair(Color(0xFFD6DBE0), Color(0xFF2A3037))
             }
         }
     }
@@ -810,13 +811,7 @@ fun TaskBarItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(height)
-                .clip(RoundedCornerShape(7.dp))
-                .then(
-                    if (isDashed) Modifier.border(
-                        BorderStroke(1.5.dp, SolidColor(tealAccent)),
-                        RoundedCornerShape(7.dp)
-                    ) else Modifier
-                ),
+                .clip(RoundedCornerShape(7.dp)),
             shape = RoundedCornerShape(7.dp),
             color = bgColor,
             shadowElevation = 0.dp,
@@ -832,7 +827,7 @@ fun TaskBarItem(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        StatusIcon(status = status, modifier = Modifier.size(11.dp))
+                        StatusIcon(status = status, isDark = isDark, tealAccent = tealAccent, modifier = Modifier.size(11.dp))
 
                         Text(
                             text = task.title,
@@ -886,8 +881,8 @@ fun TaskBarItem(
 }
 
 @Composable
-fun StatusIcon(status: TaskStatus, modifier: Modifier = Modifier) {
-    val color = getStatusTextColor(status)
+fun StatusIcon(status: TaskStatus, isDark: Boolean = true, tealAccent: Color = Color(0xFF1F8A70), modifier: Modifier = Modifier) {
+    val color = getStatusTextColor(status, isDark, tealAccent)
     when (status) {
         TaskStatus.ONGOING -> {
             Surface(
@@ -936,12 +931,12 @@ fun StatusIcon(status: TaskStatus, modifier: Modifier = Modifier) {
     }
 }
 
-fun getStatusTextColor(status: TaskStatus): Color {
+fun getStatusTextColor(status: TaskStatus, isDark: Boolean = true, tealAccent: Color = Color(0xFF1F8A70)): Color {
     return when (status) {
         TaskStatus.COMPLETED -> Color(0xFF8A94A0)
         TaskStatus.DELAYED -> Color(0xFFD32F2F)
-        TaskStatus.ONGOING -> Color(0xFF1F8A70)
-        TaskStatus.UPCOMING -> Color(0xFF1F8A70)
+        TaskStatus.ONGOING -> tealAccent
+        TaskStatus.UPCOMING -> if (isDark) Color(0xFF8FA9E6) else Color(0xFF3E5EA8)
     }
 }
 

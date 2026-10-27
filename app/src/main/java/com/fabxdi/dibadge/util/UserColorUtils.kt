@@ -5,33 +5,38 @@ import java.util.Locale
 import kotlin.math.abs
 
 object UserColorUtils {
-    private val colors = listOf(
-        Color(0xFFE53935), // Red
-        Color(0xFFD81B60), // Pink
-        Color(0xFF8E24AA), // Purple
-        Color(0xFF5E35B1), // Deep Purple
-        Color(0xFF3949AB), // Indigo
-        Color(0xFF1E88E5), // Blue
-        Color(0xFF039BE5), // Light Blue
-        Color(0xFF00ACC1), // Cyan
-        Color(0xFF00897B), // Teal
-        Color(0xFF43A047), // Green
-        Color(0xFF7CB342), // Light Green
-        Color(0xFFFB8C00), // Orange
-        Color(0xFFF4511E), // Deep Orange
-        Color(0xFF8D6E63), // Brown
-        Color(0xFF546E7A)  // Blue Grey
+    // Non-teal identity palette (dark / light)
+    private val darkIdentityColors = listOf(
+        Color(0xFF7E9CE0), // Blue
+        Color(0xFFB48AD6), // Violet
+        Color(0xFFE0B25E), // Amber
+        Color(0xFFE08AA6), // Rose
+        Color(0xFFE39A6B), // Orange
+        Color(0xFF9AA7B8)  // Slate
     )
 
-    fun getColorForName(name: String): Color {
-        if (name.isBlank()) return colors[0]
-        val cleanName = name.trim().lowercase()
+    private val lightIdentityColors = listOf(
+        Color(0xFF3E5EA8), // Blue
+        Color(0xFF7A4AA0), // Violet
+        Color(0xFF9A6B12), // Amber
+        Color(0xFFA8466A), // Rose
+        Color(0xFFA8541F), // Orange
+        Color(0xFF5B6878)  // Slate
+    )
+
+    fun getIdentityColor(key: String, isDark: Boolean = true): Color {
+        if (key.isBlank()) return if (isDark) darkIdentityColors[0] else lightIdentityColors[0]
+        val cleanKey = key.trim().lowercase()
         var hash = 0
-        cleanName.forEachIndexed { i, char ->
+        cleanKey.forEachIndexed { i, char ->
             hash = 31 * hash + char.code + i
         }
-        val index = abs(hash) % colors.size
-        return colors[index]
+        val index = abs(hash) % darkIdentityColors.size
+        return if (isDark) darkIdentityColors[index] else lightIdentityColors[index]
+    }
+
+    fun getColorForName(name: String, isDark: Boolean = true): Color {
+        return getIdentityColor(name, isDark)
     }
 }
 

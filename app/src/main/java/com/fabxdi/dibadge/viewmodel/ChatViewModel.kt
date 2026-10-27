@@ -7,7 +7,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fabxdi.dibadge.data.AppDatabase
 import com.fabxdi.dibadge.data.ChatMessageEntity
+import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatComment
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatMessage
+import com.fabxdi.dibadge.util.AlarmReceiver
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -377,9 +379,122 @@ class ChatViewModel : ViewModel() {
         }
     }
 
+    private val threadCommentsListeners = mutableMapOf<String, ListenerRegistration>()
+    private val _threadCommentsMap = MutableStateFlow<Map<String, List<ChatComment>>>(emptyMap())
+    val threadCommentsMap: StateFlow<Map<String, List<ChatComment>>> = _threadCommentsMap.asStateFlow()
+
+    fun listenToComments(threadId: String) {
+        if (threadId.isBlank() || threadCommentsListeners.containsKey(threadId)) return
+
+        val listener = db.collection("sharedThreads")
+            .document(threadId)
+            .collection("comments")
+            .orderBy("timestampMs", Query.Direction.ASCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    error.printStackTrace()
+                    return@addSnapshotListener
+                }
+
+                if (snapshot != null) {
+                    val commentsList = snapshot.documents.mapNotNull { doc ->
+                        try {
+                            ChatComment(
+                                id = doc.id,
+                                threadId = threadId,
+                                text = doc.getString("text") ?: "",
+                                senderName = doc.getString("senderName") ?: "User",
+                                senderUid = doc.getString("senderUid") ?: "",
+                                groupName = doc.getString("groupName"),
+                                timestampMs = doc.getLong("timestampMs") ?: System.currentTimeMillis()
+                            )
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+
+                    _threadCommentsMap.value = _threadCommentsMap.value.toMutableMap().apply {
+                        put(threadId, commentsList)
+                    }
+                }
+            }
+
+        threadCommentsListeners[threadId] = listener
+    }
+
+    fun postComment(threadId: String, text: String, senderName: String, senderUid: String, groupName: String? = null) {
+        if (threadId.isBlank() || text.isBlank()) return
+        val commentId = UUID.randomUUID().toString()
+        val ts = System.currentTimeMillis()
+
+        val commentData = mutableMapOf<String, Any>(
+            "id" to commentId,
+            "threadId" to threadId,
+            "text" to text.trim(),
+            "senderName" to senderName,
+            "senderUid" to senderUid,
+            "timestampMs" to ts
+        )
+        if (!groupName.isNullOrBlank()) {
+            commentData["groupName"] = groupName
+        }
+
+        viewModelScope.launch {
+            try {
+                db.collection("sharedThreads")
+                    .document(threadId)
+                    .collection("comments")
+                    .document(commentId)
+                    .set(commentData)
+                    .await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun sendMemberMentionNotification(
+        context: Context,
+        targetUid: String,
+        senderName: String,
+        groupName: String,
+        body: String
+    ) {
+        if (targetUid.isBlank()) return
+        val title = "$senderName mentioned you in $groupName"
+        val content = body.ifBlank { "Mentioned you in message" }
+
+        viewModelScope.launch {
+            try {
+                val notifData = mapOf(
+                    "title" to title,
+                    "body" to content,
+                    "targetUid" to targetUid,
+                    "groupName" to groupName,
+                    "timestampMs" to System.currentTimeMillis(),
+                    "isRead" to false
+                )
+                db.collection("users")
+                    .document(targetUid)
+                    .collection("notifications")
+                    .add(notifData)
+
+                AlarmReceiver.showSystemNotification(
+                    context,
+                    targetUid.hashCode(),
+                    title,
+                    content
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         messagesListener?.remove()
         roomObserveJob?.cancel()
+        threadCommentsListeners.values.forEach { it.remove() }
     }
 }

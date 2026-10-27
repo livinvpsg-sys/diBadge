@@ -153,8 +153,8 @@ fun TaskPreviewSheet(
             ) {
                 // Completion Circle (22dp)
                 val isCompleted = status == TaskStatus.COMPLETED
-                val circleBorderColor = if (isCompleted) getStatusAccentColor(status, tealAccent) else secondaryTextColor.copy(alpha = 0.6f)
-                val circleFillColor = if (isCompleted) getStatusAccentColor(status, tealAccent) else Color.Transparent
+                val circleBorderColor = if (isCompleted) getStatusAccentColor(status, tealAccent, isDark) else secondaryTextColor.copy(alpha = 0.6f)
+                val circleFillColor = if (isCompleted) getStatusAccentColor(status, tealAccent, isDark) else Color.Transparent
 
                 Box(
                     modifier = Modifier
@@ -479,7 +479,10 @@ fun StatusLabelBadge(status: TaskStatus, isDark: Boolean, tealAccent: Color) {
             StatusLabelColors(bg, tealAccent, textCol, "Ongoing")
         }
         TaskStatus.UPCOMING -> {
-            StatusLabelColors(Color.Transparent, tealAccent, tealAccent, "Upcoming")
+            val bg = if (isDark) Color(0xFF243049) else Color(0xFFD6E0F4)
+            val accent = if (isDark) Color(0xFF8FA9E6) else Color(0xFF3E5EA8)
+            val textCol = if (isDark) Color(0xFFDCE6FB) else Color(0xFF1D3266)
+            StatusLabelColors(bg, accent, textCol, "Upcoming")
         }
         TaskStatus.DELAYED -> {
             val bg = if (isDark) Color(0xFF4A2623) else Color(0xFFF4CFCB)
@@ -510,9 +513,10 @@ fun StatusLabelBadge(status: TaskStatus, isDark: Boolean, tealAccent: Color) {
     }
 }
 
-fun getStatusAccentColor(status: TaskStatus, tealAccent: Color): Color {
+fun getStatusAccentColor(status: TaskStatus, tealAccent: Color, isDark: Boolean = true): Color {
     return when (status) {
-        TaskStatus.ONGOING, TaskStatus.UPCOMING -> tealAccent
+        TaskStatus.ONGOING -> tealAccent
+        TaskStatus.UPCOMING -> if (isDark) Color(0xFF8FA9E6) else Color(0xFF3E5EA8)
         TaskStatus.DELAYED -> Color(0xFFD32F2F)
         TaskStatus.COMPLETED -> Color(0xFF8A94A0)
     }
