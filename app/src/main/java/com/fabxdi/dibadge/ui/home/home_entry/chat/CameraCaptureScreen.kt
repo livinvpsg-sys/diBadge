@@ -1,6 +1,13 @@
 package com.fabxdi.dibadge.ui.home.home_entry.chat
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
 import android.net.Uri
 import android.util.Log
 import androidx.camera.core.*
@@ -24,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -32,8 +40,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import java.io.File
+import java.io.FileOutputStream
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -42,12 +55,15 @@ enum class CaptureMode { PHOTO, VIDEO }
 
 @Composable
 fun CameraCaptureScreen(
+    isStampCamera: Boolean = true,
     onImageCaptured: (Uri) -> Unit,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    
+    val isStampEnabled = isStampCamera
+    var capturedPhotoUri by remember { mutableStateOf<Uri?>(null) }
+
     var lensFacing by remember { mutableStateOf(CameraSelector.LENS_FACING_BACK) }
     var flashMode by remember { mutableStateOf(ImageCapture.FLASH_MODE_OFF) }
     var captureMode by remember { mutableStateOf(CaptureMode.PHOTO) }
@@ -69,6 +85,57 @@ fun CameraCaptureScreen(
     
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     var camera by remember { mutableStateOf<Camera?>(null) }
+
+    val dateTimeStr = remember {
+        LocalDateTime.now().format(DateTimeFormatter.ofPattern("d MMM yyyy · h:mm a", Locale.getDefault()))
+    }
+    val timeZoneAndPlace = "GMT+8 · Singapore"
+    val coordsStr = "1.34042° N, 103.70901° E"
+
+    // If photo is captured, show Review Screen
+    if (capturedPhotoUri != null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            AsyncImage(
+                model = capturedPhotoUri,
+                contentDescription = "Review captured photo",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize()
+            )
+
+            // Review Bottom Actions
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 32.dp, vertical = 24.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Retake",
+                    fontSize = 16.sp,
+                    color = Color.White,
+                    modifier = Modifier.clickable { capturedPhotoUri = null }
+                )
+
+                Text(
+                    text = "Use photo",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    modifier = Modifier.clickable {
+                        onImageCaptured(capturedPhotoUri!!)
+                    }
+                )
+            }
+        }
+        return
+    }
 
     LaunchedEffect(lensFacing, flashMode, captureMode) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
@@ -149,7 +216,37 @@ fun CameraCaptureScreen(
                 }
         )
 
-        // Top Bar (Flash & Close & Timer)
+        // Viewfinder Stamp Overlay at Bottom-Left
+        if (isStampEnabled && captureMode == CaptureMode.PHOTO) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.6f),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 16.dp, bottom = 120.dp)
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    Text(
+                        text = dateTimeStr,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = timeZoneAndPlace,
+                        fontSize = 11.sp,
+                        color = Color.White
+                    )
+                    Text(
+                        text = coordsStr,
+                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.85f)
+                    )
+                }
+            }
+        }
+
+        // Top Bar (Close at left, Flash at right)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -158,6 +255,10 @@ fun CameraCaptureScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(onClick = onClose) {
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+            }
+
             if (captureMode == CaptureMode.PHOTO) {
                 IconButton(onClick = {
                     flashMode = when (flashMode) {
@@ -176,25 +277,6 @@ fun CameraCaptureScreen(
                         tint = Color.White
                     )
                 }
-            } else if (isRecording) {
-                Surface(
-                    color = Color.Red,
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier.padding(start = 8.dp)
-                ) {
-                    Text(
-                        text = String.format("%02d:%02d", recordingDuration / 60, recordingDuration % 60),
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                }
-            } else {
-                Spacer(modifier = Modifier.size(48.dp))
-            }
-
-            IconButton(onClick = onClose) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
             }
         }
 
@@ -243,7 +325,17 @@ fun CameraCaptureScreen(
                 Surface(
                     onClick = {
                         if (captureMode == CaptureMode.PHOTO) {
-                            takePhoto(context, imageCapture, cameraExecutor, onImageCaptured)
+                            takePhoto(
+                                context = context,
+                                imageCapture = imageCapture,
+                                executor = cameraExecutor,
+                                isStampEnabled = isStampEnabled,
+                                dateTimeStr = dateTimeStr,
+                                timeZoneAndPlace = timeZoneAndPlace,
+                                coordsStr = coordsStr
+                            ) { uri ->
+                                capturedPhotoUri = uri
+                            }
                         } else {
                             if (isRecording) {
                                 activeRecording?.stop()
@@ -315,7 +407,7 @@ private fun startVideoRecording(
     return videoCapture.output
         .prepareRecording(context, outputOptions)
         .apply {
-            if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                 withAudioEnabled()
             }
         }
@@ -345,6 +437,10 @@ private fun takePhoto(
     context: Context,
     imageCapture: ImageCapture,
     executor: Executor,
+    isStampEnabled: Boolean,
+    dateTimeStr: String,
+    timeZoneAndPlace: String,
+    coordsStr: String,
     onImageCaptured: (Uri) -> Unit
 ) {
     val photoFile = File(
@@ -359,12 +455,30 @@ private fun takePhoto(
         executor,
         object : ImageCapture.OnImageSavedCallback {
             override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                val savedUri = FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    photoFile
-                )
-                onImageCaptured(savedUri)
+                try {
+                    if (isStampEnabled) {
+                        val originalBitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
+                        if (originalBitmap != null) {
+                            val stampedBitmap = drawStampOnBitmap(
+                                originalBitmap,
+                                dateTimeStr,
+                                timeZoneAndPlace,
+                                coordsStr
+                            )
+                            FileOutputStream(photoFile).use { out ->
+                                stampedBitmap.compress(Bitmap.CompressFormat.JPEG, 80, out)
+                            }
+                        }
+                    }
+                    val savedUri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        photoFile
+                    )
+                    onImageCaptured(savedUri)
+                } catch (e: Exception) {
+                    Log.e("CameraCapture", "Error burning stamp onto photo", e)
+                }
             }
 
             override fun onError(exc: ImageCaptureException) {
@@ -372,4 +486,56 @@ private fun takePhoto(
             }
         }
     )
+}
+
+private fun drawStampOnBitmap(
+    bitmap: Bitmap,
+    dateTimeStr: String,
+    timeZoneAndPlace: String,
+    coordsStr: String
+): Bitmap {
+    val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+    val canvas = Canvas(mutableBitmap)
+
+    val width = canvas.width
+    val height = canvas.height
+
+    val line1Size = width * 0.032f
+    val line2Size = width * 0.026f
+    val line3Size = width * 0.022f
+
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        setShadowLayer(4f, 2f, 2f, android.graphics.Color.BLACK)
+    }
+
+    val margin = width * 0.04f
+    val startX = margin
+    var startY = height - margin - (line3Size + line2Size + line1Size)
+
+    val bgPaint = Paint().apply {
+        color = android.graphics.Color.argb(140, 0, 0, 0)
+    }
+    val rect = RectF(
+        startX - 16f,
+        startY - line1Size - 16f,
+        startX + (width * 0.55f),
+        height - margin + 16f
+    )
+    canvas.drawRoundRect(rect, 16f, 16f, bgPaint)
+
+    paint.textSize = line1Size
+    paint.isFakeBoldText = true
+    canvas.drawText(dateTimeStr, startX, startY, paint)
+
+    startY += line1Size * 1.3f
+    paint.textSize = line2Size
+    paint.isFakeBoldText = false
+    canvas.drawText(timeZoneAndPlace, startX, startY, paint)
+
+    startY += line2Size * 1.3f
+    paint.textSize = line3Size
+    canvas.drawText(coordsStr, startX, startY, paint)
+
+    return mutableBitmap
 }

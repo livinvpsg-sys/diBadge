@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
+import android.widget.Toast
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -85,34 +86,51 @@ object FilePickerUtils {
     }
 
     fun openFile(context: Context, uri: Uri) {
-        val mimeType = context.contentResolver.getType(uri) ?: when (uri.path?.substringAfterLast('.')) {
-            "jpg", "jpeg", "png" -> "image/*"
+        val fileName = getFileName(context, uri)
+        openFileInExternalApp(context, uri, fileName)
+    }
+
+    fun openFileInExternalApp(context: Context, uri: Uri, fileName: String) {
+        val ext = fileName.substringAfterLast('.', "").lowercase()
+        val mimeType = when (ext) {
             "pdf" -> "application/pdf"
-            "mp4" -> "video/*"
-            "m4a", "mp3" -> "audio/*"
-            else -> "*/*"
+            "doc" -> "application/msword"
+            "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            "xls" -> "application/vnd.ms-excel"
+            "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            "ppt" -> "application/vnd.ms-powerpoint"
+            "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            "txt" -> "text/plain"
+            "csv" -> "text/csv"
+            "rtf" -> "application/rtf"
+            else -> try { context.contentResolver.getType(uri) ?: "*/*" } catch (e: Exception) { "*/*" }
         }
 
-        val safeUri = if (uri.scheme == "file") {
-            FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                File(uri.path!!)
-            )
+        val safeUri = if (uri.scheme == "file" && uri.path != null) {
+            try {
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    File(uri.path!!)
+                )
+            } catch (e: Exception) {
+                uri
+            }
         } else {
             uri
         }
 
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(safeUri, mimeType)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
         try {
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(safeUri, mimeType)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(intent)
+            val chooserIntent = Intent.createChooser(intent, "Open with")
+            chooserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(chooserIntent)
         } catch (e: Exception) {
-            // Handle error (e.g., no app found to open file)
-            Log.e("FilePickerUtils", "Error opening file", e)
+            Toast.makeText(context, "No app found to open this file", Toast.LENGTH_SHORT).show()
         }
     }
 }

@@ -3,6 +3,7 @@ package com.fabxdi.dibadge.ui.home.home_entry.chat
 import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -10,13 +11,22 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
+import com.fabxdi.dibadge.util.ScanNameValidator
+import java.io.FileOutputStream
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -35,6 +45,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.AudioFile
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.DocumentScanner
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material3.*
@@ -43,6 +54,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
@@ -66,6 +80,7 @@ import com.fabxdi.dibadge.ui.home.home_entry.chat_details.ChatDetailsScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.AudioPlayer
 import com.fabxdi.dibadge.util.AudioRecorder
+import com.fabxdi.dibadge.util.FileBlocklistValidator
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.fabxdi.dibadge.viewmodel.ChatViewModel
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
@@ -101,7 +116,29 @@ data class ChatMessage(
     val mentionedGroupNames: List<String> = emptyList(),
     val mentionedGroupDetails: List<GroupDeliveryStatus> = emptyList(),
     val latestCommentAuthor: String? = null,
-    val latestCommentText: String? = null
+    val latestCommentText: String? = null,
+    val msgType: String = "text",
+    val locationLat: Double = 0.0,
+    val locationLng: Double = 0.0,
+    val locationAccuracy: Int = 0,
+    val locationPlaceName: String? = null,
+    val isLiveLocation: Boolean = false,
+    val liveExpiresAt: Long = 0L,
+    val isLiveEnded: Boolean = false,
+    val pollQuestion: String = "",
+    val pollOptions: List<PollOptionItem> = emptyList(),
+    val pollAllowMultiple: Boolean = false,
+    val pollShowVoters: Boolean = true,
+    val isPollClosed: Boolean = false,
+    val userVotedOptionIds: Set<String> = emptySet(),
+    val isVoiceNote: Boolean = false,
+    val waveformArray: List<Int> = emptyList()
+)
+
+data class PollOptionItem(
+    val id: String,
+    val text: String,
+    val voteCount: Int = 0
 )
 
 fun stripGroupMention(text: String, groupName: String? = null): String {
@@ -119,6 +156,23 @@ enum class AttachmentCategory {
     IMAGE, VIDEO, AUDIO, DOCUMENT
 }
 
+enum class VoiceRecordState { NONE, HOLD, LOCKED, PAUSED }
+
+fun normalizeWaveformTo64(amplitudes: List<Int>): List<Int> {
+    if (amplitudes.isEmpty()) return List(64) { 4 }
+    val maxAmp = amplitudes.maxOrNull()?.coerceAtLeast(1) ?: 1
+    val result = mutableListOf<Int>()
+    val step = amplitudes.size / 64f
+
+    for (i in 0 until 64) {
+        val index = (i * step).toInt().coerceIn(0, amplitudes.size - 1)
+        val raw = amplitudes[index]
+        val normalized = ((raw.toFloat() / maxAmp) * 31f).toInt().coerceIn(2, 31)
+        result.add(normalized)
+    }
+    return result
+}
+
 fun getAttachmentCategory(context: Context, uri: Uri): AttachmentCategory {
     val fileName = FilePickerUtils.getFileName(context, uri).lowercase()
     val mimeType = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
@@ -129,6 +183,33 @@ fun getAttachmentCategory(context: Context, uri: Uri): AttachmentCategory {
         mimeType?.startsWith("video/") == true || ext == "mp4" -> AttachmentCategory.VIDEO
         mimeType?.startsWith("audio/") == true || ext in listOf("m4a", "mp3") -> AttachmentCategory.AUDIO
         else -> AttachmentCategory.DOCUMENT
+    }
+}
+
+private fun launchDocumentScanner(context: Context, launcher: ActivityResultLauncher<IntentSenderRequest>) {
+    try {
+        val options = GmsDocumentScannerOptions.Builder()
+            .setGalleryImportAllowed(true)
+            .setPageLimit(10)
+            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_PDF)
+            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+            .build()
+
+        val scanner = GmsDocumentScanning.getClient(options)
+        val activity = context as? Activity
+        if (activity != null) {
+            scanner.getStartScanIntent(activity)
+                .addOnSuccessListener { intentSender ->
+                    launcher.launch(IntentSenderRequest.Builder(intentSender).build())
+                }
+                .addOnFailureListener {
+                    Toast.makeText(context, "Scanning isn't available on this phone", Toast.LENGTH_SHORT).show()
+                }
+        } else {
+            Toast.makeText(context, "Scanning isn't available on this phone", Toast.LENGTH_SHORT).show()
+        }
+    } catch (e: Exception) {
+        Toast.makeText(context, "Scanning isn't available on this phone", Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -148,8 +229,15 @@ fun processNewUris(newUris: List<Uri>, currentFiles: List<Uri>, context: Context
 
     val validUris = mutableListOf<Uri>()
     var sizeExceeded = false
+    var isBlockedType = false
 
     for (uri in limitedUris) {
+        val fileName = FilePickerUtils.getFileName(context, uri)
+        if (FileBlocklistValidator.isFileBlocked(fileName)) {
+            isBlockedType = true
+            continue
+        }
+
         val cat = getAttachmentCategory(context, uri)
         if (currentCat != null && cat != currentCat) {
             continue
@@ -160,6 +248,10 @@ fun processNewUris(newUris: List<Uri>, currentFiles: List<Uri>, context: Context
         } else {
             validUris.add(uri)
         }
+    }
+
+    if (isBlockedType) {
+        Toast.makeText(context, "This file type can't be sent", Toast.LENGTH_SHORT).show()
     }
 
     if (sizeExceeded) {
@@ -241,6 +333,7 @@ fun ChatScreen(
     onOpenMyForms: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
 
     val reminderViewModel: ReminderViewModel = viewModel()
@@ -273,6 +366,7 @@ fun ChatScreen(
     var showAttachmentOptions by remember { mutableStateOf(false) }
     var attachedFiles by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var showCamera by remember { mutableStateOf(false) }
+    var isCameraForStampMode by remember { mutableStateOf(false) }
 
     var galleryMedia by remember { mutableStateOf<List<Uri>?>(null) }
     var galleryInitialIndex by remember { mutableIntStateOf(0) }
@@ -293,8 +387,33 @@ fun ChatScreen(
     var showMessageOptionsSheet by remember { mutableStateOf(false) }
     var selectedCommentMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var selectedSentToMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var selectedPollForVotes by remember { mutableStateOf<ChatMessage?>(null) }
+    var showShareLocationSheet by remember { mutableStateOf(false) }
+    var showNewPollScreen by remember { mutableStateOf(false) }
+    var showRenamePdfSheet by remember { mutableStateOf(false) }
+    var selectedPdfUriForRename by remember { mutableStateOf<Uri?>(null) }
+    var selectedPdfReaderUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedDocInfoUri by remember { mutableStateOf<Uri?>(null) }
+    var isDocInfoPreSend by remember { mutableStateOf(false) }
     var seenThreadIds by remember { mutableStateOf(setOf<String>()) }
     var activePickerTabOverride by remember { mutableStateOf<MentionPickerMode?>(null) }
+
+    var voiceRecordState by remember { mutableStateOf(VoiceRecordState.NONE) }
+    var voiceRecordDurationMs by remember { mutableLongStateOf(0L) }
+    var voiceAmplitudes by remember { mutableStateOf(listOf<Int>()) }
+    var voiceDragOffsetX by remember { mutableFloatStateOf(0f) }
+    var voiceDragOffsetY by remember { mutableFloatStateOf(0f) }
+    var voiceAudioFile by remember { mutableStateOf<File?>(null) }
+    var isPreviewPlaying by remember { mutableStateOf(false) }
+
+    var recordAudioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { isGranted ->
+            if (!isGranted) {
+                Toast.makeText(context, "Allow the microphone in Settings to send voice messages", Toast.LENGTH_SHORT).show()
+            }
+        }
+    )
 
     LaunchedEffect(inputText) {
         if (!inputText.contains("@")) {
@@ -414,6 +533,26 @@ fun ChatScreen(
         }
     }
 
+    LaunchedEffect(voiceRecordState) {
+        if (voiceRecordState == VoiceRecordState.HOLD || voiceRecordState == VoiceRecordState.LOCKED) {
+            val startMs = System.currentTimeMillis()
+            val amps = mutableListOf<Int>()
+            while (voiceRecordState == VoiceRecordState.HOLD || voiceRecordState == VoiceRecordState.LOCKED) {
+                delay(100)
+                voiceRecordDurationMs = System.currentTimeMillis() - startMs
+                val amp = recorder.getMaxAmplitude()
+                amps.add(amp)
+                voiceAmplitudes = amps.takeLast(25)
+
+                if (voiceRecordDurationMs >= 15 * 60 * 1000L) {
+                    recorder.pause()
+                    voiceRecordState = VoiceRecordState.PAUSED
+                    break
+                }
+            }
+        }
+    }
+
     BackHandler {
         if (selectedAttachmentUris.isNotEmpty()) {
             selectedAttachmentUris = emptySet()
@@ -468,8 +607,38 @@ fun ChatScreen(
         onResult = { uris -> attachedFiles = processNewUris(uris, attachedFiles, context) }
     )
 
+    val docScannerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult(),
+        onResult = { result ->
+            if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+                val gmsResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
+                val pdfUri = gmsResult?.pdf?.uri
+                if (pdfUri != null) {
+                    val defaultName = ScanNameValidator.generateDefaultScanName()
+                    val cacheFile = File(context.cacheDir, defaultName)
+                    try {
+                        context.contentResolver.openInputStream(pdfUri)?.use { input ->
+                            FileOutputStream(cacheFile).use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        val safeUri = FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.fileprovider",
+                            cacheFile
+                        )
+                        attachedFiles = processNewUris(listOf(safeUri), attachedFiles, context)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+        }
+    )
+
     if (showCamera) {
         CameraCaptureScreen(
+            isStampCamera = isCameraForStampMode,
             onImageCaptured = { uri ->
                 attachedFiles = processNewUris(listOf(uri), attachedFiles, context)
                 showCamera = false
@@ -483,21 +652,31 @@ fun ChatScreen(
         MediaGalleryScreen(
             mediaUris = galleryMedia!!,
             initialIndex = galleryInitialIndex,
+            isDark = isDark,
             onClose = {
                 galleryMedia = null
                 galleryMessage = null
             },
-            onReply = {
-                replyingTo = galleryMessage
-                galleryMedia = null
-                galleryMessage = null
-            },
-            onDelete = {
-                galleryMessage?.let {
-                    chatViewModel.deleteMessages(context, currentEntry.id.toString(), setOf(it.id))
+            onRemovePhoto = { indexToRemove ->
+                val uriToRemove = galleryMedia!!.getOrNull(indexToRemove)
+                if (uriToRemove != null) {
+                    attachedFiles = attachedFiles.filter { it != uriToRemove }
+                    pendingDurations = pendingDurations.filter { it.key != uriToRemove.toString() }
+                    val updatedList = galleryMedia!!.filterIndexed { idx, _ -> idx != indexToRemove }
+                    if (updatedList.isEmpty()) {
+                        galleryMedia = null
+                        galleryMessage = null
+                    } else {
+                        galleryMedia = updatedList
+                    }
                 }
-                galleryMedia = null
-                galleryMessage = null
+            },
+            onSaveEditedPhoto = { indexToReplace, newUri ->
+                val oldUri = galleryMedia!!.getOrNull(indexToReplace)
+                if (oldUri != null) {
+                    attachedFiles = attachedFiles.map { if (it == oldUri) newUri else it }
+                    galleryMedia = galleryMedia!!.mapIndexed { idx, uri -> if (idx == indexToReplace) newUri else uri }
+                }
             }
         )
         return
@@ -892,33 +1071,17 @@ fun ChatScreen(
                             selectedAttachmentUris = emptySet()
                         },
                         onDeleteSelected = {
-                            val count = selectedAttachmentUris.size
-                            val removedFiles = attachedFiles.filter { selectedAttachmentUris.contains(it) }
-                            val removedDurations = pendingDurations.filter { selectedAttachmentUris.contains(Uri.parse(it.key)) }
-
                             attachedFiles = attachedFiles.filter { !selectedAttachmentUris.contains(it) }
                             pendingDurations = pendingDurations.filter { !selectedAttachmentUris.contains(Uri.parse(it.key)) }
                             selectedAttachmentUris = emptySet()
-
-                            scope.launch {
-                                val messageText = if (count == 1) "1 removed" else "$count removed"
-                                val result = snackbarHostState.showSnackbar(
-                                    message = messageText,
-                                    actionLabel = "Undo",
-                                    duration = SnackbarDuration.Short
-                                )
-                                if (result == SnackbarResult.ActionPerformed) {
-                                    attachedFiles = attachedFiles + removedFiles
-                                    pendingDurations = pendingDurations + removedDurations
-                                }
-                            }
                         },
                         onImageClick = { uris, index ->
                             galleryMedia = uris
                             galleryInitialIndex = index
                         },
                         onFileClick = { uri ->
-                            FilePickerUtils.openFile(context, uri)
+                            val fileName = FilePickerUtils.getFileName(context, uri)
+                            FilePickerUtils.openFileInExternalApp(context, uri, fileName)
                         }
                     )
                 }
@@ -1097,6 +1260,7 @@ fun ChatScreen(
                                     modifier = Modifier
                                         .size(32.dp)
                                         .clickable {
+                                            isCameraForStampMode = false
                                             if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
                                                 showCamera = true
                                             } else {
@@ -1129,27 +1293,10 @@ fun ChatScreen(
                             .size(44.dp)
                             .clickable(enabled = isActionEnabled) {
                                 if (isSelectionMode) {
-                                    // Delete selected attachments action
-                                    val count = selectedAttachmentUris.size
-                                    val removedFiles = attachedFiles.filter { selectedAttachmentUris.contains(it) }
-                                    val removedDurations = pendingDurations.filter { selectedAttachmentUris.contains(Uri.parse(it.key)) }
-
+                                    // Delete selected attachments action (immediate delete, no snackbar)
                                     attachedFiles = attachedFiles.filter { !selectedAttachmentUris.contains(it) }
                                     pendingDurations = pendingDurations.filter { !selectedAttachmentUris.contains(Uri.parse(it.key)) }
                                     selectedAttachmentUris = emptySet()
-
-                                    scope.launch {
-                                        val messageText = if (count == 1) "1 removed" else "$count removed"
-                                        val result = snackbarHostState.showSnackbar(
-                                            message = messageText,
-                                            actionLabel = "Undo",
-                                            duration = SnackbarDuration.Short
-                                        )
-                                        if (result == SnackbarResult.ActionPerformed) {
-                                            attachedFiles = attachedFiles + removedFiles
-                                            pendingDurations = pendingDurations + removedDurations
-                                        }
-                                    }
                                 } else if (isTyping) {
                                     val currentText = inputText.trim()
                                     chatViewModel.sendMessage(
@@ -1246,12 +1393,66 @@ fun ChatScreen(
                                 modifier = Modifier.size(24.dp)
                             )
                         } else {
-                            Icon(
-                                imageVector = Icons.Default.Mic,
-                                contentDescription = "Record audio",
-                                tint = primaryTextColor,
-                                modifier = Modifier.size(24.dp)
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .pointerInput(Unit) {
+                                        detectDragGestures(
+                                            onDragStart = {
+                                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                                    val audioFile = File(context.cacheDir, "VOICE_${System.currentTimeMillis()}.m4a")
+                                                    voiceAudioFile = audioFile
+                                                    recorder.start(audioFile)
+                                                    voiceRecordState = VoiceRecordState.HOLD
+                                                    voiceDragOffsetX = 0f
+                                                    voiceDragOffsetY = 0f
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                } else {
+                                                    recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                                }
+                                            },
+                                            onDrag = { _, dragAmount ->
+                                                voiceDragOffsetX += dragAmount.x
+                                                voiceDragOffsetY += dragAmount.y
+
+                                                if (voiceDragOffsetX < -120f) {
+                                                    recorder.stop()
+                                                    voiceRecordState = VoiceRecordState.NONE
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                } else if (voiceDragOffsetY < -120f) {
+                                                    voiceRecordState = VoiceRecordState.LOCKED
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                }
+                                            },
+                                            onDragEnd = {
+                                                if (voiceRecordState == VoiceRecordState.HOLD) {
+                                                    recorder.stop()
+                                                    if (voiceAudioFile != null && voiceRecordDurationMs >= 1000L) {
+                                                        val normWaveform = normalizeWaveformTo64(voiceAmplitudes)
+                                                        chatViewModel.sendVoiceNoteMessage(
+                                                            context = context,
+                                                            groupId = currentEntry.id.toString(),
+                                                            audioFile = voiceAudioFile!!,
+                                                            durationMs = voiceRecordDurationMs,
+                                                            waveform = normWaveform
+                                                        )
+                                                    } else {
+                                                        Toast.makeText(context, "Hold to record, release to send", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                    voiceRecordState = VoiceRecordState.NONE
+                                                }
+                                            }
+                                        )
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Mic,
+                                    contentDescription = "Record audio",
+                                    tint = primaryTextColor,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -1441,15 +1642,16 @@ fun ChatScreen(
         }
     }
 
-    // Attach Sheet (The Paper Clip): Card color background, 20dp top corners, 56dp outline-only buttons with line icons
+    // Attach Sheet (The Paper Clip): 4 columns, 2 rows, card background, 24dp top corners
     if (showAttachmentOptions) {
         val activeCategory = remember(attachedFiles) {
             if (attachedFiles.isNotEmpty()) getAttachmentCategory(context, attachedFiles.first()) else null
         }
+        val isGroupChat = currentEntry.title.lowercase() != "direct"
 
         ModalBottomSheet(
             onDismissRequest = { showAttachmentOptions = false },
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
             containerColor = cardColor,
             tonalElevation = 0.dp,
             scrimColor = Color.Black.copy(alpha = 0.45f),
@@ -1461,7 +1663,7 @@ fun ChatScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Surface(
-                        modifier = Modifier.size(width = 32.dp, height = 4.dp),
+                        modifier = Modifier.size(width = 36.dp, height = 4.dp),
                         shape = RoundedCornerShape(2.dp),
                         color = secondaryTextColor.copy(alpha = 0.40f)
                     ) {}
@@ -1475,64 +1677,149 @@ fun ChatScreen(
                     .padding(horizontal = 16.dp)
                     .padding(bottom = 28.dp)
             ) {
+                // Row 1: Stamp, Photo, Video, Audio
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceAround,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(top = 12.dp)
                 ) {
-                    AttachColumnItem(
-                        icon = Icons.Outlined.Image,
-                        label = "Image",
-                        outlineColor = outlineColor,
-                        secondaryTextColor = secondaryTextColor,
-                        primaryTextColor = primaryTextColor,
-                        enabled = activeCategory == null || activeCategory == AttachmentCategory.IMAGE
-                    ) {
-                        imagePickerLauncher.launch("image/*")
-                        showAttachmentOptions = false
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
+                        AttachColumnItem(
+                            icon = Icons.Default.CameraAlt,
+                            label = "Stamp",
+                            isDark = isDark,
+                            outlineColor = outlineColor,
+                            secondaryTextColor = secondaryTextColor,
+                            primaryTextColor = primaryTextColor,
+                            enabled = activeCategory == null || activeCategory == AttachmentCategory.IMAGE
+                        ) {
+                            isCameraForStampMode = true
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                                showCamera = true
+                            } else {
+                                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                            }
+                            showAttachmentOptions = false
+                        }
                     }
 
-                    AttachColumnItem(
-                        icon = Icons.Outlined.VideoLibrary,
-                        label = "Video",
-                        outlineColor = outlineColor,
-                        secondaryTextColor = secondaryTextColor,
-                        primaryTextColor = primaryTextColor,
-                        enabled = activeCategory == null || activeCategory == AttachmentCategory.VIDEO
-                    ) {
-                        videoPickerLauncher.launch("video/*")
-                        showAttachmentOptions = false
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
+                        AttachColumnItem(
+                            icon = Icons.Outlined.Image,
+                            label = "Photo",
+                            isDark = isDark,
+                            outlineColor = outlineColor,
+                            secondaryTextColor = secondaryTextColor,
+                            primaryTextColor = primaryTextColor,
+                            enabled = activeCategory == null || activeCategory == AttachmentCategory.IMAGE
+                        ) {
+                            imagePickerLauncher.launch("image/*")
+                            showAttachmentOptions = false
+                        }
                     }
 
-                    AttachColumnItem(
-                        icon = Icons.Outlined.AudioFile,
-                        label = "Audio",
-                        outlineColor = outlineColor,
-                        secondaryTextColor = secondaryTextColor,
-                        primaryTextColor = primaryTextColor,
-                        enabled = activeCategory == null || activeCategory == AttachmentCategory.AUDIO
-                    ) {
-                        audioPickerLauncher.launch("audio/*")
-                        showAttachmentOptions = false
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
+                        AttachColumnItem(
+                            icon = Icons.Outlined.VideoLibrary,
+                            label = "Video",
+                            isDark = isDark,
+                            outlineColor = outlineColor,
+                            secondaryTextColor = secondaryTextColor,
+                            primaryTextColor = primaryTextColor,
+                            enabled = activeCategory == null || activeCategory == AttachmentCategory.VIDEO
+                        ) {
+                            videoPickerLauncher.launch("video/*")
+                            showAttachmentOptions = false
+                        }
                     }
 
-                    AttachColumnItem(
-                        icon = Icons.Outlined.Description,
-                        label = "Document",
-                        outlineColor = outlineColor,
-                        secondaryTextColor = secondaryTextColor,
-                        primaryTextColor = primaryTextColor,
-                        enabled = activeCategory == null || activeCategory == AttachmentCategory.DOCUMENT
-                    ) {
-                        documentPickerLauncher.launch(arrayOf("*/*"))
-                        showAttachmentOptions = false
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
+                        AttachColumnItem(
+                            icon = Icons.Outlined.AudioFile,
+                            label = "Audio",
+                            isDark = isDark,
+                            outlineColor = outlineColor,
+                            secondaryTextColor = secondaryTextColor,
+                            primaryTextColor = primaryTextColor,
+                            enabled = activeCategory == null || activeCategory == AttachmentCategory.AUDIO
+                        ) {
+                            audioPickerLauncher.launch("audio/*")
+                            showAttachmentOptions = false
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Row 2: Documents, Scan, Location, Poll
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
+                        AttachColumnItem(
+                            icon = Icons.Outlined.Description,
+                            label = "Documents",
+                            isDark = isDark,
+                            outlineColor = outlineColor,
+                            secondaryTextColor = secondaryTextColor,
+                            primaryTextColor = primaryTextColor,
+                            enabled = activeCategory == null || activeCategory == AttachmentCategory.DOCUMENT
+                        ) {
+                            documentPickerLauncher.launch(arrayOf("*/*"))
+                            showAttachmentOptions = false
+                        }
+                    }
+
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
+                        AttachColumnItem(
+                            icon = Icons.Outlined.DocumentScanner,
+                            label = "Scan",
+                            isDark = isDark,
+                            outlineColor = outlineColor,
+                            secondaryTextColor = secondaryTextColor,
+                            primaryTextColor = primaryTextColor,
+                            enabled = activeCategory == null || activeCategory == AttachmentCategory.DOCUMENT
+                        ) {
+                            showAttachmentOptions = false
+                            launchDocumentScanner(context, docScannerLauncher)
+                        }
+                    }
+
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
+                        AttachColumnItem(
+                            icon = Icons.Default.Place,
+                            label = "Location",
+                            isDark = isDark,
+                            outlineColor = outlineColor,
+                            secondaryTextColor = secondaryTextColor,
+                            primaryTextColor = primaryTextColor,
+                            enabled = true
+                        ) {
+                            showAttachmentOptions = false
+                            showShareLocationSheet = true
+                        }
+                    }
+
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
+                        if (isGroupChat) {
+                            AttachColumnItem(
+                                icon = Icons.Default.BarChart,
+                                label = "Poll",
+                                isDark = isDark,
+                                outlineColor = outlineColor,
+                                secondaryTextColor = secondaryTextColor,
+                                primaryTextColor = primaryTextColor,
+                                enabled = true
+                            ) {
+                                showAttachmentOptions = false
+                                showNewPollScreen = true
+                            }
+                        }
                     }
                 }
 
                 if (activeCategory != null) {
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = "Finish or remove your current attachments first",
                         fontSize = 12.sp,
@@ -1591,18 +1878,154 @@ fun ChatScreen(
             onDismiss = { selectedSentToMessage = null }
         )
     }
+
+    if (showShareLocationSheet) {
+        ShareLocationSheet(
+            placeName = "Jurong West, Singapore",
+            accuracyMeters = 12,
+            isDark = isDark,
+            onSendCurrentLocation = { lat, lng, place, accuracy ->
+                chatViewModel.sendLocationMessage(
+                    context = context,
+                    groupId = currentEntry.id.toString(),
+                    lat = lat,
+                    lng = lng,
+                    placeName = place,
+                    accuracy = accuracy,
+                    isLive = false
+                )
+            },
+            onSendLiveLocation = { lat, lng, place, durationMins ->
+                chatViewModel.sendLocationMessage(
+                    context = context,
+                    groupId = currentEntry.id.toString(),
+                    lat = lat,
+                    lng = lng,
+                    placeName = place,
+                    accuracy = 10,
+                    isLive = true,
+                    durationMins = durationMins
+                )
+            },
+            onDismiss = { showShareLocationSheet = false }
+        )
+    }
+
+    if (showNewPollScreen) {
+        NewPollScreen(
+            isDark = isDark,
+            onCreatePoll = { question, options, allowMultiple, showVoters ->
+                chatViewModel.sendPollMessage(
+                    context = context,
+                    groupId = currentEntry.id.toString(),
+                    question = question,
+                    options = options,
+                    allowMultiple = allowMultiple,
+                    showVoters = showVoters
+                )
+            },
+            onClose = { showNewPollScreen = false }
+        )
+    }
+
+    if (selectedPollForVotes != null) {
+        val targetPoll = selectedPollForVotes!!
+        val optionGroups = targetPoll.pollOptions.map { opt ->
+            PollVoterOptionGroup(
+                optionText = opt.text,
+                voters = listOf(PollVoter(currentUserId, "You"))
+            )
+        }
+
+        VotesSheet(
+            optionGroups = optionGroups,
+            isDark = isDark,
+            onDismiss = { selectedPollForVotes = null }
+        )
+    }
+
+    if (showRenamePdfSheet && selectedPdfUriForRename != null) {
+        val targetUri = selectedPdfUriForRename!!
+        val currentFileName = FilePickerUtils.getFileName(context, targetUri)
+
+        RenamePdfSheet(
+            initialName = currentFileName,
+            isDark = isDark,
+            onSaveName = { newName ->
+                try {
+                    val oldFile = File(context.cacheDir, currentFileName)
+                    val newFile = File(context.cacheDir, newName)
+                    if (oldFile.exists()) {
+                        oldFile.renameTo(newFile)
+                    } else {
+                        context.contentResolver.openInputStream(targetUri)?.use { input ->
+                            FileOutputStream(newFile).use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                    }
+                    val newUri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        newFile
+                    )
+                    attachedFiles = attachedFiles.map { if (it == targetUri) newUri else it }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            },
+            onDismiss = {
+                showRenamePdfSheet = false
+                selectedPdfUriForRename = null
+            }
+        )
+    }
+
+    if (selectedPdfReaderUri != null) {
+        val uri = selectedPdfReaderUri!!
+        val fileName = FilePickerUtils.getFileName(context, uri)
+        InAppPdfReaderScreen(
+            pdfUri = uri,
+            fileName = fileName,
+            isDark = isDark,
+            onClose = { selectedPdfReaderUri = null },
+            onDelete = {
+                attachedFiles = attachedFiles.filter { it != uri }
+                selectedPdfReaderUri = null
+            }
+        )
+    }
+
+    if (selectedDocInfoUri != null) {
+        val uri = selectedDocInfoUri!!
+        val fileName = FilePickerUtils.getFileName(context, uri)
+        InAppDocInfoScreen(
+            fileUri = uri,
+            fileName = fileName,
+            isPreSend = isDocInfoPreSend,
+            isDark = isDark,
+            onClose = { selectedDocInfoUri = null },
+            onDelete = {
+                attachedFiles = attachedFiles.filter { it != uri }
+                selectedDocInfoUri = null
+            }
+        )
+    }
 }
 
 @Composable
 private fun AttachColumnItem(
     icon: ImageVector,
     label: String,
+    isDark: Boolean,
     outlineColor: Color,
     secondaryTextColor: Color,
     primaryTextColor: Color,
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
+    val raisedColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -1612,22 +2035,22 @@ private fun AttachColumnItem(
         Surface(
             modifier = Modifier.size(56.dp),
             shape = CircleShape,
-            color = Color.Transparent,
+            color = raisedColor,
             border = BorderStroke(1.dp, outlineColor)
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = icon,
                     contentDescription = label,
-                    tint = secondaryTextColor,
-                    modifier = Modifier.size(26.dp)
+                    tint = primaryTextColor,
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
         Spacer(modifier = Modifier.height(10.dp))
         Text(
             text = label,
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             color = primaryTextColor
         )
     }

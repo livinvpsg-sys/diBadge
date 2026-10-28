@@ -5,12 +5,14 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.core.content.FileProvider
 import com.fabxdi.dibadge.data.AppDatabase
 import com.fabxdi.dibadge.data.ChatMessageEntity
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatComment
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatMessage
 import com.fabxdi.dibadge.util.AlarmReceiver
 import com.fabxdi.dibadge.util.FilePickerUtils
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.FirebaseFirestore
@@ -22,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.io.File
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -485,6 +488,144 @@ class ChatViewModel : ViewModel() {
                     title,
                     content
                 )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun sendLocationMessage(
+        context: Context,
+        groupId: String,
+        lat: Double,
+        lng: Double,
+        placeName: String,
+        accuracy: Int,
+        isLive: Boolean = false,
+        durationMins: Int = 60
+    ) {
+        val currentUid = auth.currentUser?.uid ?: return
+        val currentName = auth.currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Me"
+        val messageId = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        val expiresAt = if (isLive) now + durationMins * 60 * 1000L else 0L
+
+        val docData = mutableMapOf<String, Any>(
+            "id" to messageId,
+            "senderUid" to currentUid,
+            "senderName" to currentName,
+            "timestamp" to Timestamp.now(),
+            "text" to if (isLive) "Live location" else "Location",
+            "msgType" to "location",
+            "locationLat" to lat,
+            "locationLng" to lng,
+            "locationAccuracy" to accuracy,
+            "locationPlaceName" to placeName,
+            "isLiveLocation" to isLive,
+            "liveExpiresAt" to expiresAt,
+            "isLiveEnded" to false
+        )
+
+        viewModelScope.launch {
+            try {
+                db.collection("groups")
+                    .document(groupId)
+                    .collection("messages")
+                    .document(messageId)
+                    .set(docData)
+                    .await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun sendPollMessage(
+        context: Context,
+        groupId: String,
+        question: String,
+        options: List<String>,
+        allowMultiple: Boolean,
+        showVoters: Boolean
+    ) {
+        val currentUid = auth.currentUser?.uid ?: return
+        val currentName = auth.currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Me"
+        val messageId = UUID.randomUUID().toString()
+
+        val pollOptionsData = options.mapIndexed { index, text ->
+            mapOf(
+                "id" to index.toString(),
+                "text" to text,
+                "voteCount" to 0
+            )
+        }
+
+        val docData = mutableMapOf<String, Any>(
+            "id" to messageId,
+            "senderUid" to currentUid,
+            "senderName" to currentName,
+            "timestamp" to Timestamp.now(),
+            "text" to "Poll: $question",
+            "msgType" to "poll",
+            "pollQuestion" to question,
+            "pollOptions" to pollOptionsData,
+            "pollAllowMultiple" to allowMultiple,
+            "pollShowVoters" to showVoters,
+            "isPollClosed" to false
+        )
+
+        viewModelScope.launch {
+            try {
+                db.collection("groups")
+                    .document(groupId)
+                    .collection("messages")
+                    .document(messageId)
+                    .set(docData)
+                    .await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun sendVoiceNoteMessage(
+        context: Context,
+        groupId: String,
+        audioFile: File,
+        durationMs: Long,
+        waveform: List<Int>
+    ) {
+        val currentUid = auth.currentUser?.uid ?: return
+        val currentName = auth.currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Me"
+        val messageId = UUID.randomUUID().toString()
+
+        val audioUri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            audioFile
+        ).toString()
+
+        val docData = mutableMapOf<String, Any>(
+            "id" to messageId,
+            "senderUid" to currentUid,
+            "senderName" to currentName,
+            "timestamp" to Timestamp.now(),
+            "text" to "",
+            "msgType" to "audio",
+            "isVoiceNote" to true,
+            "waveformArray" to waveform,
+            "attachments" to listOf(audioUri),
+            "attachmentDurations" to mapOf(audioUri to (durationMs / 1000L))
+        )
+
+        viewModelScope.launch {
+            try {
+                db.collection("groups")
+                    .document(groupId)
+                    .collection("messages")
+                    .document(messageId)
+                    .set(docData)
+                    .await()
             } catch (e: Exception) {
                 e.printStackTrace()
             }

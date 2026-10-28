@@ -3,6 +3,7 @@ package com.fabxdi.dibadge.util
 import android.content.Context
 import android.media.MediaPlayer
 import android.net.Uri
+import android.os.Build
 
 class AudioPlayer(private val context: Context) {
 
@@ -44,5 +45,13 @@ class AudioPlayer(private val context: Context) {
 
     fun getDuration(): Int {
         return player?.duration ?: 0
+    }
+
+    fun setSpeed(speed: Float) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                player?.playbackParams = player?.playbackParams?.setSpeed(speed) ?: return
+            } catch (e: Exception) {}
+        }
     }
 }

@@ -55,11 +55,16 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material.icons.outlined.AudioFile
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Headphones
+import androidx.compose.material.icons.outlined.Link
+import com.fabxdi.dibadge.util.UrlExtractor
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PhotoLibrary
@@ -98,8 +103,18 @@ import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+data class ChatLinkItem(
+    val url: String,
+    val domain: String,
+    val senderName: String,
+    val timestamp: LocalDateTime,
+    val messageId: String
+)
 
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -143,15 +158,17 @@ fun ChatDetailsScreen(
     val memberSearchCandidates by detailsViewModel.memberSearchCandidates.collectAsState()
 
     val colors = MaterialTheme.colorScheme
-    val diBadgeColors = DiBadgeTheme.colors
+    val isDark = colors.onBackground.red > 0.5f
 
-    val primaryTextColor = colors.onBackground
-    val secondaryTextColor = colors.onSurfaceVariant
-    val cardBgColor = colors.surface
-    val outlineColor = colors.outline
-    val pageBgColor = colors.background
-    val tealAccent = diBadgeColors.accent
-    val isDark = primaryTextColor.red > 0.5f
+    val pageBgColor = if (isDark) Color(0xFF0E1114) else Color(0xFFE8ECEF)
+    val cardColor = if (isDark) Color(0xFF181C21) else Color(0xFFF5F7F9)
+    val cardFillColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
+    val outlineColor = if (isDark) Color(0xFF2A3037) else Color(0xFFD3D9DF)
+    val primaryTextColor = if (isDark) Color(0xFFF0F3F5) else Color(0xFF11161A)
+    val secondaryTextColor = if (isDark) Color(0xFF8A9199) else Color(0xFF65707A)
+    val dimTextColor = if (isDark) Color(0xFF6E757C) else Color(0xFF8A929A)
+    val errorColor = if (isDark) Color(0xFFE8837A) else Color(0xFFC4433A)
+    val tealAccent = if (isDark) Color(0xFF58B5AC) else Color(0xFF1B6F69)
 
     var selectedActionTab by remember { mutableStateOf<Int?>(null) } // null=None (Media default), 1=Members, 2=Groups, 3=Forms, 4=Folders
     var selectedMediaCategory by remember { mutableStateOf("Media") } // "Media", "Docs"
@@ -578,7 +595,7 @@ fun ChatDetailsScreen(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // Two Equal-Width Tabs: Media and Docs (44dp high)
+                // Four Equal-Width Tabs: Media | Docs | Audio | Links (44dp high)
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
                         modifier = Modifier
@@ -586,63 +603,36 @@ fun ChatDetailsScreen(
                             .height(44.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Media Tab (Left)
-                        val isMediaSelected = selectedMediaCategory == "Media"
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .clickable { selectedMediaCategory = "Media" },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                modifier = Modifier.fillMaxSize(),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.SpaceBetween
+                        val categories = listOf("Media", "Docs", "Audio", "Links")
+                        categories.forEach { category ->
+                            val isSelected = selectedMediaCategory == category
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clickable { selectedMediaCategory = category },
+                                contentAlignment = Alignment.Center
                             ) {
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "Media",
-                                    fontSize = 15.sp,
-                                    fontWeight = if (isMediaSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                    color = if (isMediaSelected) primaryTextColor else secondaryTextColor
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(2.dp)
-                                        .background(if (isMediaSelected) primaryTextColor else Color.Transparent)
-                                )
-                            }
-                        }
-
-                        // Docs Tab (Right)
-                        val isDocsSelected = selectedMediaCategory == "Docs"
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .clickable { selectedMediaCategory = "Docs" },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                modifier = Modifier.fillMaxSize(),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "Docs",
-                                    fontSize = 15.sp,
-                                    fontWeight = if (isDocsSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                    color = if (isDocsSelected) primaryTextColor else secondaryTextColor
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(2.dp)
-                                        .background(if (isDocsSelected) primaryTextColor else Color.Transparent)
-                                )
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = category,
+                                        fontSize = 15.sp,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (isSelected) primaryTextColor else secondaryTextColor,
+                                        maxLines = 1
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(2.dp)
+                                            .background(if (isSelected) primaryTextColor else Color.Transparent)
+                                    )
+                                }
                             }
                         }
                     }
@@ -855,11 +845,303 @@ fun ChatDetailsScreen(
                                     }
                                 }
                             }
+
+                            "Audio" -> {
+                                val audioItems = remember(messages) {
+                                    messages.filter { msg ->
+                                        msg.msgType == "audio" || msg.attachments.any { uriStr ->
+                                            uriStr.contains("audio") || uriStr.endsWith(".m4a") || uriStr.endsWith(".mp3") || uriStr.endsWith(".wav")
+                                        }
+                                    }.sortedByDescending { it.timestamp }
+                                }
+
+                                if (audioItems.isEmpty()) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 80.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Headphones,
+                                            contentDescription = null,
+                                            tint = dimTextColor,
+                                            modifier = Modifier.size(44.dp)
+                                        )
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Text(
+                                            text = "No audio yet",
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = primaryTextColor
+                                        )
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            text = "Voice messages and audio files shared in this chat appear here",
+                                            fontSize = 13.sp,
+                                            color = secondaryTextColor,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(horizontal = 32.dp)
+                                        )
+                                    }
+                                } else {
+                                    val groupedAudio = remember(audioItems) {
+                                        audioItems.groupBy { formatTimestampToDateHeader(it.timestamp.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()) }
+                                    }
+
+                                    groupedAudio.forEach { (dateHeader, itemsList) ->
+                                        Text(
+                                            text = dateHeader,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = secondaryTextColor,
+                                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 20.dp)
+                                        )
+
+                                        itemsList.forEach { audioMsg ->
+                                            var isPlayingThis by remember { mutableStateOf(false) }
+
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(64.dp)
+                                                    .clickable {
+                                                        if (audioMsg.attachments.isNotEmpty()) {
+                                                            FilePickerUtils.openFile(context, Uri.parse(audioMsg.attachments.first()))
+                                                        }
+                                                    }
+                                                    .padding(horizontal = 20.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Surface(
+                                                    modifier = Modifier
+                                                        .size(40.dp)
+                                                        .clickable { isPlayingThis = !isPlayingThis },
+                                                    shape = CircleShape,
+                                                    color = cardFillColor,
+                                                    border = BorderStroke(1.dp, outlineColor)
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Icon(
+                                                            imageVector = if (isPlayingThis) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                                            contentDescription = "Play audio",
+                                                            tint = primaryTextColor,
+                                                            modifier = Modifier.size(20.dp)
+                                                        )
+                                                    }
+                                                }
+
+                                                Spacer(modifier = Modifier.width(14.dp))
+
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    val isVoiceMsg = audioMsg.attachments.isEmpty() || audioMsg.attachments.first().contains("audio")
+                                                    val audioTitle = if (isVoiceMsg) "Voice message" else FilePickerUtils.getFileName(context, Uri.parse(audioMsg.attachments.first()))
+                                                    val durationSec = audioMsg.attachmentDurations.values.firstOrNull() ?: 24L
+                                                    val durationStr = String.format(Locale.getDefault(), "%d:%02d", durationSec / 60, durationSec % 60)
+                                                    val audioSubtitle = if (isVoiceMsg) "$durationStr · ${audioMsg.senderName}" else "MP3 · 3.2 MB · ${audioMsg.senderName}"
+
+                                                    Text(
+                                                        text = audioTitle,
+                                                        fontSize = 15.sp,
+                                                        color = primaryTextColor,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                    Spacer(modifier = Modifier.height(2.dp))
+                                                    Text(
+                                                        text = audioSubtitle,
+                                                        fontSize = 12.sp,
+                                                        color = secondaryTextColor,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+
+                                                    if (isPlayingThis) {
+                                                        Spacer(modifier = Modifier.height(4.dp))
+                                                        LinearProgressIndicator(
+                                                            progress = { 0.4f },
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .height(2.dp),
+                                                            color = primaryTextColor,
+                                                            trackColor = outlineColor
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            HorizontalDivider(
+                                                thickness = 1.dp,
+                                                color = outlineColor,
+                                                modifier = Modifier.padding(start = 74.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            "Links" -> {
+                                val linkList = remember(messages) {
+                                    val list = mutableListOf<ChatLinkItem>()
+                                    messages.sortedByDescending { it.timestamp }.forEach { msg ->
+                                        UrlExtractor.extractUrls(msg.text).forEach { url ->
+                                            val domain = UrlExtractor.extractDomain(url)
+                                            list.add(
+                                                ChatLinkItem(
+                                                    url = url,
+                                                    domain = domain,
+                                                    senderName = msg.senderName,
+                                                    timestamp = msg.timestamp,
+                                                    messageId = msg.id
+                                                )
+                                            )
+                                        }
+                                    }
+                                    list
+                                }
+
+                                if (linkList.isEmpty()) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 80.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Link,
+                                            contentDescription = null,
+                                            tint = dimTextColor,
+                                            modifier = Modifier.size(44.dp)
+                                        )
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Text(
+                                            text = "No links yet",
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = primaryTextColor
+                                        )
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Text(
+                                            text = "Links shared in this chat appear here",
+                                            fontSize = 13.sp,
+                                            color = secondaryTextColor,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(horizontal = 32.dp)
+                                        )
+                                    }
+                                } else {
+                                    val groupedLinks = remember(linkList) {
+                                        linkList.groupBy { formatTimestampToDateHeader(it.timestamp.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()) }
+                                    }
+
+                                    groupedLinks.forEach { (dateHeader, itemsList) ->
+                                        Text(
+                                            text = dateHeader,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = secondaryTextColor,
+                                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 20.dp)
+                                        )
+
+                                        itemsList.forEach { linkItem ->
+                                            var showLinkMenu by remember { mutableStateOf(false) }
+
+                                            Box {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .height(72.dp)
+                                                        .combinedClickable(
+                                                            onClick = {
+                                                                try {
+                                                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(if (!linkItem.url.startsWith("http")) "https://${linkItem.url}" else linkItem.url))
+                                                                    context.startActivity(intent)
+                                                                } catch (e: Exception) {
+                                                                    Toast.makeText(context, "Could not open link", Toast.LENGTH_SHORT).show()
+                                                                }
+                                                            },
+                                                            onLongClick = { showLinkMenu = true }
+                                                        )
+                                                        .padding(horizontal = 20.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Surface(
+                                                        modifier = Modifier.size(40.dp),
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        color = cardFillColor,
+                                                        border = BorderStroke(1.dp, outlineColor)
+                                                    ) {
+                                                        Box(contentAlignment = Alignment.Center) {
+                                                            Icon(
+                                                                imageVector = Icons.Outlined.Link,
+                                                                contentDescription = "Link",
+                                                                tint = secondaryTextColor,
+                                                                modifier = Modifier.size(20.dp)
+                                                            )
+                                                        }
+                                                    }
+
+                                                    Spacer(modifier = Modifier.width(14.dp))
+
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            text = linkItem.domain,
+                                                            fontSize = 15.sp,
+                                                            fontWeight = FontWeight.Medium,
+                                                            color = primaryTextColor,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                        Spacer(modifier = Modifier.height(2.dp))
+                                                        Text(
+                                                            text = linkItem.url,
+                                                            fontSize = 12.sp,
+                                                            color = secondaryTextColor,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                        Spacer(modifier = Modifier.height(2.dp))
+                                                        val timeStr = linkItem.timestamp.format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()))
+                                                        Text(
+                                                            text = "${linkItem.senderName} · $timeStr",
+                                                            fontSize = 12.sp,
+                                                            color = dimTextColor,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                }
+
+                                                DropdownMenu(
+                                                    expanded = showLinkMenu,
+                                                    onDismissRequest = { showLinkMenu = false }
+                                                ) {
+                                                    DropdownMenuItem(
+                                                        text = { Text("Copy link", fontSize = 14.sp) },
+                                                        onClick = {
+                                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                            val clip = ClipData.newPlainText("Link", linkItem.url)
+                                                            clipboard.setPrimaryClip(clip)
+                                                            Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+                                                            showLinkMenu = false
+                                                        }
+                                                    )
+                                                    DropdownMenuItem(
+                                                        text = { Text("Go to message", fontSize = 14.sp) },
+                                                        onClick = {
+                                                            showLinkMenu = false
+                                                            onShowInChat(linkItem.url)
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-
-
+            }
 
             // Custom Pure Text Toast Overlay (Horizontally Centered at Bottom)
             if (customToastMessage != null) {
@@ -1039,7 +1321,7 @@ fun ChatDetailsScreen(
                     Text("Cancel", fontSize = 15.sp, fontWeight = FontWeight.Normal, color = secondaryTextColor)
                 }
             },
-            containerColor = cardBgColor,
+            containerColor = cardColor,
             shape = RoundedCornerShape(20.dp)
         )
     }
@@ -1184,7 +1466,6 @@ fun ChatDetailsScreen(
             onShowInChat(mediaUrl)
         }
     )
-}
 }
 }
 

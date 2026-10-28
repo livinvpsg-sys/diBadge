@@ -65,8 +65,9 @@ dependencies {
     implementation(libs.androidx.concurrent.futures)
     implementation(libs.coil.compose)
 
-    // ML Kit Barcode Scanning
+    // ML Kit Barcode Scanning & Document Scanner
     implementation(libs.mlkit.barcode.scanning)
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
     
     // Room
     implementation(libs.room.runtime)
