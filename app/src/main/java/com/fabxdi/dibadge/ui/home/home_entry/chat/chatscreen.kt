@@ -371,6 +371,9 @@ fun ChatScreen(
     var galleryMedia by remember { mutableStateOf<List<Uri>?>(null) }
     var galleryInitialIndex by remember { mutableIntStateOf(0) }
     var galleryMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    
+    var audioPlayerMedia by remember { mutableStateOf<List<Uri>?>(null) }
+    var audioPlayerInitialIndex by remember { mutableIntStateOf(0) }
 
     var selectedMessages by remember { mutableStateOf(setOf<String>()) }
     var selectedAttachmentUri by remember { mutableStateOf<String?>(null) }
@@ -390,9 +393,7 @@ fun ChatScreen(
     var selectedPollForVotes by remember { mutableStateOf<ChatMessage?>(null) }
     var showShareLocationSheet by remember { mutableStateOf(false) }
     var showNewPollScreen by remember { mutableStateOf(false) }
-    var showRenamePdfSheet by remember { mutableStateOf(false) }
-    var selectedPdfUriForRename by remember { mutableStateOf<Uri?>(null) }
-    var selectedPdfReaderUri by remember { mutableStateOf<Uri?>(null) }
+
     var selectedDocInfoUri by remember { mutableStateOf<Uri?>(null) }
     var isDocInfoPreSend by remember { mutableStateOf(false) }
     var seenThreadIds by remember { mutableStateOf(setOf<String>()) }
@@ -676,6 +677,32 @@ fun ChatScreen(
                 if (oldUri != null) {
                     attachedFiles = attachedFiles.map { if (it == oldUri) newUri else it }
                     galleryMedia = galleryMedia!!.mapIndexed { idx, uri -> if (idx == indexToReplace) newUri else uri }
+                }
+            }
+        )
+        return
+    }
+
+    if (audioPlayerMedia != null) {
+        AudioPlayerScreen(
+            audioUris = audioPlayerMedia!!,
+            initialIndex = audioPlayerInitialIndex,
+            isDark = isDark,
+            player = player,
+            onClose = {
+                audioPlayerMedia = null
+            },
+            onRemoveAudio = { indexToRemove ->
+                val uriToRemove = audioPlayerMedia!!.getOrNull(indexToRemove)
+                if (uriToRemove != null) {
+                    attachedFiles = attachedFiles.filter { it != uriToRemove }
+                    pendingDurations = pendingDurations.filter { it.key != uriToRemove.toString() }
+                    val updatedList = audioPlayerMedia!!.filterIndexed { idx, _ -> idx != indexToRemove }
+                    if (updatedList.isEmpty()) {
+                        audioPlayerMedia = null
+                    } else {
+                        audioPlayerMedia = updatedList
+                    }
                 }
             }
         )
@@ -1079,6 +1106,10 @@ fun ChatScreen(
                             galleryMedia = uris
                             galleryInitialIndex = index
                         },
+                        onAudioClick = { uris, index ->
+                            audioPlayerMedia = uris
+                            audioPlayerInitialIndex = index
+                        },
                         onFileClick = { uri ->
                             val fileName = FilePickerUtils.getFileName(context, uri)
                             FilePickerUtils.openFileInExternalApp(context, uri, fileName)
@@ -1120,6 +1151,7 @@ fun ChatScreen(
                         // 48dp Raised Circle "+" Button (replaces paperclip while attachments ready)
                         Surface(
                             modifier = Modifier
+                                .padding(start = 12.dp)
                                 .size(48.dp)
                                 .clickable {
                                     if (attachedFiles.size >= 10) {
@@ -1152,6 +1184,7 @@ fun ChatScreen(
                         // Paper clip (24dp, secondary) in 40dp touch target
                         Box(
                             modifier = Modifier
+                                .padding(start = 12.dp)
                                 .size(40.dp)
                                 .clickable { showAttachmentOptions = true },
                             contentAlignment = Alignment.Center
@@ -1944,57 +1977,9 @@ fun ChatScreen(
         )
     }
 
-    if (showRenamePdfSheet && selectedPdfUriForRename != null) {
-        val targetUri = selectedPdfUriForRename!!
-        val currentFileName = FilePickerUtils.getFileName(context, targetUri)
 
-        RenamePdfSheet(
-            initialName = currentFileName,
-            isDark = isDark,
-            onSaveName = { newName ->
-                try {
-                    val oldFile = File(context.cacheDir, currentFileName)
-                    val newFile = File(context.cacheDir, newName)
-                    if (oldFile.exists()) {
-                        oldFile.renameTo(newFile)
-                    } else {
-                        context.contentResolver.openInputStream(targetUri)?.use { input ->
-                            FileOutputStream(newFile).use { output ->
-                                input.copyTo(output)
-                            }
-                        }
-                    }
-                    val newUri = FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.fileprovider",
-                        newFile
-                    )
-                    attachedFiles = attachedFiles.map { if (it == targetUri) newUri else it }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            },
-            onDismiss = {
-                showRenamePdfSheet = false
-                selectedPdfUriForRename = null
-            }
-        )
-    }
 
-    if (selectedPdfReaderUri != null) {
-        val uri = selectedPdfReaderUri!!
-        val fileName = FilePickerUtils.getFileName(context, uri)
-        InAppPdfReaderScreen(
-            pdfUri = uri,
-            fileName = fileName,
-            isDark = isDark,
-            onClose = { selectedPdfReaderUri = null },
-            onDelete = {
-                attachedFiles = attachedFiles.filter { it != uri }
-                selectedPdfReaderUri = null
-            }
-        )
-    }
+
 
     if (selectedDocInfoUri != null) {
         val uri = selectedDocInfoUri!!

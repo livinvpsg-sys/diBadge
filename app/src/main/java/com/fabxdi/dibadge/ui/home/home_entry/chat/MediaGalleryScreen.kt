@@ -411,6 +411,25 @@ fun MediaGalleryScreen(
                                         .fillMaxSize()
                                         .clip(RoundedCornerShape(9.dp))
                                 )
+
+                                val mimeType = try { context.contentResolver.getType(thumbUri) } catch (e: Exception) { null }
+                                val ext = FilePickerUtils.getFileName(context, thumbUri).substringAfterLast('.', "").lowercase()
+                                val isVideo = mimeType?.startsWith("video/") == true || ext == "mp4"
+                                if (isVideo) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(alpha = 0.3f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.PlayArrow,
+                                            contentDescription = "Video",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

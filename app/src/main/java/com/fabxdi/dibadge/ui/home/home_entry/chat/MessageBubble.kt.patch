@@ -1,0 +1,474 @@
+--- C:/Users/livin/AndroidStudioProjects/diBadge/app/src/main/java/com/fabxdi/dibadge/ui/home/home_entry/chat/MessageBubble.kt
++++ C:/Users/livin/AndroidStudioProjects/diBadge/app/src/main/java/com/fabxdi/dibadge/ui/home/home_entry/chat/MessageBubble.kt
+@@ -32,6 +32,8 @@
+ import androidx.compose.ui.draw.clip
+ import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.input.pointer.pointerInput
++import androidx.compose.foundation.pager.HorizontalPager
++import androidx.compose.foundation.pager.rememberPagerState
+ import androidx.compose.ui.layout.ContentScale
+ import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.ui.text.AnnotatedString
+@@ -829,19 +831,10 @@
+         // Attachments Rendering
+         if (message.attachments.isNotEmpty()) {
+             val mediaUris = remember(message.attachments) { message.attachments.map { Uri.parse(it) } }
+-            val isMediaGrid = remember(message.attachments) {
+-                message.attachments.all { uriStr ->
+-                    val ext = uriStr.substringAfterLast('.', "").lowercase()
+-                    uriStr.contains("jpg") || uriStr.contains("png") || uriStr.contains("jpeg") || uriStr.contains("video") || ext in listOf("jpg", "jpeg", "png", "mp4")
+-                }
+-            }
+-
+-            if (isMediaGrid) {
+-                val n = mediaUris.size
+-
+-                Column(
+-                    modifier = Modifier
+-                        .width(232.dp)
++            val n = mediaUris.size
++
++            if (n == 1) {
++                Column(modifier = Modifier.widthIn(min = 200.dp, max = 272.dp)
+                         .padding(bottom = 6.dp)
+                 ) {
+-                    if (n == 1) {
+                         // 1 Photo/Video
+                         val firstUri = mediaUris.first()
+                         val firstUriStr = firstUri.toString()
+@@ -849,8 +842,10 @@
+                         val isVideo = firstUriStr.contains("video") || firstExt == "mp4"
++                        val mimeType = try { context.contentResolver.getType(firstUri) } catch (e: Exception) { null }
++                        val isAudio = mimeType?.startsWith("audio/") == true || firstExt in listOf("m4a", "mp3")
++                        val isImage = mimeType?.startsWith("image/") == true || firstExt in listOf("jpg", "jpeg", "png")
+
++                        if (isImage || isVideo) {
+                             Box(modifier = Modifier.fillMaxWidth()) {
+                                 Surface(
+                                     shape = RoundedCornerShape(14.dp),
+@@ -865,6 +860,6 @@
+                                         modifier = Modifier.fillMaxSize()
+                                     )
+                                 }
+
+                                 if (isVideo) {
+@@ -900,192 +895,6 @@
+                                 }
+                             }
+-                        }
+-                    } else if (n == 2) {
+-                        // 2 Photos: Side by side 115dp squares
+-                        Row(
+-                            modifier = Modifier.fillMaxWidth(),
+-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+-                        ) {
+-                            mediaUris.take(2).forEachIndexed { idx, uri ->
+-                                Surface(
+-                                    shape = RoundedCornerShape(11.dp),
+-                                    modifier = Modifier
+-                                        .weight(1f)
+-                                        .aspectRatio(1f)
+-                                        .clickable { onMediaClick(mediaUris, idx) }
+-                                ) {
+-                                    AsyncImage(
+-                                        model = uri,
+-                                        contentDescription = "Photo",
+-                                        contentScale = ContentScale.Crop,
+-                                        modifier = Modifier.fillMaxSize()
+-                                    )
+-                                }
+-                            }
+-                        }
+-                    } else if (n == 3) {
+-                        // 3 Photos: 1 tall left (115x232), 2 stacked right
+-                        Row(
+-                            modifier = Modifier
+-                                .fillMaxWidth()
+-                                .height(232.dp),
+-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+-                        ) {
+-                            Surface(
+-                                shape = RoundedCornerShape(11.dp),
+-                                modifier = Modifier
+-                                    .weight(1f)
+-                                    .fillMaxHeight()
+-                                    .clickable { onMediaClick(mediaUris, 0) }
+-                            ) {
+-                                AsyncImage(
+-                                    model = mediaUris[0],
+-                                    contentDescription = "Photo",
+-                                    contentScale = ContentScale.Crop,
+-                                    modifier = Modifier.fillMaxSize()
+-                                )
+-                            }
+-                            Column(
+-                                modifier = Modifier
+-                                    .weight(1f)
+-                                    .fillMaxHeight(),
+-                                verticalArrangement = Arrangement.spacedBy(2.dp)
+-                            ) {
+-                                Surface(
+-                                    shape = RoundedCornerShape(11.dp),
+-                                    modifier = Modifier
+-                                        .fillMaxWidth()
+-                                        .weight(1f)
+-                                        .clickable { onMediaClick(mediaUris, 1) }
+-                                ) {
+-                                    AsyncImage(
+-                                        model = mediaUris[1],
+-                                        contentDescription = "Photo",
+-                                        contentScale = ContentScale.Crop,
+-                                        modifier = Modifier.fillMaxSize()
+-                                    )
+-                                }
+-                                Surface(
+-                                    shape = RoundedCornerShape(11.dp),
+-                                    modifier = Modifier
+-                                        .fillMaxWidth()
+-                                        .weight(1f)
+-                                        .clickable { onMediaClick(mediaUris, 2) }
+-                                ) {
+-                                    AsyncImage(
+-                                        model = mediaUris[2],
+-                                        contentDescription = "Photo",
+-                                        contentScale = ContentScale.Crop,
+-                                        modifier = Modifier.fillMaxSize()
+-                                    )
+-                                }
+-                            }
+-                        }
+-                    } else if (n == 4 || (n >= 5 && !isExpanded)) {
+-                        // 4 Photos (or 5+ collapsed 2x2 grid with +n overlay on 4th tile)
+-                        Column(
+-                            modifier = Modifier.fillMaxWidth(),
+-                            verticalArrangement = Arrangement.spacedBy(2.dp)
+-                        ) {
+-                            Row(
+-                                modifier = Modifier.fillMaxWidth(),
+-                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+-                            ) {
+-                                (0..1).forEach { idx ->
+-                                    Surface(
+-                                        shape = RoundedCornerShape(11.dp),
+-                                        modifier = Modifier
+-                                            .weight(1f)
+-                                            .aspectRatio(1f)
+-                                            .clickable {
+-                                                onMediaClick(mediaUris, idx)
+-                                            }
+-                                    ) {
+-                                        AsyncImage(
+-                                            model = mediaUris[idx],
+-                                            contentDescription = "Photo",
+-                                            contentScale = ContentScale.Crop,
+-                                            modifier = Modifier.fillMaxSize()
+-                                        )
+-                                    }
+-                                }
+-                            }
+-                            Row(
+-                                modifier = Modifier.fillMaxWidth(),
+-                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+-                            ) {
+-                                Surface(
+-                                    shape = RoundedCornerShape(11.dp),
+-                                    modifier = Modifier
+-                                        .weight(1f)
+-                                        .aspectRatio(1f)
+-                                        .clickable {
+-                                            onMediaClick(mediaUris, 2)
+-                                        }
+-                                ) {
+-                                    AsyncImage(
+-                                        model = mediaUris[2],
+-                                        contentDescription = "Photo",
+-                                        contentScale = ContentScale.Crop,
+-                                        modifier = Modifier.fillMaxSize()
+-                                    )
+-                                }
+-                                Surface(
+-                                    shape = RoundedCornerShape(11.dp),
+-                                    modifier = Modifier
+-                                        .weight(1f)
+-                                        .aspectRatio(1f)
+-                                        .clickable {
+-                                            onMediaClick(mediaUris, 3)
+-                                        }
+-                                ) {
+-                                    Box(modifier = Modifier.fillMaxSize()) {
+-                                        AsyncImage(
+-                                            model = mediaUris[3],
+-                                            contentDescription = "Photo",
+-                                            contentScale = ContentScale.Crop,
+-                                            modifier = Modifier.fillMaxSize()
+-                                        )
+-                                        if (n >= 5) {
+-                                            Box(
+-                                                modifier = Modifier
+-                                                    .fillMaxSize()
+-                                                    .background(Color.Black.copy(alpha = 0.50f)),
+-                                                contentAlignment = Alignment.Center
+-                                            ) {
+-                                                Text(
+-                                                    text = "+${n - 4}",
+-                                                    fontSize = 22.sp,
+-                                                    fontWeight = FontWeight.SemiBold,
+-                                                    color = Color.White
+-                                                )
+-                                            }
+-                                        }
+-                                    }
+-                                }
+-                            }
+-                        }
+-                    }
+-                }
+-            } else {
+-                // Document / Audio Stacked Rows
+-                val cardFillColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
+-
+-                Column(
+-                    modifier = Modifier
+-                        .widthIn(min = 200.dp, max = 272.dp)
+-                        .padding(bottom = 6.dp),
+-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+-                ) {
+-                    mediaUris.forEach { uri ->
+-                        val fileName = FilePickerUtils.getFileName(context, uri)
+-                        val ext = fileName.substringAfterLast('.', "").lowercase()
+-                        val mimeType = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
+-                        val isAudio = mimeType?.startsWith("audio/") == true || ext in listOf("m4a", "mp3")
+-
+-                        if (isAudio) {
+-                            val actualIdx = mediaUris.indexOf(uri)
++                        } else if (isAudio) {
+                             ChatAttachmentView(
+                                 context = context,
+@@ -1093,12 +902,14 @@
+                                 isSentByMe = message.isSentByMe,
+                                 player = player,
+                                 duration = message.attachmentDurations[firstUriStr] ?: 0L,
+-                                onClick = { onMediaClick(mediaUris, actualIdx) },
++                                onClick = { onMediaClick(mediaUris, 0) },
+                                 modifier = Modifier.fillMaxWidth()
+                             )
+                         } else {
++                            val fileName = FilePickerUtils.getFileName(context, firstUri)
++                            val cardFillColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
+                             Surface(
+                                 shape = RoundedCornerShape(10.dp),
+                                 color = cardFillColor,
+                                 modifier = Modifier
+                                     .fillMaxWidth()
+-                                    .clickable { FilePickerUtils.openFileInExternalApp(context, uri, fileName) }
++                                    .clickable { FilePickerUtils.openFileInExternalApp(context, firstUri, fileName) }
+                             ) {
+                                 Row(
+@@ -1106,7 +917,7 @@
+                                         .fillMaxWidth()
+                                         .padding(horizontal = 10.dp, vertical = 8.dp),
+                                     verticalAlignment = Alignment.CenterVertically
+                                 ) {
+-                                    DocumentTypeTile(extension = ext, isDark = isDark, widthDp = 28, heightDp = 34)
++                                    DocumentTypeTile(extension = firstExt, isDark = isDark, widthDp = 28, heightDp = 34)
+                                     Spacer(modifier = Modifier.width(10.dp))
+                                     Column(modifier = Modifier.weight(1f)) {
+                                         Text(
+@@ -1118,7 +929,7 @@
+                                         )
+                                         Spacer(modifier = Modifier.height(2.dp))
+-                                        val sizeBytes = FilePickerUtils.getFileSizeBytes(context, uri)
++                                        val sizeBytes = FilePickerUtils.getFileSizeBytes(context, firstUri)
+                                         val sizeStr = FilePickerUtils.formatFileSize(sizeBytes)
+                                         val isFailed = false // TODO: Check message failed state
+                                         if (isFailed && message.isSentByMe) {
+@@ -1132,15 +943,205 @@
+                                         } else {
+                                             Text(
+-                                                text = "${ext.uppercase()} · $sizeStr",
++                                                text = "${firstExt.uppercase()} · $sizeStr",
+                                                 fontSize = 12.sp,
+                                                 color = secondaryTextColor,
+                                                 maxLines = 1,
+                                                 overflow = TextOverflow.Ellipsis
+                                             )
+                                         }
+                                     }
+                                 }
+                             }
+                         }
+-                    }
+-                }
++                }
++            } else {
++                // 2+ Items: Horizontal Pager or 2 side by side
++                Column(
++                    modifier = Modifier
++                        .widthIn(max = 272.dp)
++                        .padding(bottom = 6.dp),
++                    horizontalAlignment = Alignment.CenterHorizontally
++                ) {
++                    val cardFillColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
++                    val audioColor = if (isDark) Color(0xFFE87DA3) else Color(0xFFB0446A)
++
++                    val pageCount = (n + 1) / 2
++                    val pagerState = rememberPagerState { pageCount }
++
++                    HorizontalPager(
++                        state = pagerState,
++                        modifier = Modifier.fillMaxWidth()
++                    ) { page ->
++                        Row(
++                            modifier = Modifier.fillMaxWidth(),
++                            horizontalArrangement = Arrangement.spacedBy(2.dp)
++                        ) {
++                            val startIdx = page * 2
++                            for (offset in 0..1) {
++                                val idx = startIdx + offset
++                                if (idx < n) {
++                                    val uri = mediaUris[idx]
++                                    val fileName = FilePickerUtils.getFileName(context, uri)
++                                    val ext = fileName.substringAfterLast('.', "").lowercase()
++                                    val mimeType = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
++                                    val isVideo = mimeType?.startsWith("video/") == true || ext == "mp4"
++                                    val isAudio = mimeType?.startsWith("audio/") == true || ext in listOf("m4a", "mp3")
++                                    val isImage = mimeType?.startsWith("image/") == true || ext in listOf("jpg", "jpeg", "png")
++
++                                    Surface(
++                                        shape = RoundedCornerShape(10.dp),
++                                        color = cardFillColor,
++                                        modifier = Modifier
++                                            .weight(1f)
++                                            .aspectRatio(1f)
++                                            .clickable {
++                                                if (!isImage && !isVideo && !isAudio) {
++                                                    FilePickerUtils.openFileInExternalApp(context, uri, fileName)
++                                                } else {
++                                                    onMediaClick(mediaUris, idx)
++                                                }
++                                            }
++                                    ) {
++                                        if (isImage || isVideo) {
++                                            Box(modifier = Modifier.fillMaxSize()) {
++                                                AsyncImage(
++                                                    model = uri,
++                                                    contentDescription = "Photo/Video",
++                                                    contentScale = ContentScale.Crop,
++                                                    modifier = Modifier.fillMaxSize()
++                                                )
++                                                if (isVideo) {
++                                                    Surface(
++                                                        color = Color.Black.copy(alpha = 0.50f),
++                                                        shape = CircleShape,
++                                                        modifier = Modifier.size(28.dp).align(Alignment.Center)
++                                                    ) {
++                                                        Box(contentAlignment = Alignment.Center) {
++                                                            Icon(
++                                                                imageVector = Icons.Default.PlayArrow,
++                                                                contentDescription = "Play Video",
++                                                                tint = Color.White,
++                                                                modifier = Modifier.size(14.dp)
++                                                            )
++                                                        }
++                                                    }
++                                                    val durationSec = message.attachmentDurations[uri.toString()] ?: 0L
++                                                    val durationStr = if (durationSec > 0) {
++                                                        String.format(Locale.getDefault(), "%d:%02d", durationSec / 60, durationSec % 60)
++                                                    } else "0:42"
++                                                    Surface(
++                                                        color = Color.Black.copy(alpha = 0.55f),
++                                                        shape = RoundedCornerShape(6.dp),
++                                                        modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)
++                                                    ) {
++                                                        Text(
++                                                            text = durationStr,
++                                                            fontSize = 10.sp,
++                                                            fontWeight = FontWeight.SemiBold,
++                                                            color = Color.White,
++                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
++                                                        )
++                                                    }
++                                                }
++                                            }
++                                        } else if (isAudio) {
++                                            Column(
++                                                modifier = Modifier.fillMaxSize().padding(8.dp),
++                                                horizontalAlignment = Alignment.CenterHorizontally,
++                                                verticalArrangement = Arrangement.Center
++                                            ) {
++                                                Surface(
++                                                    modifier = Modifier.size(30.dp),
++                                                    shape = CircleShape,
++                                                    color = audioColor.copy(alpha = 0.18f)
++                                                ) {
++                                                    Box(contentAlignment = Alignment.Center) {
++                                                        com.fabxdi.dibadge.ui.components.WaveformIcon(
++                                                            color = audioColor,
++                                                            modifier = Modifier.size(18.dp)
++                                                        )
++                                                    }
++                                                }
++                                                Spacer(modifier = Modifier.height(8.dp))
++                                                Text(
++                                                    text = fileName,
++                                                    fontSize = 12.sp,
++                                                    fontWeight = FontWeight.Medium,
++                                                    color = primaryTextColor,
++                                                    maxLines = 2,
++                                                    overflow = TextOverflow.Ellipsis,
++                                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
++                                                )
++                                            }
++                                        } else {
++                                            Column(
++                                                modifier = Modifier.fillMaxSize().padding(8.dp),
++                                                horizontalAlignment = Alignment.CenterHorizontally,
++                                                verticalArrangement = Arrangement.Center
++                                            ) {
++                                                DocumentTypeTile(extension = ext, isDark = isDark, widthDp = 40, heightDp = 48)
++                                                Spacer(modifier = Modifier.height(8.dp))
++                                                Text(
++                                                    text = fileName,
++                                                    fontSize = 12.sp,
++                                                    fontWeight = FontWeight.Medium,
++                                                    color = primaryTextColor,
++                                                    maxLines = 2,
++                                                    overflow = TextOverflow.Ellipsis,
++                                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
++                                                )
++                                            }
++                                        }
++                                    }
++                                } else {
++                                    Spacer(modifier = Modifier.weight(1f))
++                                }
++                            }
++                        }
++                    }
++
++                    if (pageCount > 1) {
++                        Row(
++                            modifier = Modifier.fillMaxWidth().height(18.dp).padding(top = 4.dp),
++                            verticalAlignment = Alignment.CenterVertically
++                        ) {
++                            Box(modifier = Modifier.weight(1f)) {
++                                Row(
++                                    modifier = Modifier.align(Alignment.Center),
++                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
++                                ) {
++                                    repeat(pageCount) { page ->
++                                        Box(
++                                            modifier = Modifier
++                                                .size(6.dp)
++                                                .background(
++                                                    color = if (pagerState.currentPage == page) primaryTextColor else secondaryTextColor.copy(alpha = 0.3f),
++                                                    shape = CircleShape
++                                                )
++                                        )
++                                    }
++                                }
++                            }
++                        }
++                    }
++                }
+             }

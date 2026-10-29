@@ -3,6 +3,8 @@ package com.fabxdi.dibadge.ui.home.home_entry.chat
 import android.content.Context
 import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -23,6 +25,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import coil.compose.AsyncImage
+import com.fabxdi.dibadge.ui.components.DocumentTypeTile
 import com.fabxdi.dibadge.util.AudioPlayer
 import com.fabxdi.dibadge.util.FilePickerUtils
 import kotlinx.coroutines.delay
@@ -121,8 +124,6 @@ fun ChatAttachmentView(
         var progress by remember { mutableFloatStateOf(0f) }
         var currentPosition by remember { mutableLongStateOf(0L) }
 
-        val displayDuration = if (isPlaying || isPaused) currentPosition else (duration ?: 0L)
-
         LaunchedEffect(isPlaying, isPaused) {
             if (isPlaying && !isPaused) {
                 while (isPlaying && !isPaused) {
@@ -150,45 +151,57 @@ fun ChatAttachmentView(
             modifier = modifier
                 .combinedClickable(
                     onClick = {
-                        if (isPlaying) {
-                            if (isPaused) {
-                                player.resume()
-                                isPaused = false
-                            } else {
-                                player.pause()
-                                isPaused = true
-                            }
-                        } else {
-                            player.playFile(uri) {
-                                isPlaying = false
-                                isPaused = false
-                                progress = 0f
-                                currentPosition = 0
-                            }
-                            isPlaying = true
-                            isPaused = false
+                        if (onClick != null) {
+                            onClick()
                         }
                     },
                     onLongClick = onLongClick
                 )
         ) {
-            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
-                val contentColor = if (isSentByMe) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                val isDark = MaterialTheme.colorScheme.onBackground.red > 0.5f
+                val audioColor = if (isDark) Color(0xFFE87DA3) else Color(0xFFB0446A)
+                val primaryTextColor = if (isDark) Color(0xFFF0F3F5) else Color(0xFF11161A)
+                val secondaryTextColor = if (isDark) Color(0xFF8A9199) else Color(0xFF65707A)
+                val pageBgColor = if (isDark) Color(0xFF0E1114) else Color(0xFFE8ECEF)
+                val dimColor = secondaryTextColor.copy(alpha = 0.3f)
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Surface(
                         shape = CircleShape,
-                        color = contentColor.copy(alpha = 0.1f),
-                        modifier = Modifier.size(44.dp)
+                        color = primaryTextColor,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clickable {
+                                if (isPlaying) {
+                                    if (isPaused) {
+                                        player.resume()
+                                        isPaused = false
+                                    } else {
+                                        player.pause()
+                                        isPaused = true
+                                    }
+                                } else {
+                                    player.playFile(uri) {
+                                        isPlaying = false
+                                        isPaused = false
+                                        progress = 0f
+                                        currentPosition = 0
+                                    }
+                                    isPlaying = true
+                                    isPaused = false
+                                }
+                            }
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = if (isPlaying && !isPaused) Icons.Default.Pause else Icons.Default.PlayArrow,
                                 contentDescription = null,
-                                tint = contentColor,
-                                modifier = Modifier.size(20.dp)
+                                tint = pageBgColor,
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }
@@ -196,47 +209,56 @@ fun ChatAttachmentView(
                     Spacer(modifier = Modifier.width(12.dp))
                     
                     Box(
-                        modifier = Modifier.weight(1f).height(24.dp),
-                        contentAlignment = Alignment.CenterStart
+                        modifier = Modifier
+                            .width(150.dp)
+                            .height(28.dp)
+                            .clickable {
+                                // Basic seek placeholder for inline
+                            }
                     ) {
-                        Canvas(modifier = Modifier.fillMaxWidth().height(24.dp)) {
-                            val centerY = size.height / 2
-                            drawLine(
-                                color = contentColor.copy(alpha = 0.2f),
-                                start = Offset(0f, centerY),
-                                end = Offset(size.width, centerY),
-                                strokeWidth = 2.dp.toPx()
-                            )
-                            drawLine(
-                                color = contentColor,
-                                start = Offset(0f, centerY),
-                                end = Offset(size.width * progress, centerY),
-                                strokeWidth = 2.dp.toPx()
-                            )
-                            drawCircle(
-                                color = contentColor,
-                                radius = 5.dp.toPx(),
-                                center = Offset(size.width * progress, centerY)
-                            )
+                        Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            for (i in 0 until 15) {
+                                val isPlayed = (i / 15f) <= progress
+                                Box(
+                                    modifier = Modifier
+                                        .width(6.dp)
+                                        .height(if (i % 2 == 0) 28.dp else 16.dp)
+                                        .background(if (isPlayed) audioColor else dimColor, RoundedCornerShape(3.dp))
+                                )
+                            }
                         }
                     }
-                    
-                    Spacer(modifier = Modifier.width(12.dp))
-                    
-                    Text(
-                        text = String.format(Locale.getDefault(), "%02d:%02d", displayDuration / 60, displayDuration % 60),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp, fontWeight = FontWeight.Medium),
-                        color = contentColor
-                    )
                 }
                 
-                if (timestamp != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val timeStr = if (isPlaying || isPaused) {
+                        String.format(Locale.getDefault(), "%d:%02d", currentPosition / 60, currentPosition % 60)
+                    } else {
+                        String.format(Locale.getDefault(), "%d:%02d", (duration ?: 0L) / 60, (duration ?: 0L) % 60)
+                    }
                     Text(
-                        text = timestamp,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        color = contentColor.copy(alpha = 0.5f),
-                        modifier = Modifier.align(Alignment.End).padding(top = 0.dp, bottom = 2.dp)
+                        text = "$timeStr · $fileName",
+                        fontSize = 11.sp,
+                        color = secondaryTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
                     )
+                    
+                    if (timestamp != null) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = timestamp,
+                            fontSize = 11.sp,
+                            color = secondaryTextColor
+                        )
+                    }
                 }
             }
         }

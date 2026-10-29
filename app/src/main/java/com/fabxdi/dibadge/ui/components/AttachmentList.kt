@@ -11,7 +11,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+
 import androidx.compose.ui.unit.dp
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.fabxdi.dibadge.util.AudioPlayer
@@ -28,16 +28,11 @@ fun AttachmentList(
     player: AudioPlayer? = null
 ) {
     Column(modifier = modifier) {
+        val isDark = MaterialTheme.colorScheme.onBackground.red > 0.5f
+
         attachedFiles.forEachIndexed { index, uri ->
             val fileName = FilePickerUtils.getFileName(context, uri).lowercase()
-            val fileColor = when {
-                fileName.endsWith(".pdf") -> Color(0xFFF44336)
-                fileName.endsWith(".xls") || fileName.endsWith(".xlsx") -> Color(0xFF4CAF50)
-                fileName.endsWith(".doc") || fileName.endsWith(".docx") -> Color(0xFF2196F3)
-                fileName.endsWith(".ppt") || fileName.endsWith(".pptx") -> Color(0xFFFF9800)
-                fileName.endsWith(".zip") || fileName.endsWith(".rar") || fileName.endsWith(".7z") -> Color(0xFF9C27B0)
-                else -> Color(0xFF00A884)
-            }
+            val ext = fileName.substringAfterLast('.', "")
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -53,12 +48,7 @@ fun AttachmentList(
                         }
                     }
             ) {
-                Icon(
-                    imageVector = FilePickerUtils.getFileIcon(context, uri),
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                    tint = fileColor
-                )
+                DocumentTypeTile(extension = ext, isDark = isDark, widthDp = 24, heightDp = 29)
                 
                 Spacer(modifier = Modifier.width(12.dp))
                 

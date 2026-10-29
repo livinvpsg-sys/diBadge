@@ -23,6 +23,8 @@ import androidx.compose.material.icons.outlined.AudioFile
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import com.fabxdi.dibadge.ui.components.DocumentTypeTile
+import com.fabxdi.dibadge.ui.components.WaveformIcon
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -60,6 +62,7 @@ fun AttachmentPreviewStrip(
     onRemoveUri: (Uri) -> Unit = {},
     onAddMoreClick: (() -> Unit)? = null,
     onImageClick: (List<Uri>, Int) -> Unit = { _, _ -> },
+    onAudioClick: (List<Uri>, Int) -> Unit = { _, _ -> },
     onFileClick: (Uri) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -285,6 +288,7 @@ fun AttachmentPreviewStrip(
                     val durationStr = if (durationSec > 0) {
                         String.format(Locale.getDefault(), "%d:%02d", durationSec / 60, durationSec % 60)
                     } else ""
+                    val audioColor = if (isDark) Color(0xFFE87DA3) else Color(0xFFB0446A)
 
                     Box(modifier = Modifier.size(72.dp)) {
                         Surface(
@@ -298,7 +302,7 @@ fun AttachmentPreviewStrip(
                                         if (isSelectionMode) {
                                             onToggleSelect(uri)
                                         } else {
-                                            onFileClick(uri)
+                                            onAudioClick(attachedUris, index)
                                         }
                                     },
                                     onLongClick = {
@@ -307,39 +311,45 @@ fun AttachmentPreviewStrip(
                                     }
                                 )
                         ) {
-                            Box(
+                            Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(horizontal = 7.dp, vertical = 8.dp)
+                                    .padding(horizontal = 7.dp, vertical = 6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.AudioFile,
-                                    contentDescription = "Audio",
-                                    tint = secondaryTextColor,
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .align(Alignment.TopStart)
-                                )
-
-                                if (durationStr.isNotBlank()) {
-                                    Text(
-                                        text = durationStr,
-                                        fontSize = 10.sp,
-                                        color = secondaryTextColor,
-                                        modifier = Modifier.align(Alignment.TopEnd)
-                                    )
+                                Surface(
+                                    modifier = Modifier.size(30.dp),
+                                    shape = CircleShape,
+                                    color = audioColor.copy(alpha = 0.18f)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        WaveformIcon(
+                                            color = audioColor,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
 
-                                Text(
-                                    text = fileName,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = primaryTextColor,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                    lineHeight = 12.sp,
-                                    modifier = Modifier.align(Alignment.BottomStart)
-                                )
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = fileName,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = primaryTextColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = durationStr.ifBlank { "0:00" },
+                                        fontSize = 10.sp,
+                                        color = secondaryTextColor,
+                                        maxLines = 1
+                                    )
+                                }
                             }
                         }
 
@@ -387,7 +397,7 @@ fun AttachmentPreviewStrip(
                                         if (isSelectionMode) {
                                             onToggleSelect(uri)
                                         } else {
-                                            onFileClick(uri)
+                                            onAudioClick(attachedUris, index)
                                         }
                                     },
                                     onLongClick = {

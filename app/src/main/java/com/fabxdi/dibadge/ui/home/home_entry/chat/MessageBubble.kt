@@ -28,10 +28,13 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import com.fabxdi.dibadge.ui.components.DocumentTypeTile
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -45,6 +48,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.fabxdi.dibadge.ui.components.WaveformIcon
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.AudioPlayer
 import com.fabxdi.dibadge.util.FilePickerUtils
@@ -833,23 +837,12 @@ private fun AttachmentAndTextSection(
         // Attachments Rendering
         if (message.attachments.isNotEmpty()) {
             val mediaUris = remember(message.attachments) { message.attachments.map { Uri.parse(it) } }
-            val isMediaGrid = remember(message.attachments) {
-                message.attachments.all { uriStr ->
-                    val ext = uriStr.substringAfterLast('.', "").lowercase()
-                    uriStr.contains("jpg") || uriStr.contains("png") || uriStr.contains("jpeg") || uriStr.contains("video") || ext in listOf("jpg", "jpeg", "png", "mp4")
-                }
-            }
+            val n = mediaUris.size
 
-            if (isMediaGrid) {
-                val n = mediaUris.size
-                var isExpanded by remember { mutableStateOf(false) }
-
-                Column(
-                    modifier = Modifier
-                        .width(232.dp)
+            if (n == 1) {
+                Column(modifier = Modifier.widthIn(min = 200.dp, max = 272.dp)
                         .padding(bottom = 6.dp)
                 ) {
-                    if (n == 1) {
                         // 1 Photo/Video
                         val firstUri = mediaUris.first()
                         val firstUriStr = firstUri.toString()
@@ -993,7 +986,7 @@ private fun AttachmentAndTextSection(
                                 }
                             }
                         }
-                    } else if (n == 4 || (n >= 5 && !isExpanded)) {
+                    } else if (n >= 4) {
                         // 4 Photos (or 5+ collapsed 2x2 grid with +n overlay on 4th tile)
                         Column(
                             modifier = Modifier.fillMaxWidth(),
@@ -1009,9 +1002,7 @@ private fun AttachmentAndTextSection(
                                         modifier = Modifier
                                             .weight(1f)
                                             .aspectRatio(1f)
-                                            .clickable {
-                                                if (n >= 5 && !isExpanded) isExpanded = true else onMediaClick(mediaUris, idx)
-                                            }
+                                            .clickable { onMediaClick(mediaUris, idx) }
                                     ) {
                                         AsyncImage(
                                             model = mediaUris[idx],
@@ -1031,9 +1022,7 @@ private fun AttachmentAndTextSection(
                                     modifier = Modifier
                                         .weight(1f)
                                         .aspectRatio(1f)
-                                        .clickable {
-                                            if (n >= 5 && !isExpanded) isExpanded = true else onMediaClick(mediaUris, 2)
-                                        }
+                                        .clickable { onMediaClick(mediaUris, 2) }
                                 ) {
                                     AsyncImage(
                                         model = mediaUris[2],
@@ -1047,9 +1036,7 @@ private fun AttachmentAndTextSection(
                                     modifier = Modifier
                                         .weight(1f)
                                         .aspectRatio(1f)
-                                        .clickable {
-                                            if (n >= 5 && !isExpanded) isExpanded = true else onMediaClick(mediaUris, 3)
-                                        }
+                                        .clickable { onMediaClick(mediaUris, 3) }
                                 ) {
                                     Box(modifier = Modifier.fillMaxSize()) {
                                         AsyncImage(
@@ -1077,113 +1064,252 @@ private fun AttachmentAndTextSection(
                                 }
                             }
                         }
-                    } else {
-                        // Expanded Grid for 5+ items (3 columns, 76dp squares, 2dp gaps)
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                        ) {
-                            mediaUris.chunked(3).forEach { chunk ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
-                                ) {
-                                    chunk.forEachIndexed { colIdx, uri ->
-                                        val actualIdx = mediaUris.indexOf(uri)
-                                        Surface(
-                                            shape = RoundedCornerShape(11.dp),
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .aspectRatio(1f)
-                                                .clickable { onMediaClick(mediaUris, actualIdx) }
-                                        ) {
-                                            AsyncImage(
-                                                model = uri,
-                                                contentDescription = "Photo",
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize()
-                                            )
-                                        }
-                                    }
-                                    repeat(3 - chunk.size) {
-                                        Spacer(modifier = Modifier.weight(1f))
-                                    }
-                                }
-                            }
-
-                            // "Show less" row
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { isExpanded = false }
-                                    .padding(top = 6.dp, bottom = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.KeyboardArrowUp,
-                                    contentDescription = "Show less",
-                                    tint = secondaryTextColor,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Show less",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = secondaryTextColor
-                                )
-                            }
-                        }
                     }
                 }
             } else {
-                // Document / Audio Stacked Rows (Card layout: 232dp wide, 10dp corners, 3dp apart)
+                // Document / Audio Stacked Rows
                 val cardFillColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
 
                 Column(
                     modifier = Modifier
-                        .width(232.dp)
+                        .widthIn(min = 200.dp, max = 272.dp)
                         .padding(bottom = 6.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     mediaUris.forEach { uri ->
                         val fileName = FilePickerUtils.getFileName(context, uri)
                         val ext = fileName.substringAfterLast('.', "").lowercase()
+                        val mimeType = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
+                        val isAudio = mimeType?.startsWith("audio/") == true || ext in listOf("m4a", "mp3")
 
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = cardFillColor,
-                            border = BorderStroke(1.dp, outlineColor),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { FilePickerUtils.openFileInExternalApp(context, uri, fileName) }
-                        ) {
-                            Row(
+                        if (isAudio) {
+                            val actualIdx = mediaUris.indexOf(uri)
+                            ChatAttachmentView(
+                                context = context,
+                                uri = uri,
+                                isSentByMe = message.isSentByMe,
+                                player = player,
+                                duration = message.attachmentDurations[uri.toString()] ?: 0L,
+                                onClick = { onMediaClick(mediaUris, actualIdx) },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = cardFillColor,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .clickable { FilePickerUtils.openFileInExternalApp(context, uri, fileName) }
                             ) {
-                                DocumentTypeTile(extension = ext, isDark = isDark)
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = fileName,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = primaryTextColor,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    val sizeBytes = FilePickerUtils.getFileSizeBytes(context, uri)
-                                    val sizeStr = FilePickerUtils.formatFileSize(sizeBytes)
-                                    Text(
-                                        text = "${ext.uppercase()} · $sizeStr",
-                                        fontSize = 12.sp,
-                                        color = secondaryTextColor
-                                    )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    DocumentTypeTile(extension = firstExt, isDark = isDark, widthDp = 28, heightDp = 34)
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = fileName,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = primaryTextColor,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        val sizeBytes = FilePickerUtils.getFileSizeBytes(context, firstUri)
+                                        val sizeStr = FilePickerUtils.formatFileSize(sizeBytes)
+                                        val isFailed = false // TODO: Check message failed state
+                                        if (isFailed && message.isSentByMe) {
+                                            Text(
+                                                text = "Not sent. Tap to retry",
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.error,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        } else {
+                                            Text(
+                                                text = "${firstExt.uppercase()} · $sizeStr",
+                                                fontSize = 12.sp,
+                                                color = secondaryTextColor,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                }
+            } else {
+                // 2+ Items: Horizontal Pager or 2 side by side
+                Column(
+                    modifier = Modifier
+                        .widthIn(max = 272.dp)
+                        .padding(bottom = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    val cardFillColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
+                    val audioColor = if (isDark) Color(0xFFE87DA3) else Color(0xFFB0446A)
+
+                    val pageCount = (n + 1) / 2
+                    val pagerState = rememberPagerState { pageCount }
+
+                    HorizontalPager(
+                        state = pagerState,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { page ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            val startIdx = page * 2
+                            for (offset in 0..1) {
+                                val idx = startIdx + offset
+                                if (idx < n) {
+                                    val uri = mediaUris[idx]
+                                    val fileName = FilePickerUtils.getFileName(context, uri)
+                                    val ext = fileName.substringAfterLast('.', "").lowercase()
+                                    val mimeType = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
+                                    val isVideo = mimeType?.startsWith("video/") == true || ext == "mp4"
+                                    val isAudio = mimeType?.startsWith("audio/") == true || ext in listOf("m4a", "mp3")
+                                    val isImage = mimeType?.startsWith("image/") == true || ext in listOf("jpg", "jpeg", "png")
+
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = cardFillColor,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .aspectRatio(1f)
+                                            .clickable {
+                                                if (!isImage && !isVideo && !isAudio) {
+                                                    FilePickerUtils.openFileInExternalApp(context, uri, fileName)
+                                                } else {
+                                                    onMediaClick(mediaUris, idx)
+                                                }
+                                            }
+                                    ) {
+                                        if (isImage || isVideo) {
+                                            Box(modifier = Modifier.fillMaxSize()) {
+                                                AsyncImage(
+                                                    model = uri,
+                                                    contentDescription = "Photo/Video",
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                                if (isVideo) {
+                                                    Surface(
+                                                        color = Color.Black.copy(alpha = 0.50f),
+                                                        shape = CircleShape,
+                                                        modifier = Modifier.size(28.dp).align(Alignment.Center)
+                                                    ) {
+                                                        Box(contentAlignment = Alignment.Center) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.PlayArrow,
+                                                                contentDescription = "Play Video",
+                                                                tint = Color.White,
+                                                                modifier = Modifier.size(14.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                    val durationSec = message.attachmentDurations[uri.toString()] ?: 0L
+                                                    val durationStr = if (durationSec > 0) {
+                                                        String.format(Locale.getDefault(), "%d:%02d", durationSec / 60, durationSec % 60)
+                                                    } else "0:42"
+                                                    Surface(
+                                                        color = Color.Black.copy(alpha = 0.55f),
+                                                        shape = RoundedCornerShape(6.dp),
+                                                        modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = durationStr,
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            color = Color.White,
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        } else if (isAudio) {
+                                            Column(
+                                                modifier = Modifier.fillMaxSize().padding(8.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                verticalArrangement = Arrangement.Center
+                                            ) {
+                                                Surface(
+                                                    modifier = Modifier.size(30.dp),
+                                                    shape = CircleShape,
+                                                    color = audioColor.copy(alpha = 0.18f)
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        WaveformIcon(
+                                                            color = audioColor,
+                                                            modifier = Modifier.size(18.dp)
+                                                        )
+                                                    }
+                                                }
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                Text(
+                                                    text = fileName,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = primaryTextColor,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                            }
+                                        } else {
+                                            Column(
+                                                modifier = Modifier.fillMaxSize().padding(8.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                verticalArrangement = Arrangement.Center
+                                            ) {
+                                                DocumentTypeTile(extension = ext, isDark = isDark, widthDp = 40, heightDp = 48)
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                Text(
+                                                    text = fileName,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = primaryTextColor,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+
+                    if (pageCount > 1) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().height(18.dp).padding(top = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                Row(
+                                    modifier = Modifier.align(Alignment.Center),
+                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    repeat(pageCount) { page ->
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .background(
+                                                    color = if (pagerState.currentPage == page) primaryTextColor else secondaryTextColor.copy(alpha = 0.3f),
+                                                    shape = CircleShape
+                                                )
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1330,64 +1456,4 @@ private fun AttachmentAndTextSection(
     }
 }
 
-@Composable
-fun DocumentTypeTile(
-    extension: String,
-    isDark: Boolean,
-    modifier: Modifier = Modifier,
-    widthDp: Int = 28,
-    heightDp: Int = 34
-) {
-    val ext = extension.lowercase()
-    val (label, color, fontSize) = when (ext) {
-        "doc", "docx" -> Triple("W", if (isDark) Color(0xFF5B8DEF) else Color(0xFF2F5FC0), 13.sp)
-        "pdf" -> Triple("PDF", if (isDark) Color(0xFFE5534B) else Color(0xFFC4433A), 7.5.sp)
-        "txt" -> Triple("TXT", if (isDark) Color(0xFF8A9199) else Color(0xFF65707A), 7.5.sp)
-        "rtf" -> Triple("RTF", if (isDark) Color(0xFF8C8FE6) else Color(0xFF5558B8), 7.5.sp)
-        "odt" -> Triple("ODT", if (isDark) Color(0xFF4FB0E6) else Color(0xFF1E7DB5), 7.5.sp)
-        "xls", "xlsx" -> Triple("X", if (isDark) Color(0xFF3FB27F) else Color(0xFF1F7A4F), 13.sp)
-        "csv" -> Triple("CSV", if (isDark) Color(0xFF9BCB4F) else Color(0xFF5E8F1E), 7.5.sp)
-        "ppt", "pptx" -> Triple("P", if (isDark) Color(0xFFF0883E) else Color(0xFFC25A12), 13.sp)
-        "html", "htm" -> Triple("</>", if (isDark) Color(0xFFB07CE8) else Color(0xFF7A47B8), 9.sp)
-        "zip" -> Triple("ZIP", if (isDark) Color(0xFFE8B03A) else Color(0xFFA8780E), 7.5.sp)
-        "rar" -> Triple("RAR", if (isDark) Color(0xFFD9835F) else Color(0xFFA84F2E), 7.5.sp)
-        "pages" -> Triple("Pg", if (isDark) Color(0xFF82A8FF) else Color(0xFF3C6FD9), 12.sp)
-        "ods" -> Triple("ODS", if (isDark) Color(0xFF5FD39A) else Color(0xFF23915E), 7.5.sp)
-        "numbers" -> Triple("Nm", if (isDark) Color(0xFF58C26B) else Color(0xFF2E8B3F), 12.sp)
-        "odp" -> Triple("ODP", if (isDark) Color(0xFFF6A25D) else Color(0xFFC76B1E), 7.5.sp)
-        "key" -> Triple("Key", if (isDark) Color(0xFFF7B267) else Color(0xFFC98035), 9.sp)
-        "xml" -> Triple("XML", if (isDark) Color(0xFF8F9BC9) else Color(0xFF505C8F), 7.5.sp)
-        "json" -> Triple("{ }", if (isDark) Color(0xFFCDAA5A) else Color(0xFF8C6B15), 10.sp)
-        "7z" -> Triple("7Z", if (isDark) Color(0xFFC9C14E) else Color(0xFF8A8410), 8.5.sp)
-        "tar" -> Triple("TAR", if (isDark) Color(0xFFC9A27A) else Color(0xFF8A6A3E), 7.5.sp)
-        "gz" -> Triple("GZ", if (isDark) Color(0xFFB58B6A) else Color(0xFF7A5436), 8.5.sp)
-        "dwg" -> Triple("DWG", if (isDark) Color(0xFF7FA6D1) else Color(0xFF386C9F), 7.5.sp)
-        "dxf" -> Triple("DXF", if (isDark) Color(0xFFA3B8CF) else Color(0xFF5A728C), 7.5.sp)
-        "ifc" -> Triple("IFC", if (isDark) Color(0xFFC58BD1) else Color(0xFF8A3E99), 7.5.sp)
-        "rvt" -> Triple("RVT", if (isDark) Color(0xFF5E86E0) else Color(0xFF2F55B0), 7.5.sp)
-        "skp" -> Triple("SKP", if (isDark) Color(0xFFE0788F) else Color(0xFFB03F5A), 7.5.sp)
-        else -> {
-            val mark = ext.uppercase().take(3).ifBlank { "DOC" }
-            val fSize = if (mark.length > 2) 7.5.sp else 12.sp
-            Triple(mark, if (isDark) Color(0xFF8A9199) else Color(0xFF65707A), fSize)
-        }
-    }
 
-    Surface(
-        modifier = modifier.size(width = widthDp.dp, height = heightDp.dp),
-        shape = RoundedCornerShape((heightDp * 0.16f).dp),
-        color = color
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Text(
-                text = label,
-                fontSize = fontSize,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-        }
-    }
-}
