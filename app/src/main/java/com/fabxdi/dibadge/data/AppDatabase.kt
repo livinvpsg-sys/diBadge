@@ -6,7 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
-@Database(entities = [ReminderEntity::class, LeaveEntity::class, OvertimeEntity::class, HomeEntryEntity::class, ChatMessageEntity::class, InboxEntity::class, ClaimEntity::class, ActivityLogEntity::class, DocEntity::class, GroupTaskEntity::class, FormEntity::class, GroupFormEntity::class, FormSubmissionEntity::class], version = 22, exportSchema = false)
+@Database(entities = [ReminderEntity::class, LeaveEntity::class, OvertimeEntity::class, HomeEntryEntity::class, ChatMessageEntity::class, InboxEntity::class, ClaimEntity::class, ActivityLogEntity::class, DocEntity::class, GroupTaskEntity::class, FormEntity::class, GroupFormEntity::class, FormSubmissionEntity::class], version = 23, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun reminderDao(): ReminderDao

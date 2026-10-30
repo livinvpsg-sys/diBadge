@@ -3,7 +3,7 @@ package com.fabxdi.dibadge.ui.calendar
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -186,7 +186,7 @@ fun ScheduleScreen(
             )
         }
     ) { innerPadding ->
-        HorizontalPager(
+        VerticalPager(
             state = pagerState,
             modifier = Modifier
                 .fillMaxSize()

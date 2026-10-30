@@ -184,31 +184,36 @@ fun CalendarGrid(
                                     .semantics { contentDescription = accessibilityDesc },
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                // Day Number
-                                if (isToday) {
-                                    val todayBg = if (isDark) Color(0xFFF0F3F5) else Color(0xFF11161A)
-                                    val todayFg = if (isDark) Color(0xFF0E1114) else Color(0xFFF5F7F9)
-                                    Surface(
-                                        modifier = Modifier.size(24.dp),
-                                        shape = CircleShape,
-                                        color = todayBg
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = date.dayOfMonth.toString(),
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = todayFg
-                                            )
+                                // Day Number (Fixed 24dp size for exact alignment)
+                                Box(
+                                    modifier = Modifier.size(24.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isToday) {
+                                        val todayBg = if (isDark) Color(0xFFF0F3F5) else Color(0xFF11161A)
+                                        val todayFg = if (isDark) Color(0xFF0E1114) else Color(0xFFF5F7F9)
+                                        Surface(
+                                            modifier = Modifier.size(24.dp),
+                                            shape = CircleShape,
+                                            color = todayBg
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text(
+                                                    text = date.dayOfMonth.toString(),
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = todayFg
+                                                )
+                                            }
                                         }
+                                    } else {
+                                        Text(
+                                            text = date.dayOfMonth.toString(),
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Normal,
+                                            color = primaryTextColor
+                                        )
                                     }
-                                } else {
-                                    Text(
-                                        text = date.dayOfMonth.toString(),
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        color = primaryTextColor
-                                    )
                                 }
 
                                 Spacer(modifier = Modifier.height(3.dp))

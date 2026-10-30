@@ -19,8 +19,13 @@ import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import com.fabxdi.dibadge.util.ScanNameValidator
+import com.fabxdi.dibadge.util.UserColorUtils
 import java.io.FileOutputStream
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -132,7 +137,9 @@ data class ChatMessage(
     val isPollClosed: Boolean = false,
     val userVotedOptionIds: Set<String> = emptySet(),
     val isVoiceNote: Boolean = false,
-    val waveformArray: List<Int> = emptyList()
+    val isListened: Boolean = false,
+    val waveformArray: List<Int> = emptyList(),
+    val isForwarded: Boolean = false
 )
 
 data class PollOptionItem(
@@ -140,190 +147,6 @@ data class PollOptionItem(
     val text: String,
     val voteCount: Int = 0
 )
-
-fun stripGroupMention(text: String, groupName: String? = null): String {
-    if (text.isBlank()) return ""
-    var result = text
-    if (groupName != null && groupName.isNotBlank()) {
-        result = result.replace("@$groupName", "", ignoreCase = true)
-    }
-    result = result.replace("@All linked groups", "", ignoreCase = true)
-    result = result.replace("@All", "", ignoreCase = true)
-    return result.trim()
-}
-
-enum class AttachmentCategory {
-    IMAGE, VIDEO, AUDIO, DOCUMENT
-}
-
-enum class VoiceRecordState { NONE, HOLD, LOCKED, PAUSED }
-
-fun normalizeWaveformTo64(amplitudes: List<Int>): List<Int> {
-    if (amplitudes.isEmpty()) return List(64) { 4 }
-    val maxAmp = amplitudes.maxOrNull()?.coerceAtLeast(1) ?: 1
-    val result = mutableListOf<Int>()
-    val step = amplitudes.size / 64f
-
-    for (i in 0 until 64) {
-        val index = (i * step).toInt().coerceIn(0, amplitudes.size - 1)
-        val raw = amplitudes[index]
-        val normalized = ((raw.toFloat() / maxAmp) * 31f).toInt().coerceIn(2, 31)
-        result.add(normalized)
-    }
-    return result
-}
-
-fun getAttachmentCategory(context: Context, uri: Uri): AttachmentCategory {
-    val fileName = FilePickerUtils.getFileName(context, uri).lowercase()
-    val mimeType = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
-    val ext = fileName.substringAfterLast('.', "")
-
-    return when {
-        mimeType?.startsWith("image/") == true || ext in listOf("jpg", "jpeg", "png") -> AttachmentCategory.IMAGE
-        mimeType?.startsWith("video/") == true || ext == "mp4" -> AttachmentCategory.VIDEO
-        mimeType?.startsWith("audio/") == true || ext in listOf("m4a", "mp3") -> AttachmentCategory.AUDIO
-        else -> AttachmentCategory.DOCUMENT
-    }
-}
-
-private fun launchDocumentScanner(context: Context, launcher: ActivityResultLauncher<IntentSenderRequest>) {
-    try {
-        val options = GmsDocumentScannerOptions.Builder()
-            .setGalleryImportAllowed(true)
-            .setPageLimit(10)
-            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_PDF)
-            .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
-            .build()
-
-        val scanner = GmsDocumentScanning.getClient(options)
-        val activity = context as? Activity
-        if (activity != null) {
-            scanner.getStartScanIntent(activity)
-                .addOnSuccessListener { intentSender ->
-                    launcher.launch(IntentSenderRequest.Builder(intentSender).build())
-                }
-                .addOnFailureListener {
-                    Toast.makeText(context, "Scanning isn't available on this phone", Toast.LENGTH_SHORT).show()
-                }
-        } else {
-            Toast.makeText(context, "Scanning isn't available on this phone", Toast.LENGTH_SHORT).show()
-        }
-    } catch (e: Exception) {
-        Toast.makeText(context, "Scanning isn't available on this phone", Toast.LENGTH_SHORT).show()
-    }
-}
-
-fun processNewUris(newUris: List<Uri>, currentFiles: List<Uri>, context: Context): List<Uri> {
-    if (currentFiles.size >= 10) {
-        Toast.makeText(context, "You can attach up to 10 files", Toast.LENGTH_SHORT).show()
-        return currentFiles
-    }
-
-    val currentCat = if (currentFiles.isNotEmpty()) getAttachmentCategory(context, currentFiles.first()) else null
-
-    val availableSlotCount = 10 - currentFiles.size
-    val limitedUris = newUris.take(availableSlotCount)
-    if (newUris.size > availableSlotCount) {
-        Toast.makeText(context, "You can attach up to 10 files", Toast.LENGTH_SHORT).show()
-    }
-
-    val validUris = mutableListOf<Uri>()
-    var sizeExceeded = false
-    var isBlockedType = false
-
-    for (uri in limitedUris) {
-        val fileName = FilePickerUtils.getFileName(context, uri)
-        if (FileBlocklistValidator.isFileBlocked(fileName)) {
-            isBlockedType = true
-            continue
-        }
-
-        val cat = getAttachmentCategory(context, uri)
-        if (currentCat != null && cat != currentCat) {
-            continue
-        }
-        val sizeBytes = FilePickerUtils.getFileSizeBytes(context, uri)
-        if (sizeBytes > 25 * 1024 * 1024) {
-            sizeExceeded = true
-        } else {
-            validUris.add(uri)
-        }
-    }
-
-    if (isBlockedType) {
-        Toast.makeText(context, "This file type can't be sent", Toast.LENGTH_SHORT).show()
-    }
-
-    if (sizeExceeded) {
-        Toast.makeText(context, "This file is over 25 MB", Toast.LENGTH_SHORT).show()
-    }
-
-    return currentFiles + validUris
-}
-
-@Composable
-fun DateHeader(
-    date: LocalDate,
-    isDark: Boolean,
-    secondaryTextColor: Color,
-    modifier: Modifier = Modifier
-) {
-    val today = LocalDate.now()
-    val yesterday = today.minusDays(1)
-    val sevenDaysAgo = today.minusDays(7)
-
-    val text = when {
-        date == today -> "Today"
-        date == yesterday -> "Yesterday"
-        date.isAfter(sevenDaysAgo) -> date.format(DateTimeFormatter.ofPattern("EEEE", Locale.getDefault()))
-        else -> date.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault()))
-    }
-
-    val pillBgColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(top = 14.dp, bottom = 6.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Surface(
-            color = pillBgColor,
-            shape = RoundedCornerShape(12.dp),
-            shadowElevation = if (!isDark) 1.5.dp else 1.dp,
-            tonalElevation = 0.dp
-        ) {
-            Text(
-                text = text,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                color = secondaryTextColor
-            )
-        }
-    }
-}
-
-@Composable
-fun GroupCreatedHeader(
-    createdDateText: String,
-    secondaryTextColor: Color
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 14.dp, bottom = 6.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = "Group created $createdDateText",
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Normal,
-            color = secondaryTextColor,
-            textAlign = TextAlign.Center
-        )
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -393,6 +216,8 @@ fun ChatScreen(
     var selectedPollForVotes by remember { mutableStateOf<ChatMessage?>(null) }
     var showShareLocationSheet by remember { mutableStateOf(false) }
     var showNewPollScreen by remember { mutableStateOf(false) }
+    var showForwardSheet by remember { mutableStateOf(false) }
+    var longPressedMessage by remember { mutableStateOf<ChatMessage?>(null) }
 
     var selectedDocInfoUri by remember { mutableStateOf<Uri?>(null) }
     var isDocInfoPreSend by remember { mutableStateOf(false) }
@@ -465,6 +290,10 @@ fun ChatScreen(
     val colors = MaterialTheme.colorScheme
     val diBadgeColors = DiBadgeTheme.colors
     val isDark = colors.onBackground.red > 0.5f
+
+    val isCurrentUserMember = remember(members, currentUserId) {
+        members.isEmpty() || members.any { it.uid == currentUserId }
+    }
 
     // Theme Tokens
     val pageBgColor = if (isDark) Color(0xFF0E1114) else Color(0xFFE8ECEF)
@@ -555,7 +384,9 @@ fun ChatScreen(
     }
 
     BackHandler {
-        if (selectedAttachmentUris.isNotEmpty()) {
+        if (longPressedMessage != null) {
+            longPressedMessage = null
+        } else if (selectedAttachmentUris.isNotEmpty()) {
             selectedAttachmentUris = emptySet()
         } else if (selectedMessages.isNotEmpty()) {
             selectedMessages = emptySet()
@@ -921,13 +752,142 @@ fun ChatScreen(
                     .background(cardColor)
                     .statusBarsPadding()
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .padding(horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                if (selectedMessages.isNotEmpty()) {
+                    val selectedList = remember(selectedMessages, messages) {
+                        messages.filter { selectedMessages.contains(it.id) }
+                    }
+                    val isSingleSelected = selectedMessages.size == 1
+                    val firstSelectedMsg = selectedList.firstOrNull()
+                    val hasTextToCopy = selectedList.any { it.text.isNotBlank() }
+                    val allOwnMessages = selectedList.all { it.isSentByMe }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = { selectedMessages = emptySet() },
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear selection",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Text(
+                            text = "${selectedMessages.size} selected",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = primaryTextColor,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        // Reply Icon (Only if 1 selected)
+                        if (isSingleSelected && firstSelectedMsg != null) {
+                            IconButton(
+                                onClick = {
+                                    replyingTo = firstSelectedMsg
+                                    replyingToAttachmentUriState = firstSelectedMsg.attachments.firstOrNull()
+                                    selectedMessages = emptySet()
+                                },
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Reply,
+                                    contentDescription = "Reply",
+                                    tint = primaryTextColor,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+
+                        // Forward Icon (If any selected)
+                        IconButton(
+                            onClick = {
+                                showForwardSheet = true
+                            },
+                            modifier = Modifier.size(44.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Reply,
+                                contentDescription = "Forward",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        // Copy Icon (If text present)
+                        if (hasTextToCopy) {
+                            IconButton(
+                                onClick = {
+                                    val combinedText = selectedList.filter { it.text.isNotBlank() }.joinToString("\n") { it.text }
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    val clip = ClipData.newPlainText("chat_text", combinedText)
+                                    clipboard.setPrimaryClip(clip)
+                                    Toast.makeText(context, "Text copied", Toast.LENGTH_SHORT).show()
+                                    selectedMessages = emptySet()
+                                },
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = "Copy text",
+                                    tint = primaryTextColor,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+
+                        // Info Icon (Only if 1 selected and sent by me)
+                        if (isSingleSelected && firstSelectedMsg?.isSentByMe == true) {
+                            IconButton(
+                                onClick = {
+                                    selectedSentToMessage = firstSelectedMsg
+                                },
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = "Message info",
+                                    tint = primaryTextColor,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+
+                        // Delete Icon (Only if ALL selected messages were sent by user)
+                        if (allOwnMessages) {
+                            IconButton(
+                                onClick = {
+                                    showDeleteDialog = true
+                                },
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete",
+                                    tint = errorColor,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                     // Back Arrow (24dp icon in 48dp touch area, 12dp from left edge)
                     IconButton(
                         onClick = onBack,
@@ -1011,17 +971,126 @@ fun ChatScreen(
                     }
                 }
             }
-        },
+        }
+    },
         bottomBar = {
-            // Input Bar: 84dp high including navigation inset, page color background, no top divider
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(pageBgColor)
-                    .navigationBarsPadding()
-                    .imePadding()
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
+            if (selectedMessages.isNotEmpty()) {
+                val selectedList = remember(selectedMessages, messages) {
+                    messages.filter { selectedMessages.contains(it.id) }
+                }
+                val hasTextToCopy = selectedList.any { it.text.isNotBlank() }
+                val allOwnMessages = selectedList.all { it.isSentByMe }
+
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(84.dp)
+                        .background(cardColor),
+                    color = cardColor,
+                    border = BorderStroke(1.dp, outlineColor)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = { selectedMessages = emptySet() },
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear selection",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Text(
+                            text = "${selectedMessages.size} selected",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = primaryTextColor,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        // Action: Forward
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .width(62.dp)
+                                .clickable { showForwardSheet = true }
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Reply,
+                                contentDescription = "Forward",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(text = "Forward", fontSize = 11.sp, color = primaryTextColor)
+                        }
+
+                        // Action: Copy
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .width(62.dp)
+                                .alpha(if (hasTextToCopy) 1f else 0.40f)
+                                .clickable(enabled = hasTextToCopy) {
+                                    val combinedText = selectedList.filter { it.text.isNotBlank() }.joinToString("\n") { it.text }
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    val clip = ClipData.newPlainText("chat_text", combinedText)
+                                    clipboard.setPrimaryClip(clip)
+                                    Toast.makeText(context, "Text copied", Toast.LENGTH_SHORT).show()
+                                    selectedMessages = emptySet()
+                                }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "Copy text",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(text = "Copy", fontSize = 11.sp, color = primaryTextColor)
+                        }
+
+                        // Action: Delete
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .width(62.dp)
+                                .alpha(if (allOwnMessages) 1f else 0.40f)
+                                .clickable(enabled = allOwnMessages) {
+                                    showDeleteDialog = true
+                                }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                tint = if (allOwnMessages) errorColor else dimTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(text = "Delete", fontSize = 11.sp, color = if (allOwnMessages) errorColor else dimTextColor)
+                        }
+                    }
+                }
+            } else {
+                // Input Bar: 84dp high including navigation inset, page color background, no top divider
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(pageBgColor)
+                        .navigationBarsPadding()
+                        .imePadding()
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
                 // Mention Picker Card above field (aligned with message input field bounds: 44dp start, 52dp end)
                 if (showMentionPicker && mentionTriggerInfo != null) {
                     val detectedMode = mentionTriggerInfo.first
@@ -1112,9 +1181,106 @@ fun ChatScreen(
                         },
                         onFileClick = { uri ->
                             val fileName = FilePickerUtils.getFileName(context, uri)
-                            FilePickerUtils.openFileInExternalApp(context, uri, fileName)
+                            val opened = FilePickerUtils.openFileInExternalApp(context, uri, fileName)
+                            if (!opened) {
+                                Toast.makeText(context, "No longer available", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     )
+                }
+
+                // Composer Reply Preview Bar directly above typing box (diBadge style)
+                if (replyingTo != null) {
+                    val replyMsg = replyingTo!!
+                    val isReplySenderYou = replyMsg.isSentByMe || replyMsg.senderName == "Me"
+                    val replySenderName = if (isReplySenderYou) "yourself" else replyMsg.senderName
+
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 6.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        color = cardColor,
+                        border = BorderStroke(1.dp, outlineColor),
+                        shadowElevation = if (!isDark) 1.5.dp else 0.dp
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Reply,
+                                contentDescription = "Replying",
+                                tint = secondaryTextColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Replying to $replySenderName",
+                                    fontSize = 12.sp,
+                                    color = secondaryTextColor
+                                )
+                                val textPreview = if (replyMsg.text.isNotBlank()) {
+                                    replyMsg.text.take(200)
+                                } else if (replyMsg.isVoiceNote) {
+                                    "Voice message"
+                                } else if (replyMsg.msgType == "location") {
+                                    "Location"
+                                } else if (replyMsg.msgType == "poll") {
+                                    "Poll"
+                                } else {
+                                    "Attachment"
+                                }
+                                Text(
+                                    text = textPreview,
+                                    fontSize = 14.sp,
+                                    color = primaryTextColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            if (!replyingToAttachmentUriState.isNullOrBlank() || replyMsg.attachments.isNotEmpty()) {
+                                val thumbUri = replyingToAttachmentUriState ?: replyMsg.attachments.firstOrNull()
+                                if (thumbUri != null) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        AsyncImage(
+                                            model = thumbUri,
+                                            contentDescription = "Attachment preview",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            IconButton(
+                                onClick = {
+                                    replyingTo = null
+                                    replyingToAttachmentUriState = null
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Cancel reply",
+                                    tint = secondaryTextColor,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
                 }
 
                 if (showEmojiPicker) {
@@ -1143,354 +1309,781 @@ fun ChatScreen(
                     }
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (attachedFiles.isNotEmpty()) {
-                        // 48dp Raised Circle "+" Button (replaces paperclip while attachments ready)
-                        Surface(
-                            modifier = Modifier
-                                .padding(start = 12.dp)
-                                .size(48.dp)
-                                .clickable {
-                                    if (attachedFiles.size >= 10) {
-                                        Toast.makeText(context, "You can attach up to 10 files", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        val activeCategory = getAttachmentCategory(context, attachedFiles.first())
-                                        when (activeCategory) {
-                                            AttachmentCategory.IMAGE -> imagePickerLauncher.launch("image/*")
-                                            AttachmentCategory.VIDEO -> videoPickerLauncher.launch("video/*")
-                                            AttachmentCategory.AUDIO -> audioPickerLauncher.launch("audio/*")
-                                            AttachmentCategory.DOCUMENT -> documentPickerLauncher.launch(arrayOf("*/*"))
-                                        }
-                                    }
-                                },
-                            shape = CircleShape,
-                            color = cardColor,
-                            shadowElevation = if (!isDark) 1.5.dp else 0.dp
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = "Add more attachments",
-                                    tint = primaryTextColor,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(6.dp))
-                    } else {
-                        // Paper clip (24dp, secondary) in 40dp touch target
-                        Box(
-                            modifier = Modifier
-                                .padding(start = 12.dp)
-                                .size(40.dp)
-                                .clickable { showAttachmentOptions = true },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.AttachFile,
-                                contentDescription = "Attach",
-                                tint = secondaryTextColor,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(4.dp))
-                    }
-
-                    // Field: 48dp high, fully rounded 24dp, card fill (soft shadow in light, no outline)
-                    Surface(
+                if (voiceRecordState != VoiceRecordState.NONE) {
+                    // VOICE RECORDING OVERLAY BAR (HOLD, LOCKED, PAUSED)
+                    Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = 48.dp, max = 120.dp),
-                        shape = RoundedCornerShape(24.dp),
-                        color = cardColor,
-                        shadowElevation = if (!isDark) 1.5.dp else 0.dp
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Emoji Icon (24dp)
-                            Box(
+                        if (voiceRecordState == VoiceRecordState.HOLD) {
+                            // Lock Pill positioned above the enlarged mic button
+                            Surface(
                                 modifier = Modifier
-                                    .size(32.dp)
-                                    .clickable { showEmojiPicker = !showEmojiPicker },
-                                contentAlignment = Alignment.Center
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = (-8).dp, y = (-72).dp)
+                                    .size(width = 44.dp, height = 84.dp),
+                                shape = RoundedCornerShape(22.dp),
+                                color = cardColor,
+                                shadowElevation = if (!isDark) 2.dp else 0.dp
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.SentimentSatisfiedAlt,
-                                    contentDescription = "Emoji",
-                                    tint = secondaryTextColor,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(6.dp))
-
-                            // Message Input Field (16sp, dim color placeholder)
-                            Box(
-                                modifier = Modifier.weight(1f),
-                                contentAlignment = Alignment.CenterStart
-                            ) {
-                                if (inputText.isEmpty() && attachedFiles.isEmpty()) {
-                                    Text(
-                                        text = "Message",
-                                        fontSize = 16.sp,
-                                        color = dimTextColor
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.SpaceEvenly
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.KeyboardArrowUp,
+                                        contentDescription = "Lock",
+                                        tint = secondaryTextColor,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.Lock,
+                                        contentDescription = "Lock recording",
+                                        tint = primaryTextColor,
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
-                                BasicTextField(
-                                    value = inputText,
-                                    onValueChange = { newValue ->
-                                        val oldValue = inputText
-                                        if (newValue.length < oldValue.length) {
-                                            val pattern = Regex("""@([A-Za-z0-9_]+(?:\s+[A-Za-z0-9_]+)*)\s?""")
-                                            var handled = false
-                                            pattern.findAll(oldValue).forEach { match ->
-                                                val range = match.range
-                                                if (newValue.length in (range.first + 1)..range.last) {
-                                                    inputText = oldValue.removeRange(range.first, range.last + 1)
-                                                    handled = true
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Main Recording Pill Bar
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp),
+                                shape = RoundedCornerShape(24.dp),
+                                color = cardColor,
+                                shadowElevation = if (!isDark) 1.5.dp else 0.dp
+                            ) {
+                                when (voiceRecordState) {
+                                    VoiceRecordState.HOLD -> {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(horizontal = 16.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                val infiniteTransition = rememberInfiniteTransition()
+                                                val pulseAlpha by infiniteTransition.animateFloat(
+                                                    initialValue = 0.3f,
+                                                    targetValue = 1.0f,
+                                                    animationSpec = infiniteRepeatable(
+                                                        animation = tween(600),
+                                                        repeatMode = RepeatMode.Reverse
+                                                    )
+                                                )
+                                                Surface(
+                                                    modifier = Modifier.size(10.dp).alpha(pulseAlpha),
+                                                    shape = CircleShape,
+                                                    color = errorColor
+                                                ) {}
+
+                                                Spacer(modifier = Modifier.width(8.dp))
+
+                                                val durationSec = voiceRecordDurationMs / 1000L
+                                                val timeStr = String.format(Locale.getDefault(), "%d:%02d", durationSec / 60, durationSec % 60)
+                                                Text(
+                                                    text = timeStr,
+                                                    fontSize = 15.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = if (durationSec >= 14 * 60 + 30) errorColor else primaryTextColor
+                                                )
+                                            }
+
+                                            val hintAlpha = ((120f + voiceDragOffsetX) / 120f).coerceIn(0f, 1f)
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier
+                                                    .offset(x = (voiceDragOffsetX / 2f).dp)
+                                                    .alpha(hintAlpha)
+                                            ) {
+                                                Text(
+                                                    text = "< Slide to cancel",
+                                                    fontSize = 14.sp,
+                                                    color = secondaryTextColor
+                                                )
+                                            }
+                                        }
+                                    }
+                                    VoiceRecordState.LOCKED -> {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(horizontal = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            IconButton(
+                                                onClick = {
+                                                    recorder.stop()
+                                                    voiceAudioFile?.delete()
+                                                    voiceRecordState = VoiceRecordState.NONE
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                },
+                                                modifier = Modifier.size(40.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Delete,
+                                                    contentDescription = "Discard recording",
+                                                    tint = secondaryTextColor,
+                                                    modifier = Modifier.size(22.dp)
+                                                )
+                                            }
+
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                val infiniteTransition = rememberInfiniteTransition()
+                                                val pulseAlpha by infiniteTransition.animateFloat(
+                                                    initialValue = 0.3f,
+                                                    targetValue = 1.0f,
+                                                    animationSpec = infiniteRepeatable(
+                                                        animation = tween(600),
+                                                        repeatMode = RepeatMode.Reverse
+                                                    )
+                                                )
+                                                Surface(
+                                                    modifier = Modifier.size(10.dp).alpha(pulseAlpha),
+                                                    shape = CircleShape,
+                                                    color = errorColor
+                                                ) {}
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                val durationSec = voiceRecordDurationMs / 1000L
+                                                Text(
+                                                    text = String.format(Locale.getDefault(), "%d:%02d", durationSec / 60, durationSec % 60),
+                                                    fontSize = 15.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = primaryTextColor
+                                                )
+                                            }
+
+                                            Row(
+                                                modifier = Modifier
+                                                    .width(110.dp)
+                                                    .height(22.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                val bars = if (voiceAmplitudes.isNotEmpty()) voiceAmplitudes.takeLast(18) else List(18) { 6 }
+                                                bars.forEach { amp ->
+                                                    val heightFrac = (amp / 32767f).coerceIn(0.15f, 1f)
+                                                    Surface(
+                                                        modifier = Modifier
+                                                            .weight(1f)
+                                                            .fillMaxHeight(heightFrac),
+                                                        shape = RoundedCornerShape(1.dp),
+                                                        color = secondaryTextColor
+                                                    ) {}
                                                 }
                                             }
-                                            if (!handled) {
-                                                inputText = newValue
+
+                                            IconButton(
+                                                onClick = {
+                                                    recorder.pause()
+                                                    voiceRecordState = VoiceRecordState.PAUSED
+                                                },
+                                                modifier = Modifier.size(40.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Pause,
+                                                    contentDescription = "Pause recording",
+                                                    tint = primaryTextColor,
+                                                    modifier = Modifier.size(22.dp)
+                                                )
                                             }
-                                        } else {
-                                            inputText = newValue
                                         }
-                                    },
-                                    maxLines = 5,
-                                    textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                        fontSize = 16.sp,
-                                        color = primaryTextColor
-                                    ),
-                                    visualTransformation = { annotatedString ->
-                                        val acceptedGroupNames = acceptedConnections.map { it.otherEntityName }
-                                        val formatted = buildMentionAnnotatedString(
-                                            text = annotatedString.text,
-                                            primaryTextColor = primaryTextColor,
-                                            tealAccent = tealAccent,
-                                            acceptedGroupNames = acceptedGroupNames
-                                        )
-                                        TransformedText(formatted, OffsetMapping.Identity)
-                                    },
-                                    cursorBrush = SolidColor(primaryTextColor),
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                                    }
+                                    VoiceRecordState.PAUSED -> {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(horizontal = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            IconButton(
+                                                onClick = {
+                                                    player.stop()
+                                                    recorder.stop()
+                                                    voiceAudioFile?.delete()
+                                                    voiceRecordState = VoiceRecordState.NONE
+                                                    isPreviewPlaying = false
+                                                },
+                                                modifier = Modifier.size(40.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Delete,
+                                                    contentDescription = "Discard recording",
+                                                    tint = secondaryTextColor,
+                                                    modifier = Modifier.size(22.dp)
+                                                )
+                                            }
+
+                                            Surface(
+                                                modifier = Modifier
+                                                    .size(32.dp)
+                                                    .clickable {
+                                                        if (isPreviewPlaying) {
+                                                            player.pause()
+                                                            isPreviewPlaying = false
+                                                        } else {
+                                                            voiceAudioFile?.let { file ->
+                                                                player.playFile(Uri.fromFile(file)) {
+                                                                    isPreviewPlaying = false
+                                                                }
+                                                                isPreviewPlaying = true
+                                                            }
+                                                        }
+                                                    },
+                                                shape = CircleShape,
+                                                color = primaryTextColor
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(
+                                                        imageVector = if (isPreviewPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                                        contentDescription = "Preview recording",
+                                                        tint = pageBgColor,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            val audioColor = if (isDark) Color(0xFFE87DA3) else Color(0xFFB0446A)
+                                            Row(
+                                                modifier = Modifier
+                                                    .width(100.dp)
+                                                    .height(22.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                val bars = if (voiceAmplitudes.isNotEmpty()) voiceAmplitudes.takeLast(16) else List(16) { 6 }
+                                                bars.forEachIndexed { idx, amp ->
+                                                    val heightFrac = (amp / 32767f).coerceIn(0.15f, 1f)
+                                                    val isPlayed = isPreviewPlaying && idx < 8
+                                                    Surface(
+                                                        modifier = Modifier
+                                                            .weight(1f)
+                                                            .fillMaxHeight(heightFrac),
+                                                        shape = RoundedCornerShape(1.dp),
+                                                        color = if (isPlayed) audioColor else secondaryTextColor.copy(alpha = 0.35f)
+                                                    ) {}
+                                                }
+                                            }
+
+                                            val durationSec = voiceRecordDurationMs / 1000L
+                                            Text(
+                                                text = String.format(Locale.getDefault(), "%d:%02d", durationSec / 60, durationSec % 60),
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = primaryTextColor
+                                            )
+                                        }
+                                    }
+                                    else -> {}
+                                }
                             }
 
-                            // Camera Icon (24dp, secondary) - hidden when typing
-                            val textWithoutGroupMentions = stripGroupMention(inputText)
-                            val isTyping = (textWithoutGroupMentions.isNotEmpty() || attachedFiles.isNotEmpty()) && selectedAttachmentUris.isEmpty()
-                            if (!isTyping) {
-                                Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            if (voiceRecordState == VoiceRecordState.HOLD) {
+                                // 64dp Enlarged Mic Button directly under finger
                                 Box(
                                     modifier = Modifier
-                                        .size(32.dp)
+                                        .size(64.dp)
+                                        .offset(x = 4.dp, y = (-8).dp)
+                                        .pointerInput(Unit) {
+                                            detectDragGestures(
+                                                onDragStart = { },
+                                                onDrag = { _, dragAmount ->
+                                                    voiceDragOffsetX += dragAmount.x
+                                                    voiceDragOffsetY += dragAmount.y
+                                                    if (voiceDragOffsetY < -100f) {
+                                                        voiceRecordState = VoiceRecordState.LOCKED
+                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    }
+                                                },
+                                                onDragEnd = {
+                                                    if (voiceRecordState == VoiceRecordState.HOLD) {
+                                                        if (voiceDragOffsetX < -120f) {
+                                                            recorder.stop()
+                                                            voiceAudioFile?.delete()
+                                                            voiceRecordState = VoiceRecordState.NONE
+                                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                        } else if (voiceAudioFile != null && voiceRecordDurationMs >= 1000L) {
+                                                            recorder.stop()
+                                                            val normWaveform = normalizeWaveformTo64(voiceAmplitudes)
+                                                            chatViewModel.sendVoiceNoteMessage(
+                                                                context = context,
+                                                                groupId = currentEntry.id.toString(),
+                                                                audioFile = voiceAudioFile!!,
+                                                                durationMs = voiceRecordDurationMs,
+                                                                waveform = normWaveform
+                                                            )
+                                                            voiceRecordState = VoiceRecordState.NONE
+                                                        } else {
+                                                            recorder.stop()
+                                                            voiceAudioFile?.delete()
+                                                            Toast.makeText(context, "Hold to record, release to send", Toast.LENGTH_SHORT).show()
+                                                            voiceRecordState = VoiceRecordState.NONE
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Surface(
+                                        modifier = Modifier.fillMaxSize(),
+                                        shape = CircleShape,
+                                        color = primaryTextColor,
+                                        shadowElevation = if (!isDark) 3.dp else 0.dp
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.Mic,
+                                                contentDescription = "Recording",
+                                                tint = pageBgColor,
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Teal Send Button for LOCKED / PAUSED states
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
                                         .clickable {
-                                            isCameraForStampMode = false
-                                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                                                showCamera = true
-                                            } else {
-                                                cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                            player.stop()
+                                            recorder.stop()
+                                            if (voiceAudioFile != null && voiceRecordDurationMs >= 1000L) {
+                                                val normWaveform = normalizeWaveformTo64(voiceAmplitudes)
+                                                chatViewModel.sendVoiceNoteMessage(
+                                                    context = context,
+                                                    groupId = currentEntry.id.toString(),
+                                                    audioFile = voiceAudioFile!!,
+                                                    durationMs = voiceRecordDurationMs,
+                                                    waveform = normWaveform
+                                                )
                                             }
+                                            voiceRecordState = VoiceRecordState.NONE
+                                            isPreviewPlaying = false
                                         },
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.CameraAlt,
-                                        contentDescription = "Camera",
-                                        tint = secondaryTextColor,
+                                        imageVector = Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = "Send voice note",
+                                        tint = tealAccent,
                                         modifier = Modifier.size(24.dp)
                                     )
                                 }
                             }
                         }
                     }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    // Microphone OR Send OR Trash/Delete Icon (24dp, in 44dp touch area)
-                    val isSelectionMode = selectedAttachmentUris.isNotEmpty()
-                    val textWithoutGroupMentions = stripGroupMention(inputText)
-                    val isTyping = (textWithoutGroupMentions.isNotEmpty() || attachedFiles.isNotEmpty()) && !isSelectionMode
-                    val isActionEnabled = isSelectionMode || isTyping
-
-                    Box(
+                } else if (!isCurrentUserMember) {
+                    Surface(
                         modifier = Modifier
-                            .size(44.dp)
-                            .clickable(enabled = isActionEnabled) {
-                                if (isSelectionMode) {
-                                    // Delete selected attachments action (immediate delete, no snackbar)
-                                    attachedFiles = attachedFiles.filter { !selectedAttachmentUris.contains(it) }
-                                    pendingDurations = pendingDurations.filter { !selectedAttachmentUris.contains(Uri.parse(it.key)) }
-                                    selectedAttachmentUris = emptySet()
-                                } else if (isTyping) {
-                                    val currentText = inputText.trim()
-                                    chatViewModel.sendMessage(
-                                        context = context,
-                                        groupId = currentEntry.id.toString(),
-                                        text = currentText,
-                                        attachmentUris = attachedFiles,
-                                        durationsMap = pendingDurations,
-                                        replyingTo = replyingTo,
-                                        replyingToAttachmentUri = replyingToAttachmentUriState
-                                    )
-
-                                    // Cross-post to mentioned linked groups with mention stripped for receiver
-                                    val mentionedLinkedGroups = mutableSetOf<Pair<String, String>>()
-                                    if (currentText.contains("@All linked groups") || currentText.contains("@All")) {
-                                        acceptedConnections.forEach { conn ->
-                                            mentionedLinkedGroups.add(conn.otherEntityId to conn.otherEntityName)
-                                        }
-                                    } else {
-                                        acceptedConnections.forEach { conn ->
-                                            if (currentText.contains("@${conn.otherEntityName}")) {
-                                                mentionedLinkedGroups.add(conn.otherEntityId to conn.otherEntityName)
-                                            }
-                                        }
-                                    }
-
-                                    for ((targetGroupId, targetGroupName) in mentionedLinkedGroups) {
-                                        if (targetGroupId != currentEntry.id.toString() && targetGroupId.isNotBlank()) {
-                                            val crossPostText = stripGroupMention(currentText, targetGroupName)
-                                            if (crossPostText.isNotBlank() || attachedFiles.isNotEmpty()) {
-                                                chatViewModel.sendMessage(
-                                                    context = context,
-                                                    groupId = targetGroupId,
-                                                    text = crossPostText,
-                                                    attachmentUris = attachedFiles,
-                                                    durationsMap = pendingDurations,
-                                                    replyingTo = null,
-                                                    replyingToAttachmentUri = null
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    // Process member mentions for de-duplicated notification in sender's group
-                                    val mentionedMemberUids = mutableSetOf<String>()
-                                    val otherMembers = members.filter { !it.isYou && it.uid != currentUserId }
-
-                                    if (currentText.contains("@All")) {
-                                        otherMembers.forEach { mentionedMemberUids.add(it.uid) }
-                                    }
-                                    otherMembers.forEach { member ->
-                                        if (currentText.contains("@${member.displayName}", ignoreCase = true)) {
-                                            mentionedMemberUids.add(member.uid)
-                                        }
-                                    }
-
-                                    val notificationBody = stripGroupMention(currentText)
-                                    val currentSenderName = FirebaseAuth.getInstance().currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Me"
-
-                                    for (memberUid in mentionedMemberUids) {
-                                        if (memberUid.isNotBlank()) {
-                                            chatViewModel.sendMemberMentionNotification(
-                                                context = context,
-                                                targetUid = memberUid,
-                                                senderName = currentSenderName,
-                                                groupName = currentEntry.title,
-                                                body = notificationBody
-                                            )
-                                        }
-                                    }
-
-                                    inputText = ""
-                                    attachedFiles = emptyList()
-                                    showEmojiPicker = false
-                                    replyingTo = null
-                                    replyingToAttachmentUriState = null
-                                    pendingDurations = emptyMap()
-                                }
-                            },
-                        contentAlignment = Alignment.Center
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        shape = RoundedCornerShape(24.dp),
+                        color = cardColor,
+                        shadowElevation = if (!isDark) 1.5.dp else 0.dp
                     ) {
-                        if (isSelectionMode) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Delete selected attachments",
-                                tint = errorColor,
-                                modifier = Modifier.size(24.dp)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp, horizontal = 16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "You can't send messages to this group",
+                                fontSize = 14.sp,
+                                color = secondaryTextColor,
+                                textAlign = TextAlign.Center
                             )
-                        } else if (isTyping) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Send,
-                                contentDescription = "Send",
-                                tint = tealAccent,
-                                modifier = Modifier.size(24.dp)
-                            )
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (attachedFiles.isNotEmpty()) {
+                            // 48dp Raised Circle "+" Button (replaces paperclip while attachments ready)
+                            Surface(
+                                modifier = Modifier
+                                    .padding(start = 12.dp)
+                                    .size(48.dp)
+                                    .clickable {
+                                        if (attachedFiles.size >= 10) {
+                                            Toast.makeText(context, "You can attach up to 10 files", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            val activeCategory = getAttachmentCategory(context, attachedFiles.first())
+                                            when (activeCategory) {
+                                                AttachmentCategory.IMAGE -> imagePickerLauncher.launch("image/*")
+                                                AttachmentCategory.VIDEO -> videoPickerLauncher.launch("video/*")
+                                                AttachmentCategory.AUDIO -> audioPickerLauncher.launch("audio/*")
+                                                AttachmentCategory.DOCUMENT -> documentPickerLauncher.launch(arrayOf("*/*"))
+                                            }
+                                        }
+                                    },
+                                shape = CircleShape,
+                                color = cardColor,
+                                shadowElevation = if (!isDark) 1.5.dp else 0.dp
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = "Add more attachments",
+                                        tint = primaryTextColor,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
                         } else {
+                            // Paper clip (24dp, secondary) in 40dp touch target
                             Box(
                                 modifier = Modifier
-                                    .fillMaxSize()
-                                    .pointerInput(Unit) {
-                                        detectDragGestures(
-                                            onDragStart = {
-                                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                                                    val audioFile = File(context.cacheDir, "VOICE_${System.currentTimeMillis()}.m4a")
-                                                    voiceAudioFile = audioFile
-                                                    recorder.start(audioFile)
-                                                    voiceRecordState = VoiceRecordState.HOLD
-                                                    voiceDragOffsetX = 0f
-                                                    voiceDragOffsetY = 0f
-                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                } else {
-                                                    recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                                }
-                                            },
-                                            onDrag = { _, dragAmount ->
-                                                voiceDragOffsetX += dragAmount.x
-                                                voiceDragOffsetY += dragAmount.y
-
-                                                if (voiceDragOffsetX < -120f) {
-                                                    recorder.stop()
-                                                    voiceRecordState = VoiceRecordState.NONE
-                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                } else if (voiceDragOffsetY < -120f) {
-                                                    voiceRecordState = VoiceRecordState.LOCKED
-                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                }
-                                            },
-                                            onDragEnd = {
-                                                if (voiceRecordState == VoiceRecordState.HOLD) {
-                                                    recorder.stop()
-                                                    if (voiceAudioFile != null && voiceRecordDurationMs >= 1000L) {
-                                                        val normWaveform = normalizeWaveformTo64(voiceAmplitudes)
-                                                        chatViewModel.sendVoiceNoteMessage(
-                                                            context = context,
-                                                            groupId = currentEntry.id.toString(),
-                                                            audioFile = voiceAudioFile!!,
-                                                            durationMs = voiceRecordDurationMs,
-                                                            waveform = normWaveform
-                                                        )
-                                                    } else {
-                                                        Toast.makeText(context, "Hold to record, release to send", Toast.LENGTH_SHORT).show()
-                                                    }
-                                                    voiceRecordState = VoiceRecordState.NONE
-                                                }
-                                            }
-                                        )
-                                    },
+                                    .padding(start = 12.dp)
+                                    .size(40.dp)
+                                    .clickable { showAttachmentOptions = true },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Mic,
-                                    contentDescription = "Record audio",
-                                    tint = primaryTextColor,
+                                    imageVector = Icons.Default.AttachFile,
+                                    contentDescription = "Attach",
+                                    tint = secondaryTextColor,
                                     modifier = Modifier.size(24.dp)
                                 )
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
+
+                        // Field: 48dp high, fully rounded 24dp, card fill (soft shadow in light, no outline)
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp, max = 120.dp),
+                            shape = RoundedCornerShape(24.dp),
+                            color = cardColor,
+                            shadowElevation = if (!isDark) 1.5.dp else 0.dp
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Emoji Icon (24dp)
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clickable { showEmojiPicker = !showEmojiPicker },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.SentimentSatisfiedAlt,
+                                        contentDescription = "Emoji",
+                                        tint = secondaryTextColor,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(6.dp))
+
+                                // Message Input Field (16sp, dim color placeholder)
+                                Box(
+                                    modifier = Modifier.weight(1f),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    if (inputText.isEmpty() && attachedFiles.isEmpty()) {
+                                        Text(
+                                            text = "Message",
+                                            fontSize = 16.sp,
+                                            color = dimTextColor
+                                        )
+                                    }
+                                    BasicTextField(
+                                        value = inputText,
+                                        onValueChange = { newValue ->
+                                            val oldValue = inputText
+                                            if (newValue.length < oldValue.length) {
+                                                val pattern = Regex("""@([A-Za-z0-9_]+(?:\s+[A-Za-z0-9_]+)*)\s?""")
+                                                var handled = false
+                                                pattern.findAll(oldValue).forEach { match ->
+                                                    val range = match.range
+                                                    if (newValue.length in (range.first + 1)..range.last) {
+                                                        inputText = oldValue.removeRange(range.first, range.last + 1)
+                                                        handled = true
+                                                    }
+                                                }
+                                                if (!handled) {
+                                                    inputText = newValue
+                                                }
+                                            } else {
+                                                inputText = newValue
+                                            }
+                                        },
+                                        maxLines = 5,
+                                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                            fontSize = 16.sp,
+                                            color = primaryTextColor
+                                        ),
+                                        visualTransformation = { annotatedString ->
+                                            val acceptedGroupNames = acceptedConnections.map { it.otherEntityName }
+                                            val formatted = buildMentionAnnotatedString(
+                                                text = annotatedString.text,
+                                                primaryTextColor = primaryTextColor,
+                                                tealAccent = tealAccent,
+                                                acceptedGroupNames = acceptedGroupNames
+                                            )
+                                            TransformedText(formatted, OffsetMapping.Identity)
+                                        },
+                                        cursorBrush = SolidColor(primaryTextColor),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+
+                                // Camera Icon (24dp, secondary) - hidden when typing
+                                val textWithoutGroupMentions = stripGroupMention(inputText)
+                                val isTyping = (textWithoutGroupMentions.isNotEmpty() || attachedFiles.isNotEmpty()) && selectedAttachmentUris.isEmpty()
+                                if (!isTyping) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clickable {
+                                                isCameraForStampMode = false
+                                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                                                    showCamera = true
+                                                } else {
+                                                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                                }
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CameraAlt,
+                                            contentDescription = "Camera",
+                                            tint = secondaryTextColor,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Microphone OR Send OR Trash/Delete Icon (24dp, in 44dp touch area)
+                        val isSelectionMode = selectedAttachmentUris.isNotEmpty()
+                        val textWithoutGroupMentions = stripGroupMention(inputText)
+                        val isTyping = (textWithoutGroupMentions.isNotEmpty() || attachedFiles.isNotEmpty()) && !isSelectionMode
+                        val isActionEnabled = isSelectionMode || isTyping
+
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clickable(enabled = isActionEnabled) {
+                                    if (isSelectionMode) {
+                                        // Delete selected attachments action (immediate delete, no snackbar)
+                                        attachedFiles = attachedFiles.filter { !selectedAttachmentUris.contains(it) }
+                                        pendingDurations = pendingDurations.filter { !selectedAttachmentUris.contains(Uri.parse(it.key)) }
+                                        selectedAttachmentUris = emptySet()
+                                    } else if (isTyping) {
+                                        val currentText = inputText.trim()
+                                        chatViewModel.sendMessage(
+                                            context = context,
+                                            groupId = currentEntry.id.toString(),
+                                            text = currentText,
+                                            attachmentUris = attachedFiles,
+                                            durationsMap = pendingDurations,
+                                            replyingTo = replyingTo,
+                                            replyingToAttachmentUri = replyingToAttachmentUriState
+                                        )
+
+                                        // Cross-post to mentioned linked groups with mention stripped for receiver
+                                        val mentionedLinkedGroups = mutableSetOf<Pair<String, String>>()
+                                        if (currentText.contains("@All linked groups") || currentText.contains("@All")) {
+                                            acceptedConnections.forEach { conn ->
+                                                mentionedLinkedGroups.add(conn.otherEntityId to conn.otherEntityName)
+                                            }
+                                        } else {
+                                            acceptedConnections.forEach { conn ->
+                                                if (currentText.contains("@${conn.otherEntityName}")) {
+                                                    mentionedLinkedGroups.add(conn.otherEntityId to conn.otherEntityName)
+                                                }
+                                            }
+                                        }
+
+                                        for ((targetGroupId, targetGroupName) in mentionedLinkedGroups) {
+                                            if (targetGroupId != currentEntry.id.toString() && targetGroupId.isNotBlank()) {
+                                                val crossPostText = stripGroupMention(currentText, targetGroupName)
+                                                if (crossPostText.isNotBlank() || attachedFiles.isNotEmpty()) {
+                                                    chatViewModel.sendMessage(
+                                                        context = context,
+                                                        groupId = targetGroupId,
+                                                        text = crossPostText,
+                                                        attachmentUris = attachedFiles,
+                                                        durationsMap = pendingDurations,
+                                                        replyingTo = null,
+                                                        replyingToAttachmentUri = null
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        // Process member mentions for de-duplicated notification in sender's group
+                                        val mentionedMemberUids = mutableSetOf<String>()
+                                        val otherMembers = members.filter { !it.isYou && it.uid != currentUserId }
+
+                                        if (currentText.contains("@All")) {
+                                            otherMembers.forEach { mentionedMemberUids.add(it.uid) }
+                                        }
+                                        otherMembers.forEach { member ->
+                                            if (currentText.contains("@${member.displayName}", ignoreCase = true)) {
+                                                mentionedMemberUids.add(member.uid)
+                                            }
+                                        }
+
+                                        val textBody = stripGroupMention(currentText)
+                                        val notificationBody = if (textBody.isNotBlank()) {
+                                            textBody
+                                        } else if (attachedFiles.isNotEmpty()) {
+                                            val category = getAttachmentCategory(context, attachedFiles.first())
+                                            val count = attachedFiles.size
+                                            when (category) {
+                                                AttachmentCategory.IMAGE -> if (count == 1) "1 photo" else "$count photos"
+                                                AttachmentCategory.VIDEO -> if (count == 1) "1 video" else "$count videos"
+                                                AttachmentCategory.AUDIO -> if (count == 1) "1 audio file" else "$count audio files"
+                                                AttachmentCategory.DOCUMENT -> if (count == 1) "1 document" else "$count documents"
+                                            }
+                                        } else "Sent a message"
+
+                                        val currentSenderName = FirebaseAuth.getInstance().currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Me"
+
+                                        for (memberUid in mentionedMemberUids) {
+                                            if (memberUid.isNotBlank()) {
+                                                chatViewModel.sendMemberMentionNotification(
+                                                    context = context,
+                                                    targetUid = memberUid,
+                                                    senderName = currentSenderName,
+                                                    groupName = currentEntry.title,
+                                                    body = notificationBody
+                                                )
+                                            }
+                                        }
+
+                                        inputText = ""
+                                        attachedFiles = emptyList()
+                                        showEmojiPicker = false
+                                        replyingTo = null
+                                        replyingToAttachmentUriState = null
+                                        pendingDurations = emptyMap()
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isSelectionMode) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete selected attachments",
+                                    tint = errorColor,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            } else if (isTyping) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = "Send",
+                                    tint = tealAccent,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .pointerInput(Unit) {
+                                            detectDragGestures(
+                                                onDragStart = {
+                                                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                                        player.stop()
+                                                        val audioFile = File(context.cacheDir, "VOICE_${System.currentTimeMillis()}.m4a")
+                                                        voiceAudioFile = audioFile
+                                                        recorder.start(audioFile)
+                                                        voiceRecordState = VoiceRecordState.HOLD
+                                                        voiceDragOffsetX = 0f
+                                                        voiceDragOffsetY = 0f
+                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    } else {
+                                                        recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                                    }
+                                                },
+                                                onDrag = { _, dragAmount ->
+                                                    voiceDragOffsetX += dragAmount.x
+                                                    voiceDragOffsetY += dragAmount.y
+
+                                                    if (voiceDragOffsetX < -120f) {
+                                                        recorder.stop()
+                                                        voiceAudioFile?.delete()
+                                                        voiceRecordState = VoiceRecordState.NONE
+                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    } else if (voiceDragOffsetY < -100f) {
+                                                        voiceRecordState = VoiceRecordState.LOCKED
+                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                    }
+                                                },
+                                                onDragEnd = {
+                                                    if (voiceRecordState == VoiceRecordState.HOLD) {
+                                                        if (voiceDragOffsetX < -120f) {
+                                                            recorder.stop()
+                                                            voiceAudioFile?.delete()
+                                                            voiceRecordState = VoiceRecordState.NONE
+                                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                        } else if (voiceAudioFile != null && voiceRecordDurationMs >= 1000L) {
+                                                            recorder.stop()
+                                                            val normWaveform = normalizeWaveformTo64(voiceAmplitudes)
+                                                            chatViewModel.sendVoiceNoteMessage(
+                                                                context = context,
+                                                                groupId = currentEntry.id.toString(),
+                                                                audioFile = voiceAudioFile!!,
+                                                                durationMs = voiceRecordDurationMs,
+                                                                waveform = normWaveform
+                                                            )
+                                                            voiceRecordState = VoiceRecordState.NONE
+                                                        } else {
+                                                            recorder.stop()
+                                                            voiceAudioFile?.delete()
+                                                            Toast.makeText(context, "Hold to record, release to send", Toast.LENGTH_SHORT).show()
+                                                            voiceRecordState = VoiceRecordState.NONE
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Mic,
+                                        contentDescription = "Record audio",
+                                        tint = primaryTextColor,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
         }
+    }
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -1602,9 +2195,11 @@ fun ChatScreen(
                                 isAnySelected = selectedMessages.isNotEmpty(),
                                 isFirstInRun = isFirstInRun,
                                 onLongClick = { uri ->
-                                    selectedMessages = setOf(msgToRender.id)
-                                    selectedAttachmentUri = uri
-                                    showMessageOptionsSheet = true
+                                    if (selectedMessages.isEmpty()) {
+                                        longPressedMessage = msgToRender
+                                    } else {
+                                        selectedMessages = if (selectedMessages.contains(msgToRender.id)) selectedMessages - msgToRender.id else selectedMessages + msgToRender.id
+                                    }
                                 },
                                 onClick = {
                                     if (selectedMessages.isNotEmpty()) {
@@ -1910,6 +2505,194 @@ fun ChatScreen(
             },
             onDismiss = { selectedSentToMessage = null }
         )
+    }
+
+    if (showForwardSheet && selectedMessages.isNotEmpty()) {
+        val selectedList = remember(selectedMessages, messages) {
+            messages.filter { selectedMessages.contains(it.id) }
+        }
+
+        val directChats = remember(homeEntries) {
+            homeEntries.filter { it.id != currentEntry.id }
+        }
+        val activeGroups = remember(acceptedConnections) {
+            acceptedConnections.map { conn ->
+                HomeEntryEntity(
+                    id = conn.otherEntityId.toIntOrNull() ?: conn.otherEntityId.hashCode(),
+                    title = conn.otherEntityName,
+                    subtitle = "Group",
+                    initials = conn.otherEntityName.take(1).uppercase()
+                )
+            }
+        }
+
+        ForwardToSheet(
+            recentChats = directChats,
+            groups = activeGroups,
+            isDark = isDark,
+            onSendForward = { targetEntries ->
+                chatViewModel.forwardMessages(
+                    context = context,
+                    selectedMessages = selectedList,
+                    targetEntries = targetEntries
+                )
+                val count = targetEntries.size
+                val toastMsg = if (count == 1) {
+                    "Forwarded to ${targetEntries.first().title}"
+                } else {
+                    "Forwarded to $count chats"
+                }
+                Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
+
+                showForwardSheet = false
+                selectedMessages = emptySet()
+            },
+            onDismiss = {
+                showForwardSheet = false
+            }
+        )
+    }
+
+    if (longPressedMessage != null) {
+        val targetMsg = longPressedMessage!!
+        val isTargetSentByMe = targetMsg.isSentByMe
+        val hasText = targetMsg.text.isNotBlank()
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = if (isDark) 0.55f else 0.35f))
+                .clickable { longPressedMessage = null }
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 120.dp)
+                    .align(if (isTargetSentByMe) Alignment.CenterEnd else Alignment.CenterStart)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = cardColor,
+                    border = BorderStroke(1.dp, outlineColor),
+                    shadowElevation = 8.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Action: Reply
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .width(62.dp)
+                                .clickable {
+                                    replyingTo = targetMsg
+                                    replyingToAttachmentUriState = targetMsg.attachments.firstOrNull()
+                                    longPressedMessage = null
+                                }
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Reply,
+                                contentDescription = "Reply",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Reply", fontSize = 11.sp, color = primaryTextColor)
+                        }
+
+                        // Action: Forward
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .width(62.dp)
+                                .clickable {
+                                    selectedMessages = setOf(targetMsg.id)
+                                    showForwardSheet = true
+                                    longPressedMessage = null
+                                }
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Reply,
+                                contentDescription = "Forward",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Forward", fontSize = 11.sp, color = primaryTextColor)
+                        }
+
+                        // Action: Copy (if text present)
+                        if (hasText) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .width(62.dp)
+                                    .clickable {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        val clip = ClipData.newPlainText("chat_text", targetMsg.text)
+                                        clipboard.setPrimaryClip(clip)
+                                        Toast.makeText(context, "Text copied", Toast.LENGTH_SHORT).show()
+                                        longPressedMessage = null
+                                    }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = "Copy",
+                                    tint = primaryTextColor,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text("Copy", fontSize = 11.sp, color = primaryTextColor)
+                            }
+                        }
+
+                        // Action: Select (starts multi-selection mode)
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .width(62.dp)
+                                .clickable {
+                                    selectedMessages = setOf(targetMsg.id)
+                                    longPressedMessage = null
+                                }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Select",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Select", fontSize = 11.sp, color = primaryTextColor)
+                        }
+
+                        // Action: Delete (if sent by me)
+                        if (isTargetSentByMe) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .width(62.dp)
+                                    .clickable {
+                                        selectedMessages = setOf(targetMsg.id)
+                                        showDeleteDialog = true
+                                        longPressedMessage = null
+                                    }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete",
+                                    tint = errorColor,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text("Delete", fontSize = 11.sp, color = errorColor)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     if (showShareLocationSheet) {

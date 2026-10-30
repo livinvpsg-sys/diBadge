@@ -18,5 +18,6 @@ data class ChatMessageEntity(
     val replyingToText: String? = null,
     val replyingToSender: String? = null,
     val replyingToAttachmentUri: String? = null,
-    val isEdited: Boolean = false
+    val isEdited: Boolean = false,
+    val isForwarded: Boolean = false
 )

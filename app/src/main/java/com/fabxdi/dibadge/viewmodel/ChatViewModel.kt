@@ -8,8 +8,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.core.content.FileProvider
 import com.fabxdi.dibadge.data.AppDatabase
 import com.fabxdi.dibadge.data.ChatMessageEntity
+import com.fabxdi.dibadge.data.HomeEntryEntity
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatComment
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatMessage
+import com.fabxdi.dibadge.ui.home.home_entry.chat.stripGroupMention
 import com.fabxdi.dibadge.util.AlarmReceiver
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.google.firebase.Timestamp
@@ -22,6 +24,7 @@ import com.google.firebase.firestore.SetOptions
 import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
@@ -48,7 +51,8 @@ fun ChatMessage.toEntity(groupId: String): ChatMessageEntity {
         replyingToText = this.replyingTo?.text,
         replyingToSender = this.replyingTo?.senderName,
         replyingToAttachmentUri = this.replyingToAttachmentUri,
-        isEdited = this.isEdited
+        isEdited = this.isEdited,
+        isForwarded = this.isForwarded
     )
 }
 
@@ -83,7 +87,8 @@ fun ChatMessageEntity.toDomain(): ChatMessage {
         timestamp = LocalDateTime.ofInstant(Instant.ofEpochMilli(this.timestampMs), ZoneId.systemDefault()),
         replyingTo = replyMsg,
         replyingToAttachmentUri = this.replyingToAttachmentUri,
-        isEdited = this.isEdited
+        isEdited = this.isEdited,
+        isForwarded = this.isForwarded
     )
 }
 
@@ -628,6 +633,76 @@ class ChatViewModel : ViewModel() {
                     .await()
             } catch (e: Exception) {
                 e.printStackTrace()
+            }
+        }
+    }
+
+    fun forwardMessages(
+        context: Context,
+        selectedMessages: List<ChatMessage>,
+        targetEntries: List<HomeEntryEntity>
+    ) {
+        val currentUid = auth.currentUser?.uid ?: ""
+        val currentName = auth.currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Me"
+        val dao = AppDatabase.getDatabase(context).reminderDao()
+
+        viewModelScope.launch {
+            for (target in targetEntries) {
+                val targetGroupId = target.id.toString()
+                for (msg in selectedMessages) {
+                    val newMsgId = UUID.randomUUID().toString()
+                    val ts = System.currentTimeMillis()
+
+                    val forwardedMsg = ChatMessage(
+                        id = newMsgId,
+                        text = stripGroupMention(msg.text),
+                        senderName = currentName,
+                        isSentByMe = true,
+                        attachments = msg.attachments,
+                        attachmentDurations = msg.attachmentDurations,
+                        timestamp = LocalDateTime.ofInstant(Instant.ofEpochMilli(ts), ZoneId.systemDefault()),
+                        msgType = msg.msgType,
+                        isVoiceNote = msg.isVoiceNote,
+                        waveformArray = msg.waveformArray,
+                        locationLat = msg.locationLat,
+                        locationLng = msg.locationLng,
+                        locationPlaceName = msg.locationPlaceName,
+                        isForwarded = true,
+                        replyingTo = null
+                    )
+
+                    withContext(Dispatchers.IO) {
+                        dao.insertChatMessage(forwardedMsg.toEntity(targetGroupId))
+                    }
+
+                    try {
+                        val docData = mutableMapOf<String, Any>(
+                            "id" to newMsgId,
+                            "text" to stripGroupMention(msg.text),
+                            "senderName" to currentName,
+                            "senderUid" to currentUid,
+                            "timestamp" to Timestamp.now(),
+                            "attachments" to msg.attachments,
+                            "attachmentDurations" to msg.attachmentDurations,
+                            "msgType" to msg.msgType,
+                            "isVoiceNote" to msg.isVoiceNote,
+                            "waveformArray" to msg.waveformArray,
+                            "locationLat" to msg.locationLat,
+                            "locationLng" to msg.locationLng,
+                            "locationPlaceName" to (msg.locationPlaceName ?: ""),
+                            "isForwarded" to true
+                        )
+
+                        db.collection("groups")
+                            .document(targetGroupId)
+                            .collection("messages")
+                            .document(newMsgId)
+                            .set(docData)
+                            .await()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
             }
         }
     }

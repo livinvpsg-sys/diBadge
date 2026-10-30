@@ -3,7 +3,7 @@ package com.fabxdi.dibadge.ui.calendar
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -184,7 +185,7 @@ fun GroupScheduleScreen(
             }
         }
     ) { innerPadding ->
-        HorizontalPager(
+        VerticalPager(
             state = pagerState,
             modifier = Modifier
                 .fillMaxSize()
@@ -561,7 +562,7 @@ fun MonthTimelineView(
             .padding(horizontal = 16.dp)
     ) {
         val density = LocalDensity.current
-        val totalAvailableHeightPx = with(density) { maxHeight.toPx() }
+        val totalAvailableHeightPx = with(density) { this@BoxWithConstraints.maxHeight.toPx() }
         val rowHeightPx = max(density.density * 16f, totalAvailableHeightPx / daysInMonth)
         val rowHeightDp = with(density) { rowHeightPx.toDp() }
 
@@ -594,33 +595,42 @@ fun MonthTimelineView(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            if (isToday) {
-                                Surface(
-                                    modifier = Modifier.size(16.dp),
-                                    shape = CircleShape,
-                                    color = tealAccent
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = "${date.dayOfMonth}",
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color.White
-                                        )
+                            Box(
+                                modifier = Modifier.size(width = 20.dp, height = 20.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isToday) {
+                                    Surface(
+                                        modifier = Modifier.size(20.dp),
+                                        shape = CircleShape,
+                                        color = tealAccent
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = "${date.dayOfMonth}",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White,
+                                                textAlign = TextAlign.Center
+                                            )
+                                        }
                                     }
+                                } else {
+                                    Text(
+                                        text = "${date.dayOfMonth}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isWeekend) secondaryTextColor else primaryTextColor,
+                                        textAlign = TextAlign.Center
+                                    )
                                 }
-                            } else {
-                                Text(
-                                    text = "${date.dayOfMonth}",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (isWeekend) secondaryTextColor else primaryTextColor
-                                )
                             }
+
                             Text(
                                 text = date.dayOfWeek.name.take(3).lowercase().replaceFirstChar { it.uppercase() },
                                 fontSize = 9.sp,
-                                color = secondaryTextColor.copy(alpha = 0.7f)
+                                color = secondaryTextColor.copy(alpha = 0.7f),
+                                modifier = Modifier.width(22.dp)
                             )
                         }
                     }
@@ -657,7 +667,7 @@ fun MonthTimelineView(
                     }
                 } else {
                     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                        val containerWidthDp = maxWidth
+                        val containerWidthDp = this.maxWidth
                         val containerWidthPx = with(density) { containerWidthDp.toPx() }
 
                         val lineRows = remember(laneAssignments) {
@@ -682,15 +692,14 @@ fun MonthTimelineView(
                             }
                         }
 
-                        val isHorizontalSwipe = maxClusterLanes > 3
-                        val fixedLaneWidth = 70.dp
-                        val laneGap = 4.dp
+                        val isHorizontalSwipe = maxClusterLanes > 1
+                        val fixedLaneWidth = 90.dp
+                        val laneGap = 6.dp
 
                         val calculatedLaneWidth = if (isHorizontalSwipe) {
                             fixedLaneWidth
                         } else {
-                            val avail = (containerWidthDp - 12.dp).coerceAtLeast(60.dp)
-                            avail / max(1, maxClusterLanes)
+                            (containerWidthDp - 8.dp).coerceAtLeast(80.dp)
                         }
 
                         val scrollState = rememberScrollState()
@@ -708,7 +717,7 @@ fun MonthTimelineView(
                                     .fillMaxHeight()
                                     .width(
                                         if (isHorizontalSwipe) {
-                                            (maxClusterLanes * (fixedLaneWidth.value + laneGap.value)).dp + 20.dp
+                                            (maxClusterLanes * (fixedLaneWidth.value + laneGap.value)).dp + 24.dp
                                         } else {
                                             containerWidthDp
                                         }

@@ -362,12 +362,12 @@ fun AttachmentPreviewStrip(
                             )
                             Box(
                                 modifier = Modifier
-                                    .align(Alignment.TopEnd)
+                                    .align(Alignment.TopStart)
                                     .padding(4.dp)
-                                    .size(18.dp)
+                                    .size(20.dp)
                             ) {
                                 Surface(
-                                    modifier = Modifier.size(18.dp),
+                                    modifier = Modifier.size(20.dp),
                                     shape = CircleShape,
                                     color = primaryTextColor
                                 ) {
@@ -376,7 +376,7 @@ fun AttachmentPreviewStrip(
                                             imageVector = Icons.Default.Check,
                                             contentDescription = "Selected",
                                             tint = pageBgColor,
-                                            modifier = Modifier.size(12.dp)
+                                            modifier = Modifier.size(13.dp)
                                         )
                                     }
                                 }
@@ -384,8 +384,11 @@ fun AttachmentPreviewStrip(
                         }
                     }
                 } else {
-                    // Document Item (72dp x 72dp Square) - Centered 28x34dp Page Icon & 1-line Name
-                    Box(modifier = Modifier.size(72.dp)) {
+                    // Document Item (168dp x 72dp Card)
+                    val sizeBytes = remember(uri) { FilePickerUtils.getFileSizeBytes(context, uri) }
+                    val sizeStr = remember(sizeBytes) { FilePickerUtils.formatFileSize(sizeBytes) }
+
+                    Box(modifier = Modifier.size(width = 168.dp, height = 72.dp)) {
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = cardColor,
@@ -397,7 +400,7 @@ fun AttachmentPreviewStrip(
                                         if (isSelectionMode) {
                                             onToggleSelect(uri)
                                         } else {
-                                            onAudioClick(attachedUris, index)
+                                            onFileClick(uri)
                                         }
                                     },
                                     onLongClick = {
@@ -406,30 +409,42 @@ fun AttachmentPreviewStrip(
                                     }
                                 )
                         ) {
-                            Column(
+                            Row(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(top = 7.dp, bottom = 6.dp, start = 5.dp, end = 5.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.SpaceBetween
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 DocumentTypeTile(
                                     extension = ext,
                                     isDark = isDark,
-                                    widthDp = 28,
-                                    heightDp = 34
+                                    widthDp = 36,
+                                    heightDp = 44
                                 )
 
-                                Text(
-                                    text = fileName,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = primaryTextColor,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Text(
+                                        text = fileName,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = primaryTextColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = sizeStr,
+                                        fontSize = 11.sp,
+                                        color = secondaryTextColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
 
@@ -442,12 +457,12 @@ fun AttachmentPreviewStrip(
                             )
                             Box(
                                 modifier = Modifier
-                                    .align(Alignment.TopEnd)
+                                    .align(Alignment.TopStart)
                                     .padding(4.dp)
-                                    .size(18.dp)
+                                    .size(20.dp)
                             ) {
                                 Surface(
-                                    modifier = Modifier.size(18.dp),
+                                    modifier = Modifier.size(20.dp),
                                     shape = CircleShape,
                                     color = primaryTextColor
                                 ) {
@@ -456,7 +471,7 @@ fun AttachmentPreviewStrip(
                                             imageVector = Icons.Default.Check,
                                             contentDescription = "Selected",
                                             tint = pageBgColor,
-                                            modifier = Modifier.size(12.dp)
+                                            modifier = Modifier.size(13.dp)
                                         )
                                     }
                                 }
