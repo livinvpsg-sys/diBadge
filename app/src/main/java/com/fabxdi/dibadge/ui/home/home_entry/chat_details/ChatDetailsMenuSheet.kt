@@ -1,20 +1,17 @@
 package com.fabxdi.dibadge.ui.home.home_entry.chat_details
 
 import android.content.res.Configuration
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.NotificationsOff
+import androidx.compose.material.icons.outlined.FolderCopy
+import androidx.compose.material.icons.outlined.WorkspacePremium
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,6 +26,8 @@ import com.fabxdi.dibadge.R
 import com.fabxdi.dibadge.ui.theme.AppThemeMode
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 
+const val LIBRARY_TITLE = "Library"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatDetailsMenuSheet(
@@ -40,7 +39,8 @@ fun ChatDetailsMenuSheet(
     onSelectGroups: () -> Unit,
     onSelectForms: () -> Unit,
     onSelectTasks: () -> Unit,
-    onSelectFolders: () -> Unit,
+    onSelectCredentials: () -> Unit,
+    onSelectLibrary: () -> Unit,
     onSelectMute: () -> Unit,
     onSelectUnmute: () -> Unit,
     onSelectClearChat: () -> Unit,
@@ -149,30 +149,32 @@ fun ChatDetailsMenuSheet(
                 }
             }
 
-            // 3. Forms (Always shown for every group)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .clickable {
-                        onDismiss()
-                        onSelectForms()
-                    },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_forms_outline),
-                    contentDescription = null,
-                    tint = secondaryTextColor,
-                    modifier = Modifier.size(22.dp)
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = "Forms",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = primaryTextColor
-                )
+            // 3. Forms (Only with an organisation)
+            if (isConnectedToOrg) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                        .clickable {
+                            onDismiss()
+                            onSelectForms()
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_forms_outline),
+                        contentDescription = null,
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(
+                        text = "Forms",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = primaryTextColor
+                    )
+                }
             }
 
             // 4. Tasks
@@ -201,26 +203,52 @@ fun ChatDetailsMenuSheet(
                 )
             }
 
-            // 5. Folders
+            // 5. Credentials
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp)
                     .clickable {
                         onDismiss()
-                        onSelectFolders()
+                        onSelectCredentials()
                     },
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    painter = painterResource(id = R.drawable.ic_folder_outline),
+                    imageVector = Icons.Outlined.WorkspacePremium,
                     contentDescription = null,
                     tint = secondaryTextColor,
                     modifier = Modifier.size(22.dp)
                 )
                 Spacer(modifier = Modifier.width(16.dp))
                 Text(
-                    text = "Folders",
+                    text = "Credentials",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = primaryTextColor
+                )
+            }
+
+            // 6. Library
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .clickable {
+                        onDismiss()
+                        onSelectLibrary()
+                    },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.FolderCopy,
+                    contentDescription = null,
+                    tint = secondaryTextColor,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = LIBRARY_TITLE,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Normal,
                     color = primaryTextColor
@@ -261,7 +289,7 @@ fun ChatDetailsMenuSheet(
                 }
             }
 
-            // Standard Chat Items: Mute / Unmute Notifications
+            // Mute / Unmute Notifications
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -273,7 +301,7 @@ fun ChatDetailsMenuSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    painter = painterResource(id = if (isMuted) R.drawable.ic_unmute_outline else R.drawable.ic_mute_outline),
+                    imageVector = if (isMuted) Icons.Outlined.Notifications else Icons.Outlined.NotificationsOff,
                     contentDescription = null,
                     tint = secondaryTextColor,
                     modifier = Modifier.size(22.dp)
@@ -287,7 +315,7 @@ fun ChatDetailsMenuSheet(
                 )
             }
 
-            // Clear chat
+            // Clear Chat
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -299,9 +327,9 @@ fun ChatDetailsMenuSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    painter = painterResource(id = R.drawable.ic_delete_outline),
+                    imageVector = Icons.Outlined.Delete,
                     contentDescription = null,
-                    tint = secondaryTextColor,
+                    tint = colors.error,
                     modifier = Modifier.size(22.dp)
                 )
                 Spacer(modifier = Modifier.width(16.dp))
@@ -309,145 +337,14 @@ fun ChatDetailsMenuSheet(
                     text = "Clear chat",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Normal,
-                    color = primaryTextColor
+                    color = colors.error
                 )
             }
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun MuteChoiceSheet(
-    onMuteConfirmed: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var selectedOption by remember { mutableStateOf("8 hours") }
-
-    val colors = MaterialTheme.colorScheme
-    val diBadgeColors = DiBadgeTheme.colors
-
-    val primaryTextColor = colors.onBackground
-    val secondaryTextColor = colors.onSurfaceVariant
-    val cardBgColor = colors.surface
-    val tealAccent = diBadgeColors.accent
-    val tabInactiveColor = diBadgeColors.tabInactive
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-        containerColor = cardBgColor,
-        scrimColor = Color.Black.copy(alpha = 0.45f),
-        tonalElevation = 0.dp,
-        dragHandle = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp, bottom = 8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(
-                    modifier = Modifier.size(width = 32.dp, height = 4.dp),
-                    shape = RoundedCornerShape(2.dp),
-                    color = secondaryTextColor.copy(alpha = 0.40f)
-                ) {}
-            }
-        }
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 28.dp)
-        ) {
-            Text(
-                text = "Mute notifications for...",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Medium,
-                color = primaryTextColor,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            val options = listOf("8 hours", "1 week", "Always")
-            options.forEach { option ->
-                val isSelected = selectedOption == option
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .clickable { selectedOption = option },
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        modifier = Modifier.size(22.dp),
-                        shape = CircleShape,
-                        color = Color.Transparent,
-                        border = BorderStroke(1.5.dp, if (isSelected) tealAccent else tabInactiveColor)
-                    ) {
-                        if (isSelected) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Surface(
-                                    modifier = Modifier.size(10.dp),
-                                    shape = CircleShape,
-                                    color = tealAccent
-                                ) {}
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(16.dp))
-
-                    Text(
-                        text = option,
-                        fontSize = 16.sp,
-                        fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
-                        color = primaryTextColor
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Cancel",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = secondaryTextColor,
-                    modifier = Modifier
-                        .clickable { onDismiss() }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                )
-
-                Spacer(modifier = Modifier.width(28.dp))
-
-                Text(
-                    text = "Mute",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = tealAccent,
-                    modifier = Modifier
-                        .clickable {
-                            onDismiss()
-                            onMuteConfirmed(selectedOption)
-                        }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                )
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// PREVIEWS
-// ---------------------------------------------------------------------------
+// Previews
 
 @Preview(name = "Three-dot Sheet Owner with Invitation - Light", widthDp = 412, showBackground = true)
 @Composable
@@ -463,7 +360,8 @@ fun ChatDetailsMenuSheetOwnerPreview() {
                 onSelectGroups = {},
                 onSelectForms = {},
                 onSelectTasks = {},
-                onSelectFolders = {},
+                onSelectCredentials = {},
+                onSelectLibrary = {},
                 onSelectMute = {},
                 onSelectUnmute = {},
                 onSelectClearChat = {},
@@ -488,7 +386,8 @@ fun ChatDetailsMenuSheetMemberPreview() {
                 onSelectGroups = {},
                 onSelectForms = {},
                 onSelectTasks = {},
-                onSelectFolders = {},
+                onSelectCredentials = {},
+                onSelectLibrary = {},
                 onSelectMute = {},
                 onSelectUnmute = {},
                 onSelectClearChat = {},
@@ -518,7 +417,8 @@ fun ChatDetailsMenuSheetDarkPreview() {
                 onSelectGroups = {},
                 onSelectForms = {},
                 onSelectTasks = {},
-                onSelectFolders = {},
+                onSelectCredentials = {},
+                onSelectLibrary = {},
                 onSelectMute = {},
                 onSelectUnmute = {},
                 onSelectClearChat = {},

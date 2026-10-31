@@ -52,7 +52,16 @@ fun ChatMessage.toEntity(groupId: String): ChatMessageEntity {
         replyingToSender = this.replyingTo?.senderName,
         replyingToAttachmentUri = this.replyingToAttachmentUri,
         isEdited = this.isEdited,
-        isForwarded = this.isForwarded
+        isForwarded = this.isForwarded,
+        msgType = this.msgType,
+        libraryFileId = this.libraryFileId,
+        libraryCategoryId = this.libraryCategoryId,
+        libraryCategoryName = this.libraryCategoryName,
+        libraryFileName = this.libraryFileName,
+        libraryCount = this.libraryCount,
+        libraryActorUid = this.libraryActorUid,
+        libraryActorName = this.libraryActorName,
+        libraryRevision = this.libraryRevision
     )
 }
 
@@ -88,7 +97,16 @@ fun ChatMessageEntity.toDomain(): ChatMessage {
         replyingTo = replyMsg,
         replyingToAttachmentUri = this.replyingToAttachmentUri,
         isEdited = this.isEdited,
-        isForwarded = this.isForwarded
+        isForwarded = this.isForwarded,
+        msgType = this.msgType,
+        libraryFileId = this.libraryFileId,
+        libraryCategoryId = this.libraryCategoryId,
+        libraryCategoryName = this.libraryCategoryName,
+        libraryFileName = this.libraryFileName,
+        libraryCount = this.libraryCount,
+        libraryActorUid = this.libraryActorUid,
+        libraryActorName = this.libraryActorName,
+        libraryRevision = this.libraryRevision
     )
 }
 
@@ -173,13 +191,27 @@ class ChatViewModel : ViewModel() {
                                 keyStr to valLong
                             }?.toMap() ?: emptyMap()
 
-                            val tsLong = doc.getLong("timestamp") ?: System.currentTimeMillis()
+                            val tsLong = when (val rawTs = doc.get("timestamp")) {
+                                is Timestamp -> rawTs.toDate().time
+                                is Number -> rawTs.toLong()
+                                else -> doc.getLong("createdAt") ?: System.currentTimeMillis()
+                            }
                             val isEdited = doc.getBoolean("isEdited") ?: false
 
                             val replyToId = doc.getString("replyingToId")
                             val replyToText = doc.getString("replyingToText")
                             val replyToSender = doc.getString("replyingToSender")
                             val replyToUri = doc.getString("replyingToAttachmentUri")
+
+                            val msgType = doc.getString("msgType") ?: "text"
+                            val libraryFileId = doc.getString("libraryFileId")
+                            val libraryCategoryId = doc.getString("libraryCategoryId")
+                            val libraryCategoryName = doc.getString("libraryCategoryName")
+                            val libraryFileName = doc.getString("libraryFileName")
+                            val libraryCount = doc.getLong("libraryCount")?.toInt() ?: 1
+                            val libraryActorUid = doc.getString("libraryActorUid")
+                            val libraryActorName = doc.getString("libraryActorName")
+                            val libraryRevision = doc.getString("libraryRevision")
 
                             entitiesToInsert.add(
                                 ChatMessageEntity(
@@ -196,7 +228,16 @@ class ChatViewModel : ViewModel() {
                                     replyingToText = replyToText,
                                     replyingToSender = replyToSender,
                                     replyingToAttachmentUri = replyToUri,
-                                    isEdited = isEdited
+                                    isEdited = isEdited,
+                                    msgType = msgType,
+                                    libraryFileId = libraryFileId,
+                                    libraryCategoryId = libraryCategoryId,
+                                    libraryCategoryName = libraryCategoryName,
+                                    libraryFileName = libraryFileName,
+                                    libraryCount = libraryCount,
+                                    libraryActorUid = libraryActorUid,
+                                    libraryActorName = libraryActorName,
+                                    libraryRevision = libraryRevision
                                 )
                             )
                         } catch (e: Exception) {

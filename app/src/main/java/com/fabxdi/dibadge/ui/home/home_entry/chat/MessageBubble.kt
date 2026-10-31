@@ -358,6 +358,95 @@ fun MessageBubble(
 
                 if (isEmojiOnly) {
                     EmojiMessage(message.text, message.timestamp.format(timeFormatter).lowercase(), alignment, secondaryTextColor, primaryTextColor)
+                } else if (message.attachments.isNotEmpty()) {
+                    if (message.replyingTo != null) {
+                        ReplyPreviewAboveBubble(
+                            message = message,
+                            onReplyClick = onReplyClick,
+                            alignment = alignment,
+                            primaryTextColor = primaryTextColor,
+                            secondaryTextColor = secondaryTextColor,
+                            isDark = isDark
+                        )
+                    }
+
+                    val context = LocalContext.current
+                    val isMediaGrid = remember(message.attachments) {
+                        message.attachments.all { uriStr ->
+                            val cat = getAttachmentCategory(context, Uri.parse(uriStr))
+                            cat == AttachmentCategory.IMAGE || cat == AttachmentCategory.VIDEO
+                        }
+                    }
+
+                    val formattedTimeStr = remember(message.timestamp) { message.timestamp.format(timeFormatter).lowercase() }
+
+                    Column(
+                        horizontalAlignment = alignment,
+                        modifier = Modifier.padding(bottom = 2.dp)
+                    ) {
+                        if (isMediaGrid) {
+                            MediaGridNoBubble(
+                                message = message,
+                                formattedTime = formattedTimeStr,
+                                onMediaClick = onMediaClick,
+                                primaryTextColor = primaryTextColor,
+                                secondaryTextColor = secondaryTextColor,
+                                tealAccent = tealAccent,
+                                isDark = isDark
+                            )
+                        } else {
+                            DocumentRowsNoBubble(
+                                message = message,
+                                formattedTime = formattedTimeStr,
+                                primaryTextColor = primaryTextColor,
+                                secondaryTextColor = secondaryTextColor,
+                                cardFillColor = cardFillColor,
+                                tealAccent = tealAccent,
+                                isDark = isDark
+                            )
+                        }
+
+                        if (message.text.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Surface(
+                                color = bubbleColor,
+                                shape = bubbleShape,
+                                shadowElevation = if (!isDark) 1.5.dp else 1.dp,
+                                modifier = Modifier.widthIn(min = 40.dp, max = 272.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 6.dp)) {
+                                    Text(
+                                        text = buildMentionAnnotatedString(message.text, primaryTextColor, tealAccent, message.mentionedGroupNames),
+                                        fontSize = 15.sp,
+                                        lineHeight = 21.sp,
+                                        color = primaryTextColor
+                                    )
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 4.dp),
+                                        horizontalArrangement = Arrangement.End,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = formattedTimeStr,
+                                            fontSize = 11.sp,
+                                            color = secondaryTextColor
+                                        )
+                                        if (message.isSentByMe) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Icon(
+                                                imageVector = Icons.Default.DoneAll,
+                                                contentDescription = "Read",
+                                                tint = tealAccent,
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } else {
                     if (message.replyingTo != null) {
                         ReplyPreviewAboveBubble(
@@ -1767,6 +1856,326 @@ private fun AttachmentAndTextSection(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AttachmentTimeFooterLine(
+    formattedTime: String,
+    isSentByMe: Boolean,
+    secondaryTextColor: Color,
+    tealAccent: Color,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 3.dp),
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = formattedTime,
+            fontSize = 11.sp,
+            color = secondaryTextColor
+        )
+        if (isSentByMe) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                imageVector = Icons.Default.DoneAll,
+                contentDescription = "Read",
+                tint = tealAccent,
+                modifier = Modifier.size(13.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun MediaGridNoBubble(
+    message: ChatMessage,
+    formattedTime: String,
+    onMediaClick: (List<Uri>, Int) -> Unit,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    tealAccent: Color,
+    isDark: Boolean
+) {
+    val context = LocalContext.current
+    val mediaUris = remember(message.attachments) { message.attachments.map { Uri.parse(it) } }
+    val n = mediaUris.size
+
+    Column(modifier = Modifier.width(234.dp)) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            if (n == 1) {
+                val uri = mediaUris.first()
+                val uriStr = uri.toString()
+                val fileName = FilePickerUtils.getFileName(context, uri)
+                val ext = fileName.substringAfterLast('.', "").lowercase()
+                val mimeType = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
+                val isVideo = uriStr.contains("video") || ext == "mp4" || mimeType?.startsWith("video/") == true
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 280.dp)
+                        .clickable { onMediaClick(mediaUris, 0) }
+                ) {
+                    AsyncImage(
+                        model = uri,
+                        contentDescription = if (isVideo) "Video" else "Photo",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    if (isVideo) {
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.50f),
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .size(28.dp)
+                                .align(Alignment.Center)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = "Play Video",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            } else if (n == 2) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    mediaUris.take(2).forEachIndexed { idx, uri ->
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .aspectRatio(1f)
+                                .clickable { onMediaClick(mediaUris, idx) }
+                        ) {
+                            AsyncImage(
+                                model = uri,
+                                contentDescription = "Photo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                }
+            } else if (n == 3) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(234.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clickable { onMediaClick(mediaUris, 0) }
+                    ) {
+                        AsyncImage(
+                            model = mediaUris[0],
+                            contentDescription = "Photo",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight(),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .clickable { onMediaClick(mediaUris, 1) }
+                        ) {
+                            AsyncImage(
+                                model = mediaUris[1],
+                                contentDescription = "Photo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .clickable { onMediaClick(mediaUris, 2) }
+                        ) {
+                            AsyncImage(
+                                model = mediaUris[2],
+                                contentDescription = "Photo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+                }
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        (0..1).forEach { idx ->
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .aspectRatio(1f)
+                                    .clickable { onMediaClick(mediaUris, idx) }
+                            ) {
+                                AsyncImage(
+                                    model = mediaUris[idx],
+                                    contentDescription = "Photo",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .aspectRatio(1f)
+                                .clickable { onMediaClick(mediaUris, 2) }
+                        ) {
+                            AsyncImage(
+                                model = mediaUris[2],
+                                contentDescription = "Photo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .aspectRatio(1f)
+                                .clickable { onMediaClick(mediaUris, 3) }
+                        ) {
+                            AsyncImage(
+                                model = mediaUris[3],
+                                contentDescription = "Photo",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            if (n > 4) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color.Black.copy(alpha = 0.50f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "+${n - 4}",
+                                        fontSize = 22.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (message.text.isBlank()) {
+            AttachmentTimeFooterLine(
+                formattedTime = formattedTime,
+                isSentByMe = message.isSentByMe,
+                secondaryTextColor = secondaryTextColor,
+                tealAccent = tealAccent
+            )
+        }
+    }
+}
+
+@Composable
+private fun DocumentRowsNoBubble(
+    message: ChatMessage,
+    formattedTime: String,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    cardFillColor: Color,
+    tealAccent: Color,
+    isDark: Boolean
+) {
+    val context = LocalContext.current
+    val mediaUris = remember(message.attachments) { message.attachments.map { Uri.parse(it) } }
+
+    Column(
+        modifier = Modifier.width(234.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        mediaUris.forEach { uri ->
+            val fileName = FilePickerUtils.getFileName(context, uri)
+            val ext = fileName.substringAfterLast('.', "").uppercase()
+            val sizeBytes = FilePickerUtils.getFileSizeBytes(context, uri)
+            val sizeStr = FilePickerUtils.formatFileSize(sizeBytes)
+
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = cardFillColor,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { FilePickerUtils.openFileInExternalApp(context, uri, fileName) }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    DocumentTypeTile(extension = ext.lowercase(), isDark = isDark, widthDp = 36, heightDp = 44)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = fileName,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = primaryTextColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "$ext · $sizeStr",
+                            fontSize = 12.sp,
+                            color = secondaryTextColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
+        if (message.text.isBlank()) {
+            AttachmentTimeFooterLine(
+                formattedTime = formattedTime,
+                isSentByMe = message.isSentByMe,
+                secondaryTextColor = secondaryTextColor,
+                tealAccent = tealAccent
+            )
         }
     }
 }

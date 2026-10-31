@@ -6,6 +6,21 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.util.FileBlocklistValidator
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
@@ -129,4 +144,47 @@ fun processNewUris(newUris: List<Uri>, currentFiles: List<Uri>, context: Context
     }
 
     return currentFiles + validUris
+}
+
+@Composable
+fun AttachColumnItem(
+    icon: ImageVector,
+    label: String,
+    isDark: Boolean,
+    outlineColor: Color,
+    secondaryTextColor: Color,
+    primaryTextColor: Color,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    val raisedColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .then(if (!enabled) Modifier.alpha(0.35f) else Modifier)
+            .clickable(enabled = enabled, onClick = onClick)
+    ) {
+        Surface(
+            modifier = Modifier.size(56.dp),
+            shape = CircleShape,
+            color = raisedColor,
+            border = BorderStroke(1.dp, outlineColor)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = primaryTextColor,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            color = primaryTextColor
+        )
+    }
 }

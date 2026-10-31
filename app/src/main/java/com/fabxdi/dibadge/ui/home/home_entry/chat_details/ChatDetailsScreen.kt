@@ -185,8 +185,9 @@ fun ChatDetailsScreen(
     var showGroupsSheet by remember { mutableStateOf(false) }
     var showTasksSheet by remember { mutableStateOf(false) }
     var showGroupFormsScreen by remember { mutableStateOf(false) }
-    var showGroupFoldersScreen by remember { mutableStateOf(false) }
     var showGroupCalendarScreen by remember { mutableStateOf(false) }
+    var showCredentialsScreen by remember { mutableStateOf(false) }
+    var showLibraryScreen by remember { mutableStateOf(false) }
     var isMuted by remember { mutableStateOf(false) }
     var showMuteSheet by remember { mutableStateOf(false) }
     var showClearChatDialog by remember { mutableStateOf(false) }
@@ -260,16 +261,6 @@ fun ChatDetailsScreen(
         return
     }
 
-    if (showGroupFoldersScreen) {
-        GroupFoldersScreen(
-            groupId = entry.id.toString(),
-            groupName = groupName,
-            canUserManage = canUserManage,
-            onBack = { showGroupFoldersScreen = false }
-        )
-        return
-    }
-
     if (showGroupCalendarScreen) {
         GroupScheduleScreen(
             groupId = entry.id.toString(),
@@ -277,6 +268,27 @@ fun ChatDetailsScreen(
             canUserManage = canUserManage,
             members = members,
             onBack = { showGroupCalendarScreen = false }
+        )
+        return
+    }
+
+    if (showCredentialsScreen) {
+        CredentialsScreen(
+            groupId = entry.id.toString(),
+            groupName = groupName,
+            canUserManage = canUserManage,
+            members = members,
+            onBack = { showCredentialsScreen = false }
+        )
+        return
+    }
+
+    if (showLibraryScreen) {
+        GroupLibraryScreen(
+            groupId = entry.id.toString(),
+            groupName = groupName,
+            canUserManage = canUserManage,
+            onBack = { showLibraryScreen = false }
         )
         return
     }
@@ -1219,7 +1231,8 @@ fun ChatDetailsScreen(
             onSelectGroups = { showGroupsSheet = true },
             onSelectForms = { showGroupFormsScreen = true },
             onSelectTasks = { showTasksSheet = true },
-            onSelectFolders = { showGroupFoldersScreen = true },
+            onSelectCredentials = { showCredentialsScreen = true },
+            onSelectLibrary = { showLibraryScreen = true },
             onSelectMute = { showMuteSheet = true },
             onSelectUnmute = {
                 isMuted = false

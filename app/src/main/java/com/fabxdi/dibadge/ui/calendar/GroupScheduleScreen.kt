@@ -692,14 +692,15 @@ fun MonthTimelineView(
                             }
                         }
 
-                        val isHorizontalSwipe = maxClusterLanes > 1
-                        val fixedLaneWidth = 90.dp
-                        val laneGap = 6.dp
+                        val isHorizontalSwipe = maxClusterLanes > 2
+                        val fixedLaneWidth = 52.dp
+                        val laneGap = 1.dp
 
                         val calculatedLaneWidth = if (isHorizontalSwipe) {
                             fixedLaneWidth
                         } else {
-                            (containerWidthDp - 8.dp).coerceAtLeast(80.dp)
+                            val avail = (containerWidthDp - 4.dp).coerceAtLeast(40.dp)
+                            (avail / max(1, maxClusterLanes)).coerceIn(40.dp, 52.dp)
                         }
 
                         val scrollState = rememberScrollState()
@@ -717,7 +718,7 @@ fun MonthTimelineView(
                                     .fillMaxHeight()
                                     .width(
                                         if (isHorizontalSwipe) {
-                                            (maxClusterLanes * (fixedLaneWidth.value + laneGap.value)).dp + 24.dp
+                                            (maxClusterLanes * (fixedLaneWidth.value + laneGap.value)).dp + 16.dp
                                         } else {
                                             containerWidthDp
                                         }
@@ -729,21 +730,12 @@ fun MonthTimelineView(
                                     val rawHeight = (assign.spanDays * rowHeightPx - 2f).let { with(density) { it.toDp() } }
                                     val barHeight = if (rawHeight > 16.dp) rawHeight else 16.dp
 
-                                    val leftOffset = if (isHorizontalSwipe) {
-                                        (assign.laneIndex * (fixedLaneWidth.value + laneGap.value)).dp
-                                    } else {
-                                        (assign.laneIndex * (calculatedLaneWidth.value + laneGap.value)).dp
-                                    }
-
-                                    val textLen = assign.task.title.length
-                                    val dateStr = "${assign.effectiveStart.dayOfMonth}–${assign.effectiveEnd.dayOfMonth}"
-                                    val estimatedContentWidth = (max(textLen * 6.5f, dateStr.length * 6f) + 30f).dp
-                                    val cappedBarWidth = estimatedContentWidth.coerceIn(36.dp, calculatedLaneWidth)
+                                    val leftOffset = (assign.laneIndex * (calculatedLaneWidth.value + laneGap.value)).dp
 
                                     TaskBarItem(
                                         task = assign.task,
                                         status = status,
-                                        width = cappedBarWidth,
+                                        width = calculatedLaneWidth,
                                         height = barHeight,
                                         hasTopChevron = assign.hasTopChevron,
                                         hasBottomChevron = assign.hasBottomChevron,
@@ -807,7 +799,7 @@ fun TaskBarItem(
         }
     }
 
-    val tapTargetHeight = if (height > 32.dp) height else 32.dp
+    val tapTargetHeight = if (height > 26.dp) height else 26.dp
 
     Box(
         modifier = modifier
@@ -820,8 +812,8 @@ fun TaskBarItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(height)
-                .clip(RoundedCornerShape(7.dp)),
-            shape = RoundedCornerShape(7.dp),
+                .clip(RoundedCornerShape(5.dp)),
+            shape = RoundedCornerShape(5.dp),
             color = bgColor,
             shadowElevation = 0.dp,
             tonalElevation = 0.dp
@@ -829,33 +821,33 @@ fun TaskBarItem(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
                     ) {
-                        StatusIcon(status = status, isDark = isDark, tealAccent = tealAccent, modifier = Modifier.size(11.dp))
+                        StatusIcon(status = status, isDark = isDark, tealAccent = tealAccent, modifier = Modifier.size(9.dp))
 
                         Text(
                             text = task.title,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = textColor,
-                            maxLines = if (height >= 40.dp) 3 else 1,
+                            maxLines = if (height >= 38.dp) 3 else 1,
                             overflow = TextOverflow.Ellipsis,
                             textDecoration = if (status == TaskStatus.COMPLETED) TextDecoration.LineThrough else TextDecoration.None
                         )
                     }
 
-                    if (height >= 55.dp) {
-                        Spacer(modifier = Modifier.height(2.dp))
+                    if (height >= 48.dp) {
+                        Spacer(modifier = Modifier.height(1.dp))
                         val start = task.startDate ?: task.dueDate ?: LocalDate.now()
                         val end = task.endDate ?: task.dueDate ?: start
                         Text(
-                            text = "${start.dayOfMonth}–${end.dayOfMonth} ${start.month.name.take(3)}",
-                            fontSize = 9.sp,
+                            text = "${start.dayOfMonth}–${end.dayOfMonth}",
+                            fontSize = 8.5.sp,
                             color = textColor.copy(alpha = 0.75f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -869,7 +861,7 @@ fun TaskBarItem(
                         contentDescription = "Starts earlier",
                         tint = textColor,
                         modifier = Modifier
-                            .size(12.dp)
+                            .size(10.dp)
                             .align(Alignment.TopEnd)
                     )
                 }
@@ -880,7 +872,7 @@ fun TaskBarItem(
                         contentDescription = "Ends later",
                         tint = textColor,
                         modifier = Modifier
-                            .size(12.dp)
+                            .size(10.dp)
                             .align(Alignment.BottomEnd)
                     )
                 }

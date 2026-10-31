@@ -19,5 +19,14 @@ data class ChatMessageEntity(
     val replyingToSender: String? = null,
     val replyingToAttachmentUri: String? = null,
     val isEdited: Boolean = false,
-    val isForwarded: Boolean = false
+    val isForwarded: Boolean = false,
+    val msgType: String = "text",
+    val libraryFileId: String? = null,
+    val libraryCategoryId: String? = null,
+    val libraryCategoryName: String? = null,
+    val libraryFileName: String? = null,
+    val libraryCount: Int = 1,
+    val libraryActorUid: String? = null,
+    val libraryActorName: String? = null,
+    val libraryRevision: String? = null
 )

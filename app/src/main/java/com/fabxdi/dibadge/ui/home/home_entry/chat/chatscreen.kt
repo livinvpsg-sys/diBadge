@@ -28,11 +28,13 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -123,6 +125,14 @@ data class ChatMessage(
     val latestCommentAuthor: String? = null,
     val latestCommentText: String? = null,
     val msgType: String = "text",
+    val libraryFileId: String? = null,
+    val libraryCategoryId: String? = null,
+    val libraryCategoryName: String? = null,
+    val libraryFileName: String? = null,
+    val libraryCount: Int = 1,
+    val libraryActorUid: String? = null,
+    val libraryActorName: String? = null,
+    val libraryRevision: String? = null,
     val locationLat: Double = 0.0,
     val locationLng: Double = 0.0,
     val locationAccuracy: Int = 0,
@@ -2135,11 +2145,32 @@ fun ChatScreen(
                     }
                 }
             } else {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    // Two 1dp vertical lines in outline color 14dp from left & right screen edges
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val lineXLeft = 14.dp.toPx()
+                        val lineXRight = size.width - 14.dp.toPx()
+                        val strokeWidthPx = 1.dp.toPx()
+
+                        drawLine(
+                            color = outlineColor,
+                            start = Offset(lineXLeft, 0f),
+                            end = Offset(lineXLeft, size.height),
+                            strokeWidth = strokeWidthPx
+                        )
+                        drawLine(
+                            color = outlineColor,
+                            start = Offset(lineXRight, 0f),
+                            end = Offset(lineXRight, size.height),
+                            strokeWidth = strokeWidthPx
+                        )
+                    }
+
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
                     if (groupCreatedDateText != null) {
                         item {
                             GroupCreatedHeader(
@@ -2188,50 +2219,62 @@ fun ChatScreen(
                                 )
                             } else rawMsg
 
-                            MessageBubble(
-                                message = msgToRender,
-                                player = player,
-                                isSelected = selectedMessages.contains(msgToRender.id),
-                                isAnySelected = selectedMessages.isNotEmpty(),
-                                isFirstInRun = isFirstInRun,
-                                onLongClick = { uri ->
-                                    if (selectedMessages.isEmpty()) {
-                                        longPressedMessage = msgToRender
-                                    } else {
-                                        selectedMessages = if (selectedMessages.contains(msgToRender.id)) selectedMessages - msgToRender.id else selectedMessages + msgToRender.id
+                            if (msgToRender.msgType == "systemLibraryAdded" || msgToRender.msgType == "system_library_added") {
+                                SystemLibraryChip(
+                                    message = msgToRender,
+                                    cardFillColor = cardColor,
+                                    primaryTextColor = primaryTextColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    onChipClick = {
+                                        showGroupDetails = true
                                     }
-                                },
-                                onClick = {
-                                    if (selectedMessages.isNotEmpty()) {
-                                        selectedMessages = if (selectedMessages.contains(msgToRender.id)) selectedMessages - msgToRender.id else selectedMessages + msgToRender.id
+                                )
+                            } else {
+                                MessageBubble(
+                                    message = msgToRender,
+                                    player = player,
+                                    isSelected = selectedMessages.contains(msgToRender.id),
+                                    isAnySelected = selectedMessages.isNotEmpty(),
+                                    isFirstInRun = isFirstInRun,
+                                    onLongClick = { uri ->
+                                        if (selectedMessages.isEmpty()) {
+                                            longPressedMessage = msgToRender
+                                        } else {
+                                            selectedMessages = if (selectedMessages.contains(msgToRender.id)) selectedMessages - msgToRender.id else selectedMessages + msgToRender.id
+                                        }
+                                    },
+                                    onClick = {
+                                        if (selectedMessages.isNotEmpty()) {
+                                            selectedMessages = if (selectedMessages.contains(msgToRender.id)) selectedMessages - msgToRender.id else selectedMessages + msgToRender.id
+                                        }
+                                    },
+                                    onReplyClick = { originalId, specificUri ->
+                                        val originalMessage = messages.find { it.id == originalId }
+                                        if (originalMessage != null) {
+                                            replyingTo = originalMessage
+                                            replyingToAttachmentUriState = specificUri
+                                        }
+                                    },
+                                    isHighlighted = highlightedMessageId == msgToRender.id,
+                                    onMediaClick = { mediaUris, startIndex ->
+                                        galleryMedia = mediaUris
+                                        galleryInitialIndex = startIndex
+                                        galleryMessage = msgToRender
+                                    },
+                                    onCommentsClick = { clickedMsg ->
+                                        val tKey = clickedMsg.threadId ?: clickedMsg.id
+                                        seenThreadIds = seenThreadIds + tKey
+                                        selectedCommentMessage = clickedMsg
+                                    },
+                                    onSentToClick = { clickedMsg ->
+                                        selectedSentToMessage = clickedMsg
+                                    },
+                                    onSwipeToReply = { uri ->
+                                        replyingTo = msgToRender
+                                        replyingToAttachmentUriState = uri
                                     }
-                                },
-                                onReplyClick = { originalId, specificUri ->
-                                    val originalMessage = messages.find { it.id == originalId }
-                                    if (originalMessage != null) {
-                                        replyingTo = originalMessage
-                                        replyingToAttachmentUriState = specificUri
-                                    }
-                                },
-                                isHighlighted = highlightedMessageId == msgToRender.id,
-                                onMediaClick = { mediaUris, startIndex ->
-                                    galleryMedia = mediaUris
-                                    galleryInitialIndex = startIndex
-                                    galleryMessage = msgToRender
-                                },
-                                onCommentsClick = { clickedMsg ->
-                                    val tKey = clickedMsg.threadId ?: clickedMsg.id
-                                    seenThreadIds = seenThreadIds + tKey
-                                    selectedCommentMessage = clickedMsg
-                                },
-                                onSentToClick = { clickedMsg ->
-                                    selectedSentToMessage = clickedMsg
-                                },
-                                onSwipeToReply = { uri ->
-                                    replyingTo = msgToRender
-                                    replyingToAttachmentUriState = uri
-                                }
-                            )
+                                )
+                            }
                         }
                     }
                 }
@@ -2780,46 +2823,63 @@ fun ChatScreen(
         )
     }
 }
+}
 
 @Composable
-private fun AttachColumnItem(
-    icon: ImageVector,
-    label: String,
-    isDark: Boolean,
-    outlineColor: Color,
-    secondaryTextColor: Color,
+fun SystemLibraryChip(
+    message: ChatMessage,
+    cardFillColor: Color,
     primaryTextColor: Color,
-    enabled: Boolean = true,
-    onClick: () -> Unit
+    secondaryTextColor: Color,
+    onChipClick: () -> Unit
 ) {
-    val raisedColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
+    val actorName = message.libraryActorName ?: message.senderName
+    val count = message.libraryCount
+    val fileName = message.libraryFileName ?: "File"
+    val categoryName = message.libraryCategoryName
+    val revision = message.libraryRevision
 
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .then(if (!enabled) Modifier.alpha(0.35f) else Modifier)
-            .clickable(enabled = enabled, onClick = onClick)
-    ) {
-        Surface(
-            modifier = Modifier.size(56.dp),
-            shape = CircleShape,
-            color = raisedColor,
-            border = BorderStroke(1.dp, outlineColor)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = label,
-                    tint = primaryTextColor,
-                    modifier = Modifier.size(24.dp)
-                )
+    val formattedText = remember(actorName, count, fileName, categoryName, revision) {
+        when {
+            !revision.isNullOrBlank() -> {
+                "$actorName added a new revision of $fileName ($revision)"
+            }
+            count > 1 -> {
+                if (!categoryName.isNullOrBlank()) {
+                    "$actorName added $count files to Library · $categoryName"
+                } else {
+                    "$actorName added $count files to Library"
+                }
+            }
+            else -> {
+                if (!categoryName.isNullOrBlank()) {
+                    "$actorName added $fileName to Library · $categoryName"
+                } else {
+                    "$actorName added $fileName to Library"
+                }
             }
         }
-        Spacer(modifier = Modifier.height(10.dp))
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            color = primaryTextColor
-        )
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = cardFillColor,
+            modifier = Modifier.clickable { onChipClick() }
+        ) {
+            Text(
+                text = formattedText,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Normal,
+                color = primaryTextColor,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }

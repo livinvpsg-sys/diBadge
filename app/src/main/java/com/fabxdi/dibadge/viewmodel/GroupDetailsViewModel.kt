@@ -65,6 +65,72 @@ data class GroupMediaItem(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+data class GroupCredentialItem(
+    val id: String,
+    val groupId: String,
+    val ownerUid: String,
+    val ownerName: String,
+    val myDocId: String,
+    val fileUri: String,
+    val name: String,
+    val expiresAt: Long? = null,
+    val addedAt: Long = System.currentTimeMillis(),
+    val addedByUid: String? = null,
+    val addedByName: String? = null,
+    val requestId: String? = null
+)
+
+data class GroupCredentialRequestItem(
+    val id: String,
+    val groupId: String,
+    val name: String,
+    val requestedByUid: String,
+    val requestedByName: String,
+    val memberUid: String,
+    val memberName: String,
+    val status: String = "pending",
+    val certIds: List<String> = emptyList(),
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+data class CredentialSubmitItem(
+    val myDocId: String,
+    val fileUri: String,
+    val name: String,
+    val expiresAtMs: Long?
+)
+
+data class LibraryCategoryItem(
+    val id: String,
+    val name: String,
+    val order: Int = 0,
+    val fileCount: Int = 0
+)
+
+data class LibraryRevisionItem(
+    val revision: String,
+    val downloadUrl: String,
+    val uploadedAt: Long = System.currentTimeMillis(),
+    val uploadedByName: String = ""
+)
+
+data class LibraryFileItem(
+    val id: String,
+    val groupId: String,
+    val name: String,
+    val categoryId: String? = null,
+    val categoryName: String? = null,
+    val revision: String? = null,
+    val downloadUrl: String,
+    val storagePath: String = "",
+    val sizeBytes: Long = 0,
+    val mimeType: String = "",
+    val uploadedByUid: String,
+    val uploadedByName: String,
+    val uploadedAt: Long = System.currentTimeMillis(),
+    val previousRevisions: List<LibraryRevisionItem> = emptyList()
+)
+
 class GroupDetailsViewModel : ViewModel() {
     private val db = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
@@ -99,6 +165,21 @@ class GroupDetailsViewModel : ViewModel() {
 
     private val _media = MutableStateFlow<List<GroupMediaItem>>(emptyList())
     val media: StateFlow<List<GroupMediaItem>> = _media.asStateFlow()
+
+    private val _credentials = MutableStateFlow<List<GroupCredentialItem>>(emptyList())
+    val credentials: StateFlow<List<GroupCredentialItem>> = _credentials.asStateFlow()
+
+    private val _credentialRequests = MutableStateFlow<List<GroupCredentialRequestItem>>(emptyList())
+    val credentialRequests: StateFlow<List<GroupCredentialRequestItem>> = _credentialRequests.asStateFlow()
+
+    private val _libraryCategories = MutableStateFlow<List<LibraryCategoryItem>>(emptyList())
+    val libraryCategories: StateFlow<List<LibraryCategoryItem>> = _libraryCategories.asStateFlow()
+
+    private val _libraryFiles = MutableStateFlow<List<LibraryFileItem>>(emptyList())
+    val libraryFiles: StateFlow<List<LibraryFileItem>> = _libraryFiles.asStateFlow()
+
+    private val _whoCanUploadLibrary = MutableStateFlow<String>("admins_only")
+    val whoCanUploadLibrary: StateFlow<String> = _whoCanUploadLibrary.asStateFlow()
 
     private val _isLoading = MutableStateFlow<Boolean>(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -230,6 +311,727 @@ class GroupDetailsViewModel : ViewModel() {
             try {
                 db.collection("personalGroups").document(currentGroupId)
                     .set(mapOf("subtitle" to trimmed, "description" to trimmed), SetOptions.merge())
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun listenToCredentials(groupId: String) {
+        if (groupId.isBlank()) return
+        db.collection("groups").document(groupId)
+            .collection("credentials")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) return@addSnapshotListener
+
+                val certList = snapshot.documents.mapNotNull { doc ->
+                    val ownerUid = doc.getString("ownerUid") ?: ""
+                    val ownerName = doc.getString("ownerName") ?: "User"
+                    val myDocId = doc.getString("myDocId") ?: ""
+                    val fileUri = doc.getString("fileUri") ?: ""
+                    val name = doc.getString("name") ?: "Credential"
+                    val expiresAt = doc.getLong("expiresAt")
+                    val addedAt = doc.getLong("addedAt") ?: System.currentTimeMillis()
+
+                    val addedByUid = doc.getString("addedByUid")
+                    val addedByName = doc.getString("addedByName")
+                    val requestId = doc.getString("requestId")
+
+                    GroupCredentialItem(
+                        id = doc.id,
+                        groupId = groupId,
+                        ownerUid = ownerUid,
+                        ownerName = ownerName,
+                        myDocId = myDocId,
+                        fileUri = fileUri,
+                        name = name,
+                        expiresAt = expiresAt,
+                        addedAt = addedAt,
+                        addedByUid = addedByUid,
+                        addedByName = addedByName,
+                        requestId = requestId
+                    )
+                }
+                _credentials.value = certList
+            }
+    }
+
+    fun listenToCredentialRequests(groupId: String) {
+        if (groupId.isBlank()) return
+        db.collection("groups").document(groupId)
+            .collection("credentialRequests")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) return@addSnapshotListener
+
+                val reqList = snapshot.documents.mapNotNull { doc ->
+                    val name = doc.getString("name") ?: "Credential"
+                    val requestedByUid = doc.getString("requestedByUid") ?: doc.getString("requestedBy") ?: ""
+                    val requestedByName = doc.getString("requestedByName") ?: "Admin"
+                    val memberUid = doc.getString("memberUid") ?: ""
+                    val memberName = doc.getString("memberName") ?: "Member"
+                    val status = doc.getString("status") ?: "pending"
+                    val certIds = (doc.get("certIds") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
+                    val createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+
+                    GroupCredentialRequestItem(
+                        id = doc.id,
+                        groupId = groupId,
+                        name = name,
+                        requestedByUid = requestedByUid,
+                        requestedByName = requestedByName,
+                        memberUid = memberUid,
+                        memberName = memberName,
+                        status = status,
+                        certIds = certIds,
+                        createdAt = createdAt
+                    )
+                }
+                _credentialRequests.value = reqList
+            }
+    }
+
+    fun createCredentialRequests(
+        groupId: String,
+        certName: String,
+        targetMembers: List<GroupMember>
+    ) {
+        if (groupId.isBlank() || certName.isBlank() || targetMembers.isEmpty()) return
+        val currentUid = auth.currentUser?.uid ?: ""
+        val currentName = auth.currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Admin"
+
+        viewModelScope.launch {
+            for (member in targetMembers) {
+                val reqId = UUID.randomUUID().toString()
+                val reqData = mutableMapOf<String, Any?>(
+                    "id" to reqId,
+                    "groupId" to groupId,
+                    "name" to certName.trim(),
+                    "requestedByUid" to currentUid,
+                    "requestedByName" to currentName,
+                    "memberUid" to member.uid,
+                    "memberName" to member.displayName,
+                    "status" to "pending",
+                    "certIds" to emptyList<String>(),
+                    "createdAt" to System.currentTimeMillis()
+                )
+
+                try {
+                    db.collection("groups").document(groupId)
+                        .collection("credentialRequests")
+                        .document(reqId)
+                        .set(reqData)
+                        .await()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
+    fun submitMultipleCredentials(
+        groupId: String,
+        targetMemberUid: String,
+        targetMemberName: String,
+        certItems: List<CredentialSubmitItem>,
+        requestId: String? = null
+    ) {
+        if (groupId.isBlank() || certItems.isEmpty()) return
+        val currentUid = if (targetMemberUid.isNotBlank()) targetMemberUid else (auth.currentUser?.uid ?: "")
+        val currentName = if (targetMemberName.isNotBlank()) targetMemberName else (auth.currentUser?.displayName ?: "Me")
+
+        viewModelScope.launch {
+            val createdCertIds = mutableListOf<String>()
+            for (item in certItems) {
+                val certId = UUID.randomUUID().toString()
+                createdCertIds.add(certId)
+
+                val certData = mutableMapOf<String, Any?>(
+                    "id" to certId,
+                    "groupId" to groupId,
+                    "ownerUid" to currentUid,
+                    "ownerName" to currentName,
+                    "myDocId" to item.myDocId,
+                    "fileUri" to item.fileUri,
+                    "name" to item.name.trim(),
+                    "expiresAt" to item.expiresAtMs,
+                    "addedAt" to System.currentTimeMillis(),
+                    "requestId" to requestId
+                )
+
+                try {
+                    db.collection("groups").document(groupId)
+                        .collection("credentials")
+                        .document(certId)
+                        .set(certData)
+                        .await()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            if (!requestId.isNullOrBlank()) {
+                try {
+                    db.collection("groups").document(groupId)
+                        .collection("credentialRequests")
+                        .document(requestId)
+                        .update(
+                            mapOf(
+                                "status" to "fulfilled",
+                                "certIds" to createdCertIds
+                            )
+                        )
+                        .await()
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
+    fun cancelCredentialRequest(groupId: String, requestId: String) {
+        if (groupId.isBlank() || requestId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                db.collection("groups").document(groupId)
+                    .collection("credentialRequests")
+                    .document(requestId)
+                    .update("status", "cancelled")
+                    .await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun addCredentialForMember(
+        groupId: String,
+        targetMemberUid: String,
+        targetMemberName: String,
+        myDocId: String,
+        fileUri: String,
+        name: String,
+        expiresAtMs: Long?
+    ) {
+        if (groupId.isBlank()) return
+        val currentUid = auth.currentUser?.uid ?: ""
+        val currentName = auth.currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Admin"
+        val certId = UUID.randomUUID().toString()
+
+        val certData = mutableMapOf<String, Any?>(
+            "id" to certId,
+            "groupId" to groupId,
+            "ownerUid" to targetMemberUid,
+            "ownerName" to targetMemberName,
+            "myDocId" to myDocId,
+            "fileUri" to fileUri,
+            "name" to name.trim(),
+            "expiresAt" to expiresAtMs,
+            "addedAt" to System.currentTimeMillis(),
+            "addedByUid" to currentUid,
+            "addedByName" to currentName
+        )
+
+        viewModelScope.launch {
+            try {
+                db.collection("groups").document(groupId)
+                    .collection("credentials")
+                    .document(certId)
+                    .set(certData)
+                    .await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun addCredential(
+        groupId: String,
+        myDocId: String,
+        fileUri: String,
+        name: String,
+        expiresAtMs: Long?
+    ) {
+        if (groupId.isBlank()) return
+        val currentUid = auth.currentUser?.uid ?: ""
+        val currentName = auth.currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Me"
+        val certId = UUID.randomUUID().toString()
+
+        val certData = mutableMapOf<String, Any?>(
+            "id" to certId,
+            "groupId" to groupId,
+            "ownerUid" to currentUid,
+            "ownerName" to currentName,
+            "myDocId" to myDocId,
+            "fileUri" to fileUri,
+            "name" to name.trim(),
+            "expiresAt" to expiresAtMs,
+            "addedAt" to System.currentTimeMillis()
+        )
+
+        viewModelScope.launch {
+            try {
+                db.collection("groups").document(groupId)
+                    .collection("credentials")
+                    .document(certId)
+                    .set(certData)
+                    .await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun updateCredential(
+        groupId: String,
+        certId: String,
+        newName: String,
+        newExpiresAtMs: Long?
+    ) {
+        if (groupId.isBlank() || certId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val updates = mutableMapOf<String, Any?>(
+                    "name" to newName.trim(),
+                    "expiresAt" to newExpiresAtMs
+                )
+                db.collection("groups").document(groupId)
+                    .collection("credentials")
+                    .document(certId)
+                    .update(updates)
+                    .await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun removeCredential(groupId: String, certId: String) {
+        if (groupId.isBlank() || certId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                db.collection("groups").document(groupId)
+                    .collection("credentials")
+                    .document(certId)
+                    .delete()
+                    .await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun listenToLibrary(groupId: String) {
+        if (groupId.isBlank()) return
+
+        db.collection("groups").document(groupId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) return@addSnapshotListener
+                val perm = snapshot.getString("whoCanUploadLibrary") ?: "admins_only"
+                _whoCanUploadLibrary.value = perm
+            }
+
+        db.collection("groups").document(groupId)
+            .collection("libraryCategories")
+            .orderBy("order")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) return@addSnapshotListener
+
+                val catList = snapshot.documents.mapNotNull { doc ->
+                    val name = doc.getString("name") ?: return@mapNotNull null
+                    val order = doc.getLong("order")?.toInt() ?: 0
+                    val fileCount = _libraryFiles.value.count { it.categoryId == doc.id }
+                    LibraryCategoryItem(id = doc.id, name = name, order = order, fileCount = fileCount)
+                }
+                _libraryCategories.value = catList
+            }
+
+        db.collection("groups").document(groupId)
+            .collection("library")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) return@addSnapshotListener
+
+                val fileList = snapshot.documents.mapNotNull { doc ->
+                    val name = doc.getString("name") ?: "Document"
+                    val catId = doc.getString("categoryId")
+                    val catName = doc.getString("categoryName")
+                    val revision = doc.getString("revision")
+                    val downloadUrl = doc.getString("downloadUrl") ?: doc.getString("url") ?: return@mapNotNull null
+                    val storagePath = doc.getString("storagePath") ?: ""
+                    val sizeBytes = doc.getLong("sizeBytes") ?: 0L
+                    val mimeType = doc.getString("mimeType") ?: ""
+                    val uploadedByUid = doc.getString("uploadedByUid") ?: ""
+                    val uploadedByName = doc.getString("uploadedByName") ?: "Member"
+                    val uploadedAt = doc.getLong("uploadedAt") ?: System.currentTimeMillis()
+
+                    val revsRaw = doc.get("previousRevisions") as? List<Map<String, Any?>>
+                    val previousRevs = revsRaw?.mapNotNull { rMap ->
+                        val rev = rMap["revision"] as? String ?: return@mapNotNull null
+                        val url = rMap["downloadUrl"] as? String ?: return@mapNotNull null
+                        val uAt = (rMap["uploadedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+                        val uName = rMap["uploadedByName"] as? String ?: ""
+                        LibraryRevisionItem(revision = rev, downloadUrl = url, uploadedAt = uAt, uploadedByName = uName)
+                    } ?: emptyList()
+
+                    LibraryFileItem(
+                        id = doc.id,
+                        groupId = groupId,
+                        name = name,
+                        categoryId = catId,
+                        categoryName = catName,
+                        revision = revision,
+                        downloadUrl = downloadUrl,
+                        storagePath = storagePath,
+                        sizeBytes = sizeBytes,
+                        mimeType = mimeType,
+                        uploadedByUid = uploadedByUid,
+                        uploadedByName = uploadedByName,
+                        uploadedAt = uploadedAt,
+                        previousRevisions = previousRevs
+                    )
+                }.sortedByDescending { it.uploadedAt }
+
+                _libraryFiles.value = fileList
+
+                _libraryCategories.value = _libraryCategories.value.map { cat ->
+                    cat.copy(fileCount = fileList.count { it.categoryId == cat.id })
+                }
+            }
+    }
+
+    fun updateLibraryUploadPermission(groupId: String, permissionSetting: String) {
+        if (groupId.isBlank()) return
+        _whoCanUploadLibrary.value = permissionSetting
+        viewModelScope.launch {
+            try {
+                db.collection("groups").document(groupId)
+                    .set(mapOf("whoCanUploadLibrary" to permissionSetting), SetOptions.merge())
+                    .await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun addLibraryCategory(groupId: String, categoryName: String) {
+        if (groupId.isBlank() || categoryName.isBlank()) return
+        val catId = UUID.randomUUID().toString()
+        val nextOrder = _libraryCategories.value.size
+        viewModelScope.launch {
+            try {
+                db.collection("groups").document(groupId)
+                    .collection("libraryCategories")
+                    .document(catId)
+                    .set(
+                        mapOf(
+                            "id" to catId,
+                            "name" to categoryName.trim(),
+                            "order" to nextOrder
+                        )
+                    )
+                    .await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun renameLibraryCategory(groupId: String, categoryId: String, newName: String) {
+        if (groupId.isBlank() || categoryId.isBlank() || newName.isBlank()) return
+        viewModelScope.launch {
+            try {
+                db.collection("groups").document(groupId)
+                    .collection("libraryCategories")
+                    .document(categoryId)
+                    .update("name", newName.trim())
+                    .await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun deleteLibraryCategory(groupId: String, categoryId: String, targetMoveCategoryId: String? = null, targetMoveCategoryName: String? = null) {
+        if (groupId.isBlank() || categoryId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val filesInCat = _libraryFiles.value.filter { it.categoryId == categoryId }
+                for (f in filesInCat) {
+                    val updates = mutableMapOf<String, Any?>(
+                        "categoryId" to targetMoveCategoryId,
+                        "categoryName" to targetMoveCategoryName
+                    )
+                    db.collection("groups").document(groupId)
+                        .collection("library")
+                        .document(f.id)
+                        .update(updates)
+                        .await()
+                }
+
+                db.collection("groups").document(groupId)
+                    .collection("libraryCategories")
+                    .document(categoryId)
+                    .delete()
+                    .await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun createSystemLibraryChatLabel(
+        groupId: String,
+        fileId: String? = null,
+        fileName: String? = null,
+        categoryId: String? = null,
+        categoryName: String? = null,
+        count: Int = 1,
+        revision: String? = null
+    ) {
+        if (groupId.isBlank()) return
+        val currentUid = auth.currentUser?.uid ?: ""
+        val currentName = auth.currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Member"
+        val msgId = UUID.randomUUID().toString()
+
+        val sysMsgData = mutableMapOf<String, Any?>(
+            "id" to msgId,
+            "text" to "",
+            "senderName" to currentName,
+            "senderUid" to currentUid,
+            "msgType" to "systemLibraryAdded",
+            "libraryFileId" to fileId,
+            "libraryFileName" to fileName,
+            "libraryCategoryId" to categoryId,
+            "libraryCategoryName" to categoryName,
+            "libraryCount" to count,
+            "libraryActorUid" to currentUid,
+            "libraryActorName" to currentName,
+            "libraryRevision" to revision,
+            "timestamp" to FieldValue.serverTimestamp(),
+            "createdAt" to System.currentTimeMillis()
+        )
+
+        viewModelScope.launch {
+            try {
+                db.collection("personalGroups").document(groupId)
+                    .collection("messages")
+                    .document(msgId)
+                    .set(sysMsgData)
+                    .await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun uploadFileToLibrary(
+        groupId: String,
+        categoryId: String?,
+        categoryName: String?,
+        fileUri: Uri,
+        name: String,
+        revision: String?,
+        notifyMembers: Boolean,
+        context: Context,
+        onComplete: () -> Unit = {}
+    ) {
+        if (groupId.isBlank()) return
+        val currentUid = auth.currentUser?.uid ?: ""
+        val currentName = auth.currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Member"
+        val fileName = name.ifBlank { FilePickerUtils.getFileName(context, fileUri) }
+        val fileId = UUID.randomUUID().toString()
+
+        val mimeType = try { context.contentResolver.getType(fileUri) ?: "" } catch (e: Exception) { "" }
+        val ext = FilePickerUtils.getFileName(context, fileUri).substringAfterLast('.', "").lowercase()
+        val isVideo = mimeType.startsWith("video/") || ext in listOf("mp4", "mov", "avi", "mkv", "3gp", "webm")
+
+        if (isVideo) {
+            Toast.makeText(context, "Videos cannot be uploaded to Library", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                val sizeBytes = FilePickerUtils.getFileSizeBytes(context, fileUri)
+                if (sizeBytes > 25 * 1024 * 1024) {
+                    Toast.makeText(context, "File size exceeds 25 MB limit", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+
+                val storagePath = "groups/$groupId/library/$fileId/$fileName"
+                val storageRef = storage.reference.child(storagePath)
+                storageRef.putFile(fileUri).await()
+                val downloadUrl = storageRef.downloadUrl.await().toString()
+
+                val fileDoc = mutableMapOf<String, Any?>(
+                    "id" to fileId,
+                    "groupId" to groupId,
+                    "name" to fileName,
+                    "categoryId" to categoryId,
+                    "categoryName" to categoryName,
+                    "revision" to revision?.trim(),
+                    "downloadUrl" to downloadUrl,
+                    "storagePath" to storagePath,
+                    "sizeBytes" to sizeBytes,
+                    "mimeType" to mimeType,
+                    "uploadedByUid" to currentUid,
+                    "uploadedByName" to currentName,
+                    "uploadedAt" to System.currentTimeMillis(),
+                    "previousRevisions" to emptyList<Map<String, Any>>()
+                )
+
+                db.collection("groups").document(groupId)
+                    .collection("library")
+                    .document(fileId)
+                    .set(fileDoc)
+                    .await()
+
+                createSystemLibraryChatLabel(
+                    groupId = groupId,
+                    fileId = fileId,
+                    fileName = fileName,
+                    categoryId = categoryId,
+                    categoryName = categoryName,
+                    count = 1
+                )
+
+                Toast.makeText(context, "File uploaded to Library", Toast.LENGTH_SHORT).show()
+                onComplete()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun uploadNewRevisionToLibrary(
+        groupId: String,
+        fileItem: LibraryFileItem,
+        fileUri: Uri,
+        newRevision: String,
+        notifyMembers: Boolean,
+        context: Context,
+        onComplete: () -> Unit = {}
+    ) {
+        if (groupId.isBlank() || fileItem.id.isBlank()) return
+        val currentUid = auth.currentUser?.uid ?: ""
+        val currentName = auth.currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Member"
+
+        viewModelScope.launch {
+            try {
+                val sizeBytes = FilePickerUtils.getFileSizeBytes(context, fileUri)
+                if (sizeBytes > 25 * 1024 * 1024) {
+                    Toast.makeText(context, "File size exceeds 25 MB limit", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+
+                val fileName = fileItem.name
+                val revPath = "groups/$groupId/library/${fileItem.id}_${System.currentTimeMillis()}/$fileName"
+                val storageRef = storage.reference.child(revPath)
+                storageRef.putFile(fileUri).await()
+                val newDownloadUrl = storageRef.downloadUrl.await().toString()
+
+                val oldRevObj = mapOf(
+                    "revision" to (fileItem.revision ?: "Rev A"),
+                    "downloadUrl" to fileItem.downloadUrl,
+                    "uploadedAt" to fileItem.uploadedAt,
+                    "uploadedByName" to fileItem.uploadedByName
+                )
+
+                val updatedRevisions = (fileItem.previousRevisions.map {
+                    mapOf(
+                        "revision" to it.revision,
+                        "downloadUrl" to it.downloadUrl,
+                        "uploadedAt" to it.uploadedAt,
+                        "uploadedByName" to it.uploadedByName
+                    )
+                } + listOf(oldRevObj))
+
+                val updates = mapOf(
+                    "revision" to newRevision.trim(),
+                    "downloadUrl" to newDownloadUrl,
+                    "storagePath" to revPath,
+                    "sizeBytes" to sizeBytes,
+                    "uploadedByUid" to currentUid,
+                    "uploadedByName" to currentName,
+                    "uploadedAt" to System.currentTimeMillis(),
+                    "previousRevisions" to updatedRevisions
+                )
+
+                db.collection("groups").document(groupId)
+                    .collection("library")
+                    .document(fileItem.id)
+                    .update(updates)
+                    .await()
+
+                createSystemLibraryChatLabel(
+                    groupId = groupId,
+                    fileId = fileItem.id,
+                    fileName = fileItem.name,
+                    revision = newRevision.trim(),
+                    count = 1
+                )
+
+                Toast.makeText(context, "New revision uploaded", Toast.LENGTH_SHORT).show()
+                onComplete()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun renameLibraryFile(groupId: String, fileId: String, newName: String) {
+        if (groupId.isBlank() || fileId.isBlank() || newName.isBlank()) return
+        viewModelScope.launch {
+            try {
+                db.collection("groups").document(groupId)
+                    .collection("library")
+                    .document(fileId)
+                    .update("name", newName.trim())
+                    .await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun moveLibraryFile(groupId: String, fileId: String, targetCategoryId: String, targetCategoryName: String) {
+        if (groupId.isBlank() || fileId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                db.collection("groups").document(groupId)
+                    .collection("library")
+                    .document(fileId)
+                    .update(
+                        mapOf(
+                            "categoryId" to targetCategoryId,
+                            "categoryName" to targetCategoryName
+                        )
+                    )
+                    .await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun deleteLibraryFile(groupId: String, fileId: String) {
+        if (groupId.isBlank() || fileId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                db.collection("groups").document(groupId)
+                    .collection("library")
+                    .document(fileId)
+                    .delete()
+                    .await()
+
+                val sysMsgs = db.collection("personalGroups").document(groupId)
+                    .collection("messages")
+                    .whereEqualTo("libraryFileId", fileId)
+                    .get()
+                    .await()
+
+                for (doc in sysMsgs.documents) {
+                    doc.reference.delete()
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
