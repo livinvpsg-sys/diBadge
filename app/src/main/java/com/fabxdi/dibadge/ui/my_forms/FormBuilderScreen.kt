@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.FactCheck
 import androidx.compose.material.icons.automirrored.outlined.ShortText
 import androidx.compose.material.icons.automirrored.outlined.Subject
 import androidx.compose.material.icons.filled.Add
@@ -56,6 +57,10 @@ val availableQuestionTypes = listOf(
     QuestionTypeInfo("dropdown", "Dropdown", Icons.Outlined.IndeterminateCheckBox),
     QuestionTypeInfo("checklist", "Checklist", Icons.Outlined.Checklist),
     QuestionTypeInfo("photos", "Photos", Icons.Outlined.Image),
+    QuestionTypeInfo("yesno", "Yes / No", Icons.Outlined.ToggleOn),
+    QuestionTypeInfo("declaration", "Declaration", Icons.AutoMirrored.Outlined.FactCheck),
+    QuestionTypeInfo("instruction", "Instruction text", Icons.Outlined.Info),
+    QuestionTypeInfo("auto", "Auto-filled", Icons.Outlined.Badge),
     QuestionTypeInfo("single_signature", "Single signature", Icons.Outlined.Draw),
     QuestionTypeInfo("multiple_signatures", "Multiple signatures", Icons.Outlined.Gesture)
 )

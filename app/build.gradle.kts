@@ -86,6 +86,16 @@ dependencies {
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
+    // Media3 Transformer & ExifInterface & WorkManager
+    implementation("androidx.media3:media3-transformer:1.5.1")
+    implementation("androidx.media3:media3-common:1.5.1")
+    implementation("androidx.media3:media3-effect:1.5.1")
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
+
+    // Google Play Billing
+    implementation("com.android.billingclient:billing-ktx:7.1.1")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

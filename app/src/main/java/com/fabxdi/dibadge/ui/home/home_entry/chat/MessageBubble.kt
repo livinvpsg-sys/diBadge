@@ -148,6 +148,7 @@ fun MessageBubble(
     isAnySelected: Boolean,
     isFirstInRun: Boolean = true,
     isHighlighted: Boolean = false,
+    isOneToOne: Boolean = false,
     onLongClick: (String?) -> Unit,
     onClick: () -> Unit,
     onReplyClick: (String, String?) -> Unit,
@@ -315,7 +316,7 @@ fun MessageBubble(
                         modifier = Modifier.size(13.dp)
                     )
                 }
-            } else if (!message.isSentByMe && isFirstInRun) {
+            } else if (!isOneToOne && !message.isSentByMe && isFirstInRun) {
                 // Normal Incoming Sender Name (using per-identity color palette, never teal)
                 val senderColor = remember(message.senderName, isDark) {
                     UserColorUtils.getColorForName(message.senderName, isDark)
@@ -334,7 +335,7 @@ fun MessageBubble(
                 horizontalArrangement = if (message.isSentByMe) Arrangement.End else Arrangement.Start,
                 verticalAlignment = Alignment.Bottom
             ) {
-                if (!message.isSentByMe) {
+                if (!isOneToOne && !message.isSentByMe) {
                     if (isFirstInRun || message.isGroupMention) {
                         val avatarShape = if (message.isGroupMention) RoundedCornerShape(10.dp) else CircleShape
                         val avatarText = (message.sendingGroupName ?: message.senderName).take(1).uppercase()

@@ -58,8 +58,11 @@ import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
 import com.fabxdi.dibadge.ui.profile.ProfileScreen
 import com.fabxdi.dibadge.ui.settings.SettingsScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import com.fabxdi.dibadge.viewmodel.ConnectionsViewModel
 import com.fabxdi.dibadge.viewmodel.LeaveOvertimeViewModel
 import com.fabxdi.dibadge.viewmodel.ToDoViewModel
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.launch
 
 enum class HomeTab(
@@ -107,7 +110,30 @@ fun MainDashboard(
     var selectedEntryForChat by remember { mutableStateOf<HomeEntryEntity?>(null) }
     var selectedInboxItemForDetail by remember { mutableStateOf<InboxEntity?>(null) }
 
+    val homeEntries by viewModel.allHomeEntries.collectAsState(initial = emptyList())
     val unreadInboxCount by inboxViewModel.unreadCount.collectAsState()
+
+    val currentUid = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
+    var userNicknames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+
+    LaunchedEffect(currentUid) {
+        if (currentUid.isNotBlank()) {
+            val db = FirebaseFirestore.getInstance()
+            db.collection("users").document(currentUid)
+                .collection("nicknames")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null || snapshot == null) return@addSnapshotListener
+                    val nickMap = mutableMapOf<String, String>()
+                    for (doc in snapshot.documents) {
+                        val nick = doc.getString("nickname") ?: ""
+                        if (nick.isNotBlank()) {
+                            nickMap[doc.id] = nick
+                        }
+                    }
+                    userNicknames = nickMap
+                }
+        }
+    }
 
     // Handle device back button to clear selection
     BackHandler(enabled = selectedEntries.isNotEmpty()) {
@@ -283,7 +309,23 @@ fun MainDashboard(
     if (selectedTab == HomeTab.Connections) {
         ConnectionsScreen(
             onBack = { onTabSelected(HomeTab.Home) },
-            bottomBar = { AppBottomBar(selectedTab, onTabSelected) }
+            bottomBar = { AppBottomBar(selectedTab, onTabSelected) },
+            onOpenChat = { conn ->
+                val existingEntry = homeEntries.find { it.id.toString() == conn.id || it.title.equals(conn.name, ignoreCase = true) }
+                if (existingEntry != null) {
+                    selectedEntryForChat = existingEntry
+                } else {
+                    val connNick = userNicknames[conn.uid] ?: userNicknames[conn.id] ?: ""
+                    val generatedId = (conn.id.toIntOrNull() ?: (conn.uid.hashCode() and 0x7FFFFFFF))
+                    val tempEntry = HomeEntryEntity(
+                        id = generatedId,
+                        title = conn.name,
+                        subtitle = connNick.ifBlank { "Direct" },
+                        initials = conn.name.take(1)
+                    )
+                    selectedEntryForChat = tempEntry
+                }
+            }
         )
         return
     }
@@ -369,7 +411,23 @@ fun MainDashboard(
                     ) {
                         when (selectedTab) {
                             HomeTab.Home -> {
-                                val homeEntries by viewModel.allHomeEntries.collectAsState()
+                                val connectionsViewModel: ConnectionsViewModel = viewModel()
+                                val userConnections by connectionsViewModel.connections.collectAsState()
+
+                                var blockedUserIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+                                LaunchedEffect(currentUid) {
+                                    if (currentUid.isNotBlank()) {
+                                        val db = FirebaseFirestore.getInstance()
+
+                                        db.collection("blockedUsers").document(currentUid)
+                                            .collection("blocked")
+                                            .addSnapshotListener { snapshot, error ->
+                                                if (error != null || snapshot == null) return@addSnapshotListener
+                                                blockedUserIds = snapshot.documents.map { it.id }.toSet()
+                                            }
+                                    }
+                                }
 
                                 LaunchedEffect(homeEntries) {
                                     val defaultEntries = homeEntries.filter { it.title == "diBadge Group" }
@@ -378,36 +436,21 @@ fun MainDashboard(
                                     }
                                 }
 
-                                val filteredEntries = remember(homeEntries, homeSearchQuery) {
-                                    homeEntries.filter { 
-                                        it.title.contains(homeSearchQuery, ignoreCase = true) || 
-                                        it.subtitle.contains(homeSearchQuery, ignoreCase = true)
-                                    }
-                                }
-
-                                if (filteredEntries.isEmpty()) {
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (homeSearchQuery.isEmpty()) {
+                                if (homeSearchQuery.isBlank()) {
+                                    if (homeEntries.isEmpty()) {
+                                        Box(
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
                                             HomeEmptyState()
-                                        } else {
-                                            Text(
-                                                text = "No matches found",
-                                                fontSize = 16.sp,
-                                                fontWeight = FontWeight.Normal,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
                                         }
-                                    }
-                                } else {
-                                    LazyColumn(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)
-                                    ) {
-                                            items(filteredEntries.size) { index ->
-                                                val entry = filteredEntries[index]
+                                    } else {
+                                        LazyColumn(
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)
+                                        ) {
+                                            items(homeEntries.size) { index ->
+                                                val entry = homeEntries[index]
                                                 HomeEntryCard(
                                                     entry = entry,
                                                     isSelected = selectedEntries.contains(entry),
@@ -429,6 +472,142 @@ fun MainDashboard(
                                             }
                                         }
                                     }
+                                } else {
+                                    val query = homeSearchQuery.trim()
+
+                                    val matchingEntries = remember(homeEntries, query, userNicknames) {
+                                        if (query.isBlank()) emptyList() else {
+                                            homeEntries.filter { entry ->
+                                                val isGroup = entry.subtitle.trim().lowercase().let { sub ->
+                                                    sub.endsWith("member") || sub.endsWith("members") || sub == "project group" || sub == "group"
+                                                }
+                                                val nick = if (!isGroup) {
+                                                    userNicknames[entry.id.toString()] ?: if (entry.subtitle.trim().lowercase() !in listOf("direct", "chat", "one-to-one")) entry.subtitle else ""
+                                                } else ""
+
+                                                entry.title.contains(query, ignoreCase = true) ||
+                                                (nick.isNotBlank() && nick.contains(query, ignoreCase = true)) ||
+                                                (isGroup && entry.subtitle.contains(query, ignoreCase = true))
+                                            }
+                                        }
+                                    }
+
+                                    val matchingConnections = remember(userConnections, homeEntries, blockedUserIds, query, userNicknames) {
+                                        if (query.isBlank()) emptyList() else {
+                                            userConnections.filter { conn ->
+                                                val connId = conn.uid.ifBlank { conn.id }
+                                                val isBlocked = blockedUserIds.contains(conn.id) || blockedUserIds.contains(conn.uid)
+                                                val hasChat = homeEntries.any { it.id.toString() == conn.id || it.title.equals(conn.name, ignoreCase = true) }
+                                                val nick = userNicknames[conn.uid] ?: userNicknames[conn.id] ?: ""
+
+                                                !isBlocked && !hasChat && (
+                                                    conn.name.contains(query, ignoreCase = true) ||
+                                                    (nick.isNotBlank() && nick.contains(query, ignoreCase = true))
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    if (matchingEntries.isEmpty() && matchingConnections.isEmpty()) {
+                                        Box(
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "No chats found",
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.Normal,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    } else {
+                                        LazyColumn(
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentPadding = PaddingValues(top = 4.dp, bottom = 88.dp)
+                                        ) {
+                                            if (matchingEntries.isNotEmpty()) {
+                                                item {
+                                                    Text(
+                                                        text = "Chats and groups",
+                                                        fontSize = 13.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp)
+                                                    )
+                                                }
+
+                                                items(matchingEntries.size) { index ->
+                                                    val entry = matchingEntries[index]
+                                                    val isGroup = entry.subtitle.trim().lowercase().let { sub ->
+                                                        sub.endsWith("member") || sub.endsWith("members") || sub == "project group" || sub == "group"
+                                                    }
+                                                    val nick = if (!isGroup) {
+                                                        userNicknames[entry.id.toString()] ?: if (entry.subtitle.trim().lowercase() !in listOf("direct", "chat", "one-to-one")) entry.subtitle else ""
+                                                    } else ""
+
+                                                    val displaySubtitle = if (!isGroup) nick else entry.subtitle
+
+                                                    HomeSearchRow(
+                                                        title = entry.title,
+                                                        subtitle = displaySubtitle,
+                                                        isGroup = isGroup,
+                                                        idForColor = entry.id.toString(),
+                                                        query = query,
+                                                        onClick = {
+                                                            focusManager.clearFocus()
+                                                            selectedEntryForChat = entry
+                                                        }
+                                                    )
+                                                }
+                                            }
+
+                                            if (matchingConnections.isNotEmpty()) {
+                                                item {
+                                                    Text(
+                                                        text = "Connections",
+                                                        fontSize = 13.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)
+                                                    )
+                                                }
+
+                                                items(matchingConnections.size) { index ->
+                                                    val conn = matchingConnections[index]
+                                                    val connNick = userNicknames[conn.uid] ?: userNicknames[conn.id] ?: ""
+                                                    val displaySubtitle = if (connNick.isNotBlank()) connNick else "Connected"
+
+                                                    HomeSearchRow(
+                                                        title = conn.name,
+                                                        subtitle = displaySubtitle,
+                                                        isGroup = false,
+                                                        photoUrl = conn.photoUrl,
+                                                        idForColor = conn.uid.ifBlank { conn.id },
+                                                        query = query,
+                                                        onClick = {
+                                                            focusManager.clearFocus()
+                                                            val existingEntry = homeEntries.find { it.id.toString() == conn.id || it.title.equals(conn.name, ignoreCase = true) }
+                                                            if (existingEntry != null) {
+                                                                selectedEntryForChat = existingEntry
+                                                            } else {
+                                                                val generatedId = (System.currentTimeMillis().toInt() and 0x7FFFFFFF) + (1..999).random()
+                                                                val newEntry = HomeEntryEntity(
+                                                                    id = generatedId,
+                                                                    title = conn.name,
+                                                                    subtitle = connNick.ifBlank { "Direct" },
+                                                                    initials = conn.name.take(1)
+                                                                )
+                                                                viewModel.saveHomeEntry(conn.name, connNick.ifBlank { "Direct" }, conn.name.take(1))
+                                                                selectedEntryForChat = newEntry
+                                                            }
+                                                            homeSearchQuery = ""
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                             HomeTab.Connections -> {}
                             HomeTab.MyTasks -> {}

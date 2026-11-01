@@ -61,6 +61,7 @@ fun ProfileCardRow(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
+    placeholderText: String? = null,
     prefixText: String? = null,
     errorMessage: String? = null,
     enabled: Boolean = true,
@@ -75,6 +76,9 @@ fun ProfileCardRow(
     modifier: Modifier = Modifier
 ) {
     var isFocused by remember { mutableStateOf(false) }
+
+    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
+    val dimColor = if (isDark) Color(0xFF6E757C) else Color(0xFF8A929A)
 
     val labelColor = if (errorMessage != null) {
         MaterialTheme.colorScheme.error
@@ -130,25 +134,38 @@ fun ProfileCardRow(
                             color = prefixColor
                         )
                     }
-                    BasicTextField(
-                        value = value,
-                        onValueChange = onValueChange,
-                        enabled = enabled && !readOnly,
-                        readOnly = readOnly,
-                        singleLine = singleLine,
-                        maxLines = maxLines,
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Normal,
-                            color = valueColor
-                        ),
-                        cursorBrush = SolidColor(DiBadgeTheme.colors.accent),
-                        keyboardOptions = keyboardOptions,
-                        keyboardActions = keyboardActions,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .onFocusChanged { isFocused = it.isFocused }
-                    )
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        if (value.isEmpty() && !placeholderText.isNullOrBlank()) {
+                            Text(
+                                text = placeholderText,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = dimColor
+                            )
+                        }
+                        BasicTextField(
+                            value = value,
+                            onValueChange = onValueChange,
+                            enabled = enabled && !readOnly,
+                            readOnly = readOnly,
+                            singleLine = singleLine,
+                            maxLines = maxLines,
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = valueColor
+                            ),
+                            cursorBrush = SolidColor(DiBadgeTheme.colors.accent),
+                            keyboardOptions = keyboardOptions,
+                            keyboardActions = keyboardActions,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onFocusChanged { isFocused = it.isFocused }
+                        )
+                    }
                 }
 
                 if (errorMessage != null) {

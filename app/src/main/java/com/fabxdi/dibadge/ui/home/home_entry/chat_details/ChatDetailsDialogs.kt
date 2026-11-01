@@ -42,7 +42,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -819,6 +826,175 @@ fun MuteChoiceSheet(
                         fontSize = 16.sp
                     )
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun NicknameSheet(
+    fullName: String,
+    currentNickname: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember(currentNickname) { mutableStateOf(currentNickname) }
+    val focusRequester = remember { FocusRequester() }
+
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val cardBgColor = colors.surface
+    val tealAccent = diBadgeColors.accent
+
+    val isChanged = text.trim() != currentNickname.trim()
+
+    LaunchedEffect(Unit) {
+        delay(100)
+        focusRequester.requestFocus()
+    }
+
+    val isImeVisible = WindowInsets.isImeVisible
+    var wasImeVisible by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isImeVisible) {
+        if (isImeVisible) {
+            wasImeVisible = true
+        } else if (wasImeVisible) {
+            onDismiss()
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        containerColor = cardBgColor,
+        scrimColor = Color.Black.copy(alpha = 0.45f),
+        tonalElevation = 0.dp,
+        contentWindowInsets = { WindowInsets.ime },
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp, bottom = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    modifier = Modifier.size(width = 32.dp, height = 4.dp),
+                    shape = RoundedCornerShape(2.dp),
+                    color = secondaryTextColor.copy(alpha = 0.40f)
+                ) {}
+            }
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 20.dp)
+        ) {
+            Text(
+                text = "Nickname for $fullName",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = primaryTextColor
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "Only you can see this nickname",
+                fontSize = 13.sp,
+                color = secondaryTextColor
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            val isDark = colors.onBackground.red > 0.5f
+            val dimTextColor = if (isDark) Color(0xFF6E757C) else Color(0xFF8A929A)
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    if (text.isEmpty()) {
+                        Text(
+                            text = "Nickname",
+                            fontSize = 17.sp,
+                            color = dimTextColor
+                        )
+                    }
+                    BasicTextField(
+                        value = text,
+                        onValueChange = { newValue ->
+                            if (newValue.length <= 30) {
+                                text = newValue
+                            }
+                        },
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 17.sp,
+                            color = primaryTextColor
+                        ),
+                        cursorBrush = SolidColor(primaryTextColor),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester)
+                    )
+                }
+
+                HorizontalDivider(
+                    thickness = 1.dp,
+                    color = dimTextColor
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Cancel",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = secondaryTextColor,
+                    modifier = Modifier
+                        .clickable { onDismiss() }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Text(
+                    text = "Save",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isChanged) tealAccent else secondaryTextColor.copy(alpha = 0.40f),
+                    modifier = Modifier
+                        .clickable(enabled = isChanged) {
+                            if (isChanged) {
+                                onSave(text.trim())
+                                onDismiss()
+                            }
+                        }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
             }
         }
     }

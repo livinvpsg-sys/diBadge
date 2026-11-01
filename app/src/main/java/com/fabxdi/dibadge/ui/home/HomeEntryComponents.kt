@@ -1,9 +1,12 @@
 package com.fabxdi.dibadge.ui.home
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
@@ -11,14 +14,150 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.fabxdi.dibadge.data.HomeEntryEntity
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.UserColorUtils
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+fun buildSearchAnnotatedString(
+    text: String,
+    query: String,
+    primaryTextColor: Color,
+    amberHighlightColor: Color
+): AnnotatedString {
+    if (query.isBlank() || text.isBlank()) {
+        return AnnotatedString(text)
+    }
+
+    val normalizedText = text.lowercase()
+    val normalizedQuery = query.lowercase().trim()
+
+    return buildAnnotatedString {
+        var startIdx = 0
+        while (startIdx < text.length) {
+            val matchIdx = normalizedText.indexOf(normalizedQuery, startIdx)
+            if (matchIdx == -1) {
+                append(text.substring(startIdx))
+                break
+            } else {
+                if (matchIdx > startIdx) {
+                    append(text.substring(startIdx, matchIdx))
+                }
+                val endIdx = (matchIdx + normalizedQuery.length).coerceAtMost(text.length)
+                withStyle(
+                    style = SpanStyle(
+                        background = amberHighlightColor,
+                        color = primaryTextColor
+                    )
+                ) {
+                    append(text.substring(matchIdx, endIdx))
+                }
+                startIdx = endIdx
+            }
+        }
+    }
+}
+
+@Composable
+fun HomeSearchRow(
+    title: String,
+    subtitle: String,
+    isGroup: Boolean,
+    photoUrl: String = "",
+    idForColor: String,
+    query: String,
+    onClick: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val isDark = colors.onBackground.red > 0.5f
+
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val outlineColor = colors.outline
+    val amberHighlightColor = if (isDark) Color(0xFFFFB300).copy(alpha = 0.35f) else Color(0xFFFFF59D)
+
+    val avatarShape = if (isGroup) RoundedCornerShape(12.dp) else CircleShape
+    val avatarColor = remember(idForColor) { UserColorUtils.getColorForName(idForColor) }
+
+    val annotatedTitle = remember(title, query, primaryTextColor, amberHighlightColor) {
+        buildSearchAnnotatedString(title, query, primaryTextColor, amberHighlightColor)
+    }
+
+    val annotatedSubtitle = remember(subtitle, query, primaryTextColor, amberHighlightColor) {
+        buildSearchAnnotatedString(subtitle, query, primaryTextColor, amberHighlightColor)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Avatar (44dp)
+        Surface(
+            modifier = Modifier.size(44.dp),
+            shape = avatarShape,
+            color = avatarColor,
+            border = BorderStroke(1.dp, outlineColor)
+        ) {
+            if (photoUrl.isNotBlank()) {
+                AsyncImage(
+                    model = photoUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = title.take(1).uppercase(),
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        // Text Column
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = annotatedTitle,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Normal,
+                color = primaryTextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            if (subtitle.isNotBlank()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = annotatedSubtitle,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Normal,
+                    color = secondaryTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -114,6 +253,77 @@ fun HomeEntryCard(
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = secondaryTextColor
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun HomeBackupCard(
+    onSetUp: () -> Unit,
+    onNotNow: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val cardBgColor = colors.surface
+    val tealAccent = diBadgeColors.accent
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = cardBgColor
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
+        ) {
+            Text(
+                text = "Back up your media to Google Drive",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = primaryTextColor
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "Keep a private copy of your photos and videos in your Google storage.",
+                fontSize = 13.sp,
+                color = secondaryTextColor
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Not now",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = secondaryTextColor,
+                    modifier = Modifier
+                        .clickable { onNotNow() }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Text(
+                    text = "Set up",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = tealAccent,
+                    modifier = Modifier
+                        .clickable { onSetUp() }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
                 )
             }
         }

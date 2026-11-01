@@ -16,6 +16,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -190,6 +191,27 @@ class GroupDetailsViewModel : ViewModel() {
     private val _memberSearchCandidates = MutableStateFlow<List<GroupMember>>(emptyList())
     val memberSearchCandidates: StateFlow<List<GroupMember>> = _memberSearchCandidates.asStateFlow()
 
+    private val _isOneToOne = MutableStateFlow<Boolean>(false)
+    val isOneToOne: StateFlow<Boolean> = _isOneToOne.asStateFlow()
+
+    private val _otherUserName = MutableStateFlow<String>("")
+    val otherUserName: StateFlow<String> = _otherUserName.asStateFlow()
+
+    private val _otherUserFirstName = MutableStateFlow<String>("")
+    val otherUserFirstName: StateFlow<String> = _otherUserFirstName.asStateFlow()
+
+    private val _otherUserNickname = MutableStateFlow<String>("")
+    val otherUserNickname: StateFlow<String> = _otherUserNickname.asStateFlow()
+
+    private val _otherUserPhotoUrl = MutableStateFlow<String>("")
+    val otherUserPhotoUrl: StateFlow<String> = _otherUserPhotoUrl.asStateFlow()
+
+    private val _otherUserOrg = MutableStateFlow<String>("")
+    val otherUserOrg: StateFlow<String> = _otherUserOrg.asStateFlow()
+
+    private val _isOtherUserBlocked = MutableStateFlow<Boolean>(false)
+    val isOtherUserBlocked: StateFlow<Boolean> = _isOtherUserBlocked.asStateFlow()
+
     private var currentGroupId: String = ""
 
     fun loadGroupDetails(groupId: String, initialName: String = "", initialSubtitle: String = "") {
@@ -197,9 +219,13 @@ class GroupDetailsViewModel : ViewModel() {
         currentGroupId = groupId
         _isLoading.value = true
 
-        _groupName.value = initialName.ifBlank { "Group" }
-        val isMemberCountInitial = initialSubtitle.trim().lowercase().let { it.endsWith("member") || it.endsWith("members") }
-        _groupSubtitle.value = if (initialSubtitle == "test" || isMemberCountInitial) "" else initialSubtitle
+        val subLower = initialSubtitle.trim().lowercase()
+        val isDirect = subLower in listOf("direct", "chat", "one-to-one") || initialName.lowercase() == "direct"
+        _isOneToOne.value = isDirect
+
+        _groupName.value = initialName.ifBlank { if (isDirect) "Chat" else "Group" }
+        val isMemberCountInitial = subLower.let { it.endsWith("member") || it.endsWith("members") }
+        _groupSubtitle.value = if (initialSubtitle == "test" || isMemberCountInitial || isDirect) "" else initialSubtitle
 
         viewModelScope.launch {
             try {
@@ -1410,6 +1436,136 @@ class GroupDetailsViewModel : ViewModel() {
         // Ensure Owner is first in the list
         val sortedMembers = memberList.sortedByDescending { it.role.equals("owner", ignoreCase = true) }
         _members.value = sortedMembers
+
+        val otherMember = sortedMembers.find { !it.isYou && it.uid != currentUid }
+        if (otherMember != null) {
+            listenToOtherUserProfile(otherMember.uid)
+        }
+    }
+
+    private fun listenToOtherUserProfile(otherUid: String) {
+        val currentUid = auth.currentUser?.uid ?: ""
+
+        // 1. Other user's public profile (Name, Photo, Organization)
+        db.collection("users").document(otherUid).addSnapshotListener { snapshot, error ->
+            if (error != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
+            val photo = snapshot.getString("photoUrl") ?: snapshot.getString("avatarUrl") ?: ""
+            val first = snapshot.getString("firstName") ?: ""
+            val last = snapshot.getString("lastName") ?: ""
+            val fn = listOf(first, last).filter { it.isNotBlank() }.joinToString(" ")
+            val disp = (snapshot.getString("displayName") ?: fn).ifBlank { _groupName.value }
+            val org = snapshot.getString("organization") ?: snapshot.getString("company") ?: ""
+
+            _otherUserPhotoUrl.value = photo
+            _otherUserFirstName.value = if (first.isNotBlank()) first else disp.split(" ").firstOrNull().orEmpty()
+            _otherUserName.value = disp
+            _otherUserOrg.value = org
+
+            if (_isOneToOne.value) {
+                _groupName.value = disp
+                if (photo.isNotBlank()) {
+                    _groupPhotoUrl.value = photo
+                }
+            }
+        }
+
+        // 2. Private Nickname given by current user to otherUid
+        if (currentUid.isNotBlank()) {
+            db.collection("users").document(currentUid)
+                .collection("nicknames").document(otherUid)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null || snapshot == null) return@addSnapshotListener
+                    val nick = if (snapshot.exists()) snapshot.getString("nickname") ?: "" else ""
+                    _otherUserNickname.value = nick
+                }
+
+            // 3. Block status
+            db.collection("blockedUsers").document(currentUid)
+                .collection("blocked").document(otherUid)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null || snapshot == null) return@addSnapshotListener
+                    _isOtherUserBlocked.value = snapshot.exists()
+                }
+        }
+    }
+
+    fun saveNickname(context: Context, otherUid: String, nicknameText: String, onDone: () -> Unit = {}) {
+        val currentUid = auth.currentUser?.uid ?: return
+        if (otherUid.isBlank()) return
+
+        val trimmed = nicknameText.trim().take(30)
+        val nicknameDocRef = db.collection("users").document(currentUid)
+            .collection("nicknames").document(otherUid)
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (trimmed.isNotBlank()) {
+                    nicknameDocRef.set(
+                        mapOf(
+                            "nickname" to trimmed,
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        ),
+                        SetOptions.merge()
+                    ).await()
+                } else {
+                    nicknameDocRef.delete().await()
+                }
+
+                _otherUserNickname.value = trimmed
+
+                // Update local Room database HomeEntry subtitle so Home screen row subtitle, Home search & Chat top bar update at once
+                val dao = AppDatabase.getDatabase(context).reminderDao()
+                val entries = dao.getAllHomeEntriesList()
+                val entry = entries.find { it.id.toString() == currentGroupId || it.title.equals(_otherUserName.value, ignoreCase = true) }
+                if (entry != null) {
+                    val updatedEntry = entry.copy(subtitle = if (trimmed.isNotBlank()) trimmed else "Direct")
+                    dao.insertHomeEntry(updatedEntry)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            withContext(Dispatchers.Main) {
+                onDone()
+            }
+        }
+    }
+
+    fun blockUser(otherUid: String, otherName: String, otherOrg: String, onDone: () -> Unit = {}) {
+        val currentUid = auth.currentUser?.uid ?: return
+        if (otherUid.isBlank()) return
+        val docData = mapOf(
+            "uid" to otherUid,
+            "name" to otherName,
+            "organization" to otherOrg,
+            "createdAt" to FieldValue.serverTimestamp()
+        )
+        db.collection("blockedUsers").document(currentUid)
+            .collection("blocked").document(otherUid)
+            .set(docData, SetOptions.merge())
+            .addOnSuccessListener {
+                _isOtherUserBlocked.value = true
+                onDone()
+            }
+    }
+
+    fun unblockUser(otherUid: String, onDone: () -> Unit = {}) {
+        val currentUid = auth.currentUser?.uid ?: return
+        if (otherUid.isBlank()) return
+        db.collection("blockedUsers").document(currentUid)
+            .collection("blocked").document(otherUid)
+            .delete()
+            .addOnSuccessListener {
+                _isOtherUserBlocked.value = false
+                onDone()
+            }
+    }
+
+    fun clearChatLocally(context: Context, groupId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val dao = AppDatabase.getDatabase(context).reminderDao()
+            dao.clearChatMessagesForGroup(groupId)
+        }
     }
 
     fun searchUserToAdd(query: String) {

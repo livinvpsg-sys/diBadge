@@ -12,6 +12,10 @@ fun formatBadgeNumber(code: String): String {
     return "${clean.substring(0, 3)} ${clean.substring(3, 6)} ${clean.substring(6, 9)}"
 }
 
+fun normalizeBadgeNumber(code: String): String {
+    return code.uppercase().replace(" ", "").replace("-", "").trim()
+}
+
 fun generateBadgeNumber(): String {
     val random = SecureRandom()
     var code: String

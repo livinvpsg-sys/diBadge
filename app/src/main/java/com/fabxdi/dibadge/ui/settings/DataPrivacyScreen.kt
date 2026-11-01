@@ -13,18 +13,24 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import com.fabxdi.dibadge.util.FilePickerUtils
+import com.fabxdi.dibadge.util.SubscriptionManager
 import kotlinx.coroutines.launch
+import java.io.File
 
 @Composable
 fun DataPrivacyScreen(
     userEmail: String,
     onBack: () -> Unit,
-    onDeleteAccountConfirmed: () -> Unit
+    onOpenManageMedia: () -> Unit = {},
+    onDeleteAccountConfirmed: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -33,9 +39,16 @@ fun DataPrivacyScreen(
     var cacheSizeMb by remember { mutableIntStateOf(24) }
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
 
+    LaunchedEffect(Unit) {
+        SubscriptionManager.listenToSubscription(context)
+    }
+
+    val subscription by SubscriptionManager.subscriptionState.collectAsState()
+
     BackHandler(enabled = true, onBack = onBack)
 
     val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
     val primaryTextColor = colors.onBackground
     val secondaryTextColor = colors.onSurfaceVariant
     val cardBgColor = colors.surface
@@ -59,6 +72,69 @@ fun DataPrivacyScreen(
                 .padding(bottom = 32.dp)
         ) {
             Spacer(modifier = Modifier.height(12.dp))
+
+            // Card 0: Media on this phone
+            SettingsCard {
+                val localMediaSize = remember {
+                    val mediaFolder = File(context.filesDir, "media")
+                    if (mediaFolder.exists()) {
+                        mediaFolder.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
+                    } else 0L
+                }
+
+                SettingsRow(
+                    title = "Media on this phone",
+                    valueText = FilePickerUtils.formatFileSize(localMediaSize),
+                    onClick = onOpenManageMedia
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Storage Card for Free Users (1 GB limit thin progress bar)
+            if (!subscription.isPro) {
+                val usedStr = FilePickerUtils.formatFileSize(subscription.storageUsedBytes)
+                val progress = (subscription.storageUsedBytes.toFloat() / subscription.storageLimitBytes.toFloat()).coerceIn(0f, 1f)
+
+                SettingsCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Storage",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = primaryTextColor
+                            )
+                            Text(
+                                text = "$usedStr of 1 GB",
+                                fontSize = 14.sp,
+                                color = secondaryTextColor
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(4.dp),
+                            color = if (progress >= 0.8f) errorColor else diBadgeColors.accent,
+                            trackColor = colors.outline.copy(alpha = 0.3f)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+            }
 
             // Card 1: Data Export & Cache
             SettingsCard {

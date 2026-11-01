@@ -4,9 +4,11 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fabxdi.dibadge.data.AppDatabase
+import com.fabxdi.dibadge.data.ChecklistItem
 import com.fabxdi.dibadge.data.FormEntity
 import com.fabxdi.dibadge.data.FormLogosData
 import com.fabxdi.dibadge.data.FormQuestionData
+import com.fabxdi.dibadge.data.FormQuestionShowIf
 import com.fabxdi.dibadge.data.FormSigner
 import com.fabxdi.dibadge.data.FormStamp
 import com.fabxdi.dibadge.data.FormSubmissionEntity
@@ -382,6 +384,33 @@ fun encodeQuestionsToJson(questions: List<FormQuestionData>): String {
         obj.put("options", optArray)
         obj.put("hasWorkerBlock", q.hasWorkerBlock)
         obj.put("hasSupervisorBlock", q.hasSupervisorBlock)
+
+        // New fields
+        obj.put("allowNa", q.allowNa)
+        obj.put("requireRemarkOnNotOk", q.requireRemarkOnNotOk)
+
+        val itemsArray = JSONArray()
+        for (item in q.items) {
+            val itemObj = JSONObject()
+            itemObj.put("id", item.id)
+            itemObj.put("name", item.name)
+            itemObj.put("note", item.note)
+            itemsArray.put(itemObj)
+        }
+        obj.put("items", itemsArray)
+
+        obj.put("instructionText", q.instructionText)
+        obj.put("instructionStyle", q.instructionStyle)
+        obj.put("autoKind", q.autoKind)
+
+        if (q.showIf != null) {
+            val showIfObj = JSONObject()
+            showIfObj.put("questionId", q.showIf.questionId)
+            showIfObj.put("itemId", q.showIf.itemId)
+            showIfObj.put("equals", q.showIf.equals)
+            obj.put("showIf", showIfObj)
+        }
+
         array.put(obj)
     }
     return array.toString()
@@ -408,6 +437,43 @@ fun parseQuestionsFromJson(jsonStr: String): List<FormQuestionData> {
             val hasWorkerBlock = obj.optBoolean("hasWorkerBlock", true)
             val hasSupervisorBlock = obj.optBoolean("hasSupervisorBlock", true)
 
+            val allowNa = obj.optBoolean("allowNa", true)
+            val requireRemarkOnNotOk = obj.optBoolean("requireRemarkOnNotOk", true)
+
+            val itemsArray = obj.optJSONArray("items")
+            val items = mutableListOf<ChecklistItem>()
+            if (itemsArray != null) {
+                for (k in 0 until itemsArray.length()) {
+                    val itemObj = itemsArray.getJSONObject(k)
+                    items.add(
+                        ChecklistItem(
+                            id = itemObj.optString("id", UUID.randomUUID().toString()),
+                            name = itemObj.optString("name", ""),
+                            note = itemObj.optString("note", "")
+                        )
+                    )
+                }
+            } else if (type == "checklist" && options.isNotEmpty()) {
+                for (opt in options) {
+                    items.add(ChecklistItem(id = opt, name = opt))
+                }
+            }
+
+            val instructionText = obj.optString("instructionText", "")
+            val instructionStyle = obj.optString("instructionStyle", "plain")
+            val autoKind = obj.optString("autoKind", "project")
+
+            var showIf: FormQuestionShowIf? = null
+            val showIfObj = obj.optJSONObject("showIf")
+            if (showIfObj != null) {
+                val qId = showIfObj.optString("questionId")
+                val equals = showIfObj.optString("equals")
+                val itemId = if (showIfObj.has("itemId") && !showIfObj.isNull("itemId")) showIfObj.optString("itemId") else null
+                if (qId.isNotBlank() && equals.isNotBlank()) {
+                    showIf = FormQuestionShowIf(questionId = qId, itemId = itemId, equals = equals)
+                }
+            }
+
             list.add(
                 FormQuestionData(
                     id = if (id.isNullOrEmpty()) UUID.randomUUID().toString() else id,
@@ -416,7 +482,14 @@ fun parseQuestionsFromJson(jsonStr: String): List<FormQuestionData> {
                     isRequired = isRequired,
                     options = options,
                     hasWorkerBlock = hasWorkerBlock,
-                    hasSupervisorBlock = hasSupervisorBlock
+                    hasSupervisorBlock = hasSupervisorBlock,
+                    allowNa = allowNa,
+                    requireRemarkOnNotOk = requireRemarkOnNotOk,
+                    items = items,
+                    instructionText = instructionText,
+                    instructionStyle = instructionStyle,
+                    autoKind = autoKind,
+                    showIf = showIf
                 )
             )
         }

@@ -14,6 +14,9 @@ import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatMessage
 import com.fabxdi.dibadge.ui.home.home_entry.chat.stripGroupMention
 import com.fabxdi.dibadge.util.AlarmReceiver
 import com.fabxdi.dibadge.util.FilePickerUtils
+import com.fabxdi.dibadge.util.MediaCompressor
+import com.fabxdi.dibadge.ui.home.home_entry.chat.AttachmentCategory
+import com.fabxdi.dibadge.ui.home.home_entry.chat.getAttachmentCategory
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -326,9 +329,37 @@ class ChatViewModel : ViewModel() {
                         durationsMap[uriString]?.let { uploadedDurationsMap[uriString] = it }
                     } else {
                         try {
+                            val category = getAttachmentCategory(context, uri)
                             val fileName = FilePickerUtils.getFileName(context, uri).ifBlank { "${UUID.randomUUID()}" }
+
+                            val uploadUri: Uri
+                            if (category == AttachmentCategory.IMAGE) {
+                                val compResult = MediaCompressor.compressPhoto(context, uri)
+                                uploadUri = compResult.fullUri
+                                try {
+                                    val thumbRef = storage.reference.child("personalGroups/$groupId/chat_attachments/${msgId}_thumb_${fileName}")
+                                    thumbRef.putFile(compResult.thumbUri).await()
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            } else if (category == AttachmentCategory.VIDEO) {
+                                val compResult = MediaCompressor.compressVideo(context, uri)
+                                uploadUri = compResult.fullUri
+                                if (compResult.durationMs > 0L) {
+                                    uploadedDurationsMap[uriString] = compResult.durationMs
+                                }
+                                try {
+                                    val thumbRef = storage.reference.child("personalGroups/$groupId/chat_attachments/${msgId}_thumb_${fileName}")
+                                    thumbRef.putFile(compResult.thumbUri).await()
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            } else {
+                                uploadUri = uri
+                            }
+
                             val storageRef = storage.reference.child("personalGroups/$groupId/chat_attachments/$fileName")
-                            storageRef.putFile(uri).await()
+                            storageRef.putFile(uploadUri).await()
                             val downloadUrl = storageRef.downloadUrl.await().toString()
                             uploadedUrls.add(downloadUrl)
                             durationsMap[uriString]?.let { uploadedDurationsMap[downloadUrl] = it }

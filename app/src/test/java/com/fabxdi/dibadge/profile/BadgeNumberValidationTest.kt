@@ -6,6 +6,7 @@ import com.fabxdi.dibadge.util.BADGE_NUMBER_LETTERS
 import com.fabxdi.dibadge.util.formatBadgeNumber
 import com.fabxdi.dibadge.util.generateBadgeNumber
 import com.fabxdi.dibadge.util.isValidBadgeNumberFormat
+import com.fabxdi.dibadge.util.normalizeBadgeNumber
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -32,6 +33,14 @@ class BadgeNumberValidationTest {
         assertEquals("K7M 2X9 QD4", formatBadgeNumber("K7M2X9QD4"))
         assertEquals("ABC DEF GHK", formatBadgeNumber("abcdefghk"))
         assertEquals("K7M 2X9 QD4", formatBadgeNumber("K7M 2X9 QD4"))
+    }
+
+    @Test
+    fun testNormalizeBadgeNumber() {
+        assertEquals("WPFXHFLND", normalizeBadgeNumber("WPF XHF LND"))
+        assertEquals("WPFXHFLND", normalizeBadgeNumber("wpfxhflnd"))
+        assertEquals("WPFXHFLND", normalizeBadgeNumber("WPF-XHF-LND"))
+        assertEquals("K7M2X9QD4", normalizeBadgeNumber("  k7m 2x9 qd4  "))
     }
 
     @Test

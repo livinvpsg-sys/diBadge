@@ -138,6 +138,15 @@ fun ProfileScreen(
         viewModel.observeNetworkAndAutoRetry(context)
     }
 
+    val verificationMsg by viewModel.verificationUpdateMessage.collectAsState()
+    LaunchedEffect(verificationMsg) {
+        val msg = verificationMsg
+        if (!msg.isNullOrBlank()) {
+            snackbarMessage = msg
+            viewModel.clearVerificationUpdateMessage()
+        }
+    }
+
     val isSaveEnabled = viewModel.isSaveEnabled()
 
     val onPerformSave = {
@@ -318,21 +327,23 @@ fun ProfileScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // CARD 3: Bio (after Nickname)
-                    ProfileBioCard(
+                    // CARD 3: Work (Organization, Role)
+                    ProfileWorkCard(
                         profileData = profileData,
                         viewModel = viewModel,
                         isSaving = isSaving,
                         cardBgColor = cardBgColor,
-                        primaryTextColor = primaryTextColor,
+                        dividerColor = dividerColor,
                         secondaryTextColor = secondaryTextColor,
-                        tabInactiveColor = tabInactiveColor,
-                        tealAccent = tealAccent
+                        focusManager = focusManager,
+                        onShowToast = { msg ->
+                            snackbarMessage = msg
+                        }
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // CARD 4: Email, Phone, Country, Birthday (after Bio)
+                    // CARD 4: Contact (Email, Phone, Country, Birthday)
                     ProfileContactCard(
                         profileData = profileData,
                         viewModel = viewModel,
@@ -348,14 +359,15 @@ fun ProfileScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // CARD 5: Work (Organization, Role)
-                    ProfileWorkCard(
+                    // CARD 5: Bio
+                    ProfileBioCard(
                         profileData = profileData,
                         viewModel = viewModel,
                         isSaving = isSaving,
                         cardBgColor = cardBgColor,
-                        dividerColor = dividerColor,
-                        focusManager = focusManager
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        tealAccent = tealAccent
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))

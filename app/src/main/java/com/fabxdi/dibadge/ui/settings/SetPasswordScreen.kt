@@ -567,3 +567,183 @@ fun SetPasswordScreen(
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SetPasswordSheet(
+    userEmail: String,
+    onSaveSuccess: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val auth = FirebaseAuth.getInstance()
+    val coroutineScope = rememberCoroutineScope()
+
+    var newPassword by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var isNewPasswordVisible by remember { mutableStateOf(false) }
+    var isConfirmPasswordVisible by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isSaving by remember { mutableStateOf(false) }
+
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val cardBgColor = colors.surface
+    val outlineColor = colors.outline
+    val tealAccent = diBadgeColors.accent
+    val errorColor = colors.error
+
+    val isMinLengthMet = newPassword.length >= 6
+    val isMatch = newPassword.isNotEmpty() && confirmPassword.isNotEmpty() && newPassword == confirmPassword
+    val canSave = isMinLengthMet && isMatch && !isSaving
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        containerColor = cardBgColor,
+        scrimColor = Color.Black.copy(alpha = 0.45f),
+        tonalElevation = 0.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = 24.dp, vertical = 12.dp)
+                .padding(bottom = 20.dp)
+        ) {
+            Text(
+                text = "Set a password",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = primaryTextColor
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "You can use this password to sign in on other devices with your email.",
+                fontSize = 13.sp,
+                color = secondaryTextColor
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedTextField(
+                value = newPassword,
+                onValueChange = { newPassword = it },
+                label = { Text("New password", fontSize = 13.sp) },
+                singleLine = true,
+                visualTransformation = if (isNewPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { isNewPasswordVisible = !isNewPasswordVisible }) {
+                        Icon(
+                            imageVector = if (isNewPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                            contentDescription = null,
+                            tint = secondaryTextColor
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = tealAccent,
+                    unfocusedBorderColor = outlineColor,
+                    focusedLabelColor = tealAccent,
+                    unfocusedLabelColor = secondaryTextColor
+                )
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedTextField(
+                value = confirmPassword,
+                onValueChange = { confirmPassword = it },
+                label = { Text("Confirm password", fontSize = 13.sp) },
+                singleLine = true,
+                visualTransformation = if (isConfirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { isConfirmPasswordVisible = !isConfirmPasswordVisible }) {
+                        Icon(
+                            imageVector = if (isConfirmPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                            contentDescription = null,
+                            tint = secondaryTextColor
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = tealAccent,
+                    unfocusedBorderColor = outlineColor,
+                    focusedLabelColor = tealAccent,
+                    unfocusedLabelColor = secondaryTextColor
+                )
+            )
+
+            if (errorMessage != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = errorMessage!!,
+                    fontSize = 13.sp,
+                    color = errorColor
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Cancel",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = secondaryTextColor,
+                    modifier = Modifier
+                        .clickable { onDismiss() }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Text(
+                    text = if (isSaving) "Saving..." else "Save",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (canSave) tealAccent else secondaryTextColor.copy(alpha = 0.40f),
+                    modifier = Modifier
+                        .clickable(enabled = canSave) {
+                            if (canSave) {
+                                isSaving = true
+                                errorMessage = null
+                                coroutineScope.launch {
+                                    try {
+                                        val user = auth.currentUser
+                                        val emailStr = user?.email.orEmpty().ifBlank { userEmail }
+                                        if (user != null && emailStr.isNotBlank()) {
+                                            val cred = EmailAuthProvider.getCredential(emailStr, newPassword)
+                                            user.linkWithCredential(cred)
+                                            onSaveSuccess()
+                                            onDismiss()
+                                        } else {
+                                            errorMessage = "Could not link password. Please try again."
+                                            isSaving = false
+                                        }
+                                    } catch (e: Exception) {
+                                        errorMessage = e.message ?: "Failed to set password"
+                                        isSaving = false
+                                    }
+                                }
+                            }
+                        }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
+        }
+    }
+}

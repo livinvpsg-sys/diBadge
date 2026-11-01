@@ -8,8 +8,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -18,23 +16,30 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.ui.theme.AppThemeMode
 import com.fabxdi.dibadge.viewmodel.ThemeViewModel
+import com.fabxdi.dibadge.viewmodel.ToDoViewModel
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.launch
 
 enum class SettingsSubPage {
     MAIN,
     SUBSCRIPTION,
+    LINKED_DEVICES,
     SOUNDS_VIBRATION,
     PASSCODE,
     CREATE_PASSCODE,
     BLOCKED_USERS,
     DATA_PRIVACY,
+    DRIVE_BACKUP,
+    MANAGE_MEDIA,
     SET_PASSWORD
 }
 
 @Composable
 fun SettingsScreen(
     userEmail: String = "",
+    isOrganisationAccount: Boolean = false,
     onBack: () -> Unit,
     onSignOut: () -> Unit = {},
     themeViewModel: ThemeViewModel = viewModel()
@@ -44,6 +49,35 @@ fun SettingsScreen(
 
     var activeSubPage by remember { mutableStateOf(SettingsSubPage.MAIN) }
     var showThemeSheet by remember { mutableStateOf(false) }
+    var showSetPasswordSheet by remember { mutableStateOf(false) }
+    var showLinkedDevicesScanner by remember { mutableStateOf(false) }
+
+    val currentUid = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
+    var linkedDevicesCount by remember { mutableIntStateOf(0) }
+    var isHideFromSearch by remember { mutableStateOf(false) }
+    var backupFrequency by remember { mutableStateOf("Weekly") }
+
+    LaunchedEffect(currentUid) {
+        if (currentUid.isNotBlank()) {
+            val db = FirebaseFirestore.getInstance()
+
+            // 1. Linked Devices Count
+            db.collection("users").document(currentUid)
+                .collection("linkedDevices")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null || snapshot == null) return@addSnapshotListener
+                    linkedDevicesCount = snapshot.documents.size
+                }
+
+            // 2. Hide from Search & Backup settings
+            db.collection("users").document(currentUid)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
+                    isHideFromSearch = snapshot.getBoolean("hideFromSearch") ?: false
+                    backupFrequency = snapshot.getString("backupFrequency") ?: "Weekly"
+                }
+        }
+    }
 
     val passcodePrefs = remember(context) { context.getSharedPreferences("passcode_prefs", Context.MODE_PRIVATE) }
     var isPasscodeOn by remember { mutableStateOf(passcodePrefs.getString("passcode_hash", null) != null) }
@@ -52,7 +86,9 @@ fun SettingsScreen(
     val coroutineScope = rememberCoroutineScope()
 
     BackHandler(enabled = true) {
-        if (activeSubPage != SettingsSubPage.MAIN) {
+        if (showLinkedDevicesScanner) {
+            showLinkedDevicesScanner = false
+        } else if (activeSubPage != SettingsSubPage.MAIN) {
             activeSubPage = SettingsSubPage.MAIN
         } else {
             onBack()
@@ -62,9 +98,27 @@ fun SettingsScreen(
     when (activeSubPage) {
         SettingsSubPage.SUBSCRIPTION -> {
             SubscriptionScreen(
-                currentPlanName = "Free",
                 onBack = { activeSubPage = SettingsSubPage.MAIN }
             )
+            return
+        }
+        SettingsSubPage.LINKED_DEVICES -> {
+            if (showLinkedDevicesScanner) {
+                LinkedDevicesScannerScreen(
+                    userUid = currentUid,
+                    onBack = { showLinkedDevicesScanner = false },
+                    onDeviceLinkedSuccessfully = {
+                        showLinkedDevicesScanner = false
+                    }
+                )
+            } else {
+                LinkedDevicesScreen(
+                    userUid = currentUid,
+                    isOrganisationAccount = isOrganisationAccount,
+                    onBack = { activeSubPage = SettingsSubPage.MAIN },
+                    onOpenScanner = { showLinkedDevicesScanner = true }
+                )
+            }
             return
         }
         SettingsSubPage.SOUNDS_VIBRATION -> {
@@ -102,9 +156,25 @@ fun SettingsScreen(
             DataPrivacyScreen(
                 userEmail = userEmail,
                 onBack = { activeSubPage = SettingsSubPage.MAIN },
+                onOpenManageMedia = { activeSubPage = SettingsSubPage.MANAGE_MEDIA },
                 onDeleteAccountConfirmed = {
                     onSignOut()
                 }
+            )
+            return
+        }
+        SettingsSubPage.DRIVE_BACKUP -> {
+            DriveBackupScreen(
+                onBack = { activeSubPage = SettingsSubPage.MAIN }
+            )
+            return
+        }
+        SettingsSubPage.MANAGE_MEDIA -> {
+            val toDoViewModel: ToDoViewModel = viewModel()
+            val homeEntries by toDoViewModel.allHomeEntries.collectAsState(initial = emptyList())
+            ManageMediaStorageScreen(
+                homeEntries = homeEntries,
+                onBack = { activeSubPage = SettingsSubPage.DATA_PRIVACY }
             )
             return
         }
@@ -156,31 +226,45 @@ fun SettingsScreen(
         ) {
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Card 0: Subscription
+            // Card 1: Subscription, Linked devices, Back up
             SettingsCard {
                 SettingsRow(
                     title = "Subscription",
-                    iconVector = Icons.Outlined.Star,
                     valueText = "Free",
                     onClick = { activeSubPage = SettingsSubPage.SUBSCRIPTION }
+                )
+
+                if (!isOrganisationAccount) {
+                    HorizontalDivider(thickness = 1.dp, color = colors.outline)
+
+                    SettingsRow(
+                        title = "Linked devices",
+                        valueText = if (linkedDevicesCount > 0) linkedDevicesCount.toString() else null,
+                        onClick = { activeSubPage = SettingsSubPage.LINKED_DEVICES }
+                    )
+                }
+
+                HorizontalDivider(thickness = 1.dp, color = colors.outline)
+
+                SettingsRow(
+                    title = "Back up",
+                    valueText = backupFrequency,
+                    onClick = { activeSubPage = SettingsSubPage.DRIVE_BACKUP }
                 )
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Card 1: Theme
+            // Card 2: Theme, Sounds and vibration, Notifications
             SettingsCard {
                 SettingsRow(
                     title = "Theme",
                     valueText = currentThemeLabel,
                     onClick = { showThemeSheet = true }
                 )
-            }
 
-            Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(thickness = 1.dp, color = colors.outline)
 
-            // Card 2: Sounds and vibration & Notifications
-            SettingsCard {
                 SettingsRow(
                     title = "Sounds and vibration",
                     onClick = { activeSubPage = SettingsSubPage.SOUNDS_VIBRATION }
@@ -206,7 +290,7 @@ fun SettingsScreen(
 
             // Card 3: Privacy & Security
             SettingsCard {
-                // Passcode Row
+                // 1. Passcode Row
                 SettingsRow(
                     title = "Passcode",
                     showChevron = false,
@@ -237,18 +321,53 @@ fun SettingsScreen(
 
                 HorizontalDivider(thickness = 1.dp, color = colors.outline)
 
-                val currentUser = FirebaseAuth.getInstance().currentUser
-                val hasPassword = currentUser?.providerData?.any { it.providerId == "password" } == true
-
-                // Set password / Change password
+                // 2. Hide from Search Row
                 SettingsRow(
-                    title = if (hasPassword) "Change password" else "Set password",
-                    onClick = { activeSubPage = SettingsSubPage.SET_PASSWORD }
+                    title = "Hide from search",
+                    subtitle = "Others can find you only by badge number",
+                    showChevron = false,
+                    onClick = {
+                        val toggle = !isHideFromSearch
+                        isHideFromSearch = toggle
+                        if (currentUid.isNotBlank()) {
+                            FirebaseFirestore.getInstance().collection("users").document(currentUid)
+                                .set(mapOf("hideFromSearch" to toggle), SetOptions.merge())
+                        }
+                    },
+                    trailingContent = {
+                        SettingsSwitch(
+                            checked = isHideFromSearch,
+                            onCheckedChange = { toggle ->
+                                isHideFromSearch = toggle
+                                if (currentUid.isNotBlank()) {
+                                    FirebaseFirestore.getInstance().collection("users").document(currentUid)
+                                        .set(mapOf("hideFromSearch" to toggle), SetOptions.merge())
+                                }
+                            }
+                        )
+                    }
                 )
 
                 HorizontalDivider(thickness = 1.dp, color = colors.outline)
 
-                // Blocked users
+                val currentUser = FirebaseAuth.getInstance().currentUser
+                val hasPassword = currentUser?.providerData?.any { it.providerId == "password" } == true
+
+                // 3. Set password / Change password
+                SettingsRow(
+                    title = if (hasPassword) "Change password" else "Set password",
+                    onClick = {
+                        if (hasPassword) {
+                            activeSubPage = SettingsSubPage.SET_PASSWORD
+                        } else {
+                            showSetPasswordSheet = true
+                        }
+                    }
+                )
+
+                HorizontalDivider(thickness = 1.dp, color = colors.outline)
+
+                // 4. Blocked users
                 SettingsRow(
                     title = "Blocked users",
                     onClick = { activeSubPage = SettingsSubPage.BLOCKED_USERS }
@@ -256,7 +375,7 @@ fun SettingsScreen(
 
                 HorizontalDivider(thickness = 1.dp, color = colors.outline)
 
-                // Data and privacy
+                // 5. Data and privacy
                 SettingsRow(
                     title = "Data and privacy",
                     onClick = { activeSubPage = SettingsSubPage.DATA_PRIVACY }
@@ -272,6 +391,18 @@ fun SettingsScreen(
                 themeViewModel.setThemeMode(mode)
             },
             onDismiss = { showThemeSheet = false }
+        )
+    }
+
+    if (showSetPasswordSheet) {
+        SetPasswordSheet(
+            userEmail = userEmail,
+            onSaveSuccess = {
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("Password set")
+                }
+            },
+            onDismiss = { showSetPasswordSheet = false }
         )
     }
 }
