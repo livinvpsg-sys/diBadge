@@ -3,6 +3,7 @@ package com.fabxdi.dibadge.ui.calendar
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -24,6 +25,8 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -62,6 +65,66 @@ fun getTaskStatus(task: GroupTaskEntity, today: LocalDate = LocalDate.now()): Ta
     }
 }
 
+/** First day a task covers. A task with no dates sits on the day it was created. */
+fun GroupTaskEntity.timelineStart(): LocalDate =
+    startDate ?: dueDate ?: Instant.ofEpochMilli(createdAt).atZone(ZoneId.systemDefault()).toLocalDate()
+
+/** Last day a task covers, never before its first day. */
+fun GroupTaskEntity.timelineEnd(): LocalDate {
+    val start = timelineStart()
+    val end = endDate ?: dueDate ?: start
+    return if (end.isBefore(start)) start else end
+}
+
+/** "17 Oct", "17–20 Oct" or "28 Oct – 3 Nov", so a range that crosses a month is never ambiguous. */
+fun formatScheduleRange(start: LocalDate, end: LocalDate): String {
+    val locale = Locale.getDefault()
+    val dayMonth = DateTimeFormatter.ofPattern("d MMM", locale)
+    val dayMonthYear = DateTimeFormatter.ofPattern("d MMM yyyy", locale)
+    return when {
+        start == end -> start.format(dayMonth)
+        start.year != end.year -> "${start.format(dayMonthYear)} – ${end.format(dayMonthYear)}"
+        start.month != end.month -> "${start.format(dayMonth)} – ${end.format(dayMonth)}"
+        else -> "${start.dayOfMonth}–${end.format(dayMonth)}"
+    }
+}
+
+/** Every month from the earliest to the latest task, always including the current month. */
+fun buildScheduleMonths(tasks: List<GroupTaskEntity>): List<YearMonth> {
+    val current = YearMonth.now()
+    val dates = tasks.flatMap { listOf(it.timelineStart(), it.timelineEnd()) }
+    val first = dates.minOrNull()?.let { YearMonth.from(it) }?.takeIf { it.isBefore(current) } ?: current
+    val last = dates.maxOrNull()?.let { YearMonth.from(it) }?.takeIf { it.isAfter(current) } ?: current
+    val list = mutableListOf<YearMonth>()
+    var m = first
+    while (!m.isAfter(last)) {
+        list.add(m)
+        m = m.plusMonths(1)
+    }
+    return list
+}
+
+/**
+ * Pager that opens on the current month and stays on the month you are viewing when
+ * tasks load or change and the list of months grows.
+ */
+@Composable
+fun rememberMonthPager(months: List<YearMonth>): PagerState {
+    var shown by remember { mutableStateOf(YearMonth.now()) }
+    val pagerState = rememberPagerState(
+        initialPage = months.indexOf(shown).coerceAtLeast(0),
+        pageCount = { months.size }
+    )
+    LaunchedEffect(months) {
+        val target = months.indexOf(shown)
+        if (target >= 0 && target != pagerState.currentPage) pagerState.scrollToPage(target)
+    }
+    LaunchedEffect(pagerState.settledPage) {
+        months.getOrNull(pagerState.settledPage)?.let { shown = it }
+    }
+    return pagerState
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupScheduleScreen(
@@ -81,7 +144,9 @@ fun GroupScheduleScreen(
 
     var showNewScheduleSheet by remember { mutableStateOf(false) }
     var initialDateForNewTask by remember { mutableStateOf(LocalDate.now()) }
-    var selectedTaskForPreview by remember { mutableStateOf<GroupTaskEntity?>(null) }
+    // Keep only the id so the sheet always shows the latest copy of the task
+    var selectedTaskId by remember { mutableStateOf<String?>(null) }
+    val selectedTaskForPreview = tasks.firstOrNull { it.id == selectedTaskId }
     var selectedDayForSheet by remember { mutableStateOf<LocalDate?>(null) }
 
     val currentUser = FirebaseAuth.getInstance().currentUser
@@ -97,27 +162,10 @@ fun GroupScheduleScreen(
     val tealAccent = diBadgeColors.accent
     val isDark = diBadgeColors.isDark
 
-    val monthsList = remember(tasks) {
-        val dates = tasks.mapNotNull { it.startDate ?: it.dueDate } + tasks.mapNotNull { it.endDate ?: it.dueDate }
-        if (dates.isEmpty()) {
-            listOf(YearMonth.now())
-        } else {
-            val minDate = dates.minOrNull() ?: LocalDate.now()
-            val maxDate = dates.maxOrNull() ?: LocalDate.now()
-            val startYM = YearMonth.from(minDate)
-            val endYM = YearMonth.from(maxDate)
-            val list = mutableListOf<YearMonth>()
-            var curr = startYM
-            while (!curr.isAfter(endYM)) {
-                list.add(curr)
-                curr = curr.plusMonths(1)
-            }
-            list.ifEmpty { listOf(YearMonth.now()) }
-        }
-    }
-
-    val pagerState = rememberPagerState(initialPage = 0, pageCount = { monthsList.size })
+    val monthsList = remember(tasks) { buildScheduleMonths(tasks) }
+    val pagerState = rememberMonthPager(monthsList)
     val currentYearMonth = monthsList.getOrNull(pagerState.currentPage) ?: YearMonth.now()
+    val thisMonthIndex = monthsList.indexOf(YearMonth.now())
 
     Scaffold(
         topBar = {
@@ -128,7 +176,7 @@ fun GroupScheduleScreen(
                     .statusBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 4.dp)
             ) {
-                // Top Bar: Back arrow and single heading "Schedule" (18sp semibold)
+                // Top bar: back arrow, "Schedule" and the group name under it
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -143,17 +191,42 @@ fun GroupScheduleScreen(
 
                     Spacer(modifier = Modifier.width(4.dp))
 
-                    Text(
-                        text = "Schedule",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = primaryTextColor
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Schedule",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = primaryTextColor
+                        )
+                        if (groupName.isNotBlank()) {
+                            Text(
+                                text = groupName,
+                                fontSize = 13.sp,
+                                color = secondaryTextColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    if (thisMonthIndex >= 0 && pagerState.currentPage != thisMonthIndex) {
+                        Text(
+                            text = "Today",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = tealAccent,
+                            modifier = Modifier
+                                .clickable {
+                                    coroutineScope.launch { pagerState.animateScrollToPage(thisMonthIndex) }
+                                }
+                                .padding(horizontal = 12.dp, vertical = 10.dp)
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                // Month Row: "October 2026" (15sp semibold, centered, no arrows)
+                // Month row: previous, "October 2026", next
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -161,13 +234,47 @@ fun GroupScheduleScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
+                    val canGoBack = pagerState.currentPage > 0
+                    val canGoForward = pagerState.currentPage < monthsList.size - 1
+                    IconButton(
+                        onClick = {
+                            coroutineScope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
+                        },
+                        enabled = canGoBack,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Previous month",
+                            tint = if (canGoBack) secondaryTextColor else secondaryTextColor.copy(alpha = 0.3f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
                     val monthFormatter = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault())
                     Text(
                         text = currentYearMonth.format(monthFormatter),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = primaryTextColor
+                        color = primaryTextColor,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.widthIn(min = 140.dp)
                     )
+
+                    IconButton(
+                        onClick = {
+                            coroutineScope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+                        },
+                        enabled = canGoForward,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "Next month",
+                            tint = if (canGoForward) secondaryTextColor else secondaryTextColor.copy(alpha = 0.3f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         },
@@ -207,7 +314,7 @@ fun GroupScheduleScreen(
                     selectedDayForSheet = if (selectedDayForSheet == date) null else date
                 },
                 onTaskClick = { task ->
-                    selectedTaskForPreview = task
+                    selectedTaskId = task.id
                 }
             )
         }
@@ -253,21 +360,19 @@ fun GroupScheduleScreen(
                 }
             },
             onTaskDeleted = {
-                selectedTaskForPreview = null
+                selectedTaskId = null
                 coroutineScope.launch {
                     snackbarHostState.showSnackbar("Task deleted")
                 }
             },
-            onDismiss = { selectedTaskForPreview = null }
+            onDismiss = { selectedTaskId = null }
         )
     }
 
     if (selectedDayForSheet != null) {
         val dayDate = selectedDayForSheet!!
         val dayTasks = tasks.filter { t ->
-            val start = t.startDate ?: t.dueDate ?: t.createdAt.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() }
-            val end = t.endDate ?: t.dueDate ?: start
-            !dayDate.isBefore(start) && !dayDate.isAfter(end)
+            !dayDate.isBefore(t.timelineStart()) && !dayDate.isAfter(t.timelineEnd())
         }
 
         val dayFormatter = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())
@@ -316,22 +421,6 @@ fun GroupScheduleScreen(
                         fontSize = 14.sp,
                         color = secondaryTextColor
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    if (canUserManage) {
-                        Text(
-                            text = "Add task",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = tealAccent,
-                            modifier = Modifier
-                                .clickable {
-                                    initialDateForNewTask = dayDate
-                                    selectedDayForSheet = null
-                                    showNewScheduleSheet = true
-                                }
-                                .padding(vertical = 4.dp)
-                        )
-                    }
                 } else {
                     Column(
                         modifier = Modifier
@@ -341,23 +430,17 @@ fun GroupScheduleScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         dayTasks.forEach { task ->
-                            val start = task.startDate ?: task.dueDate ?: LocalDate.now()
-                            val end = task.endDate ?: task.dueDate ?: start
-                            val dateRangeStr = if (start == end) {
-                                start.format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))
-                            } else {
-                                "${start.format(DateTimeFormatter.ofPattern("d", Locale.getDefault()))}–${end.format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))}"
-                            }
+                            val dateRangeStr = formatScheduleRange(task.timelineStart(), task.timelineEnd())
 
                             val taskStatus = getTaskStatus(task)
-                            val statusColor = getStatusTextColor(taskStatus)
+                            val statusColor = getStatusTextColor(taskStatus, isDark, tealAccent)
 
                             Surface(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
                                         selectedDayForSheet = null
-                                        selectedTaskForPreview = task
+                                        selectedTaskId = task.id
                                     },
                                 shape = RoundedCornerShape(10.dp),
                                 color = colors.background,
@@ -373,7 +456,7 @@ fun GroupScheduleScreen(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = task.title,
-                                            fontSize = 13.sp,
+                                            fontSize = 14.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             color = primaryTextColor,
                                             maxLines = 1,
@@ -382,7 +465,7 @@ fun GroupScheduleScreen(
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             text = dateRangeStr,
-                                            fontSize = 11.sp,
+                                            fontSize = 12.sp,
                                             color = secondaryTextColor
                                         )
                                     }
@@ -390,11 +473,11 @@ fun GroupScheduleScreen(
                                     Spacer(modifier = Modifier.width(8.dp))
 
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        StatusIcon(status = taskStatus, modifier = Modifier.size(12.dp))
+                                        StatusIcon(status = taskStatus, isDark = isDark, tealAccent = tealAccent, modifier = Modifier.size(12.dp))
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text(
                                             text = taskStatus.name.lowercase().replaceFirstChar { it.uppercase() },
-                                            fontSize = 11.sp,
+                                            fontSize = 12.sp,
                                             color = statusColor
                                         )
                                     }
@@ -402,6 +485,23 @@ fun GroupScheduleScreen(
                             }
                         }
                     }
+                }
+
+                if (canUserManage) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Add task",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = tealAccent,
+                        modifier = Modifier
+                            .clickable {
+                                initialDateForNewTask = dayDate
+                                selectedDayForSheet = null
+                                showNewScheduleSheet = true
+                            }
+                            .padding(vertical = 8.dp)
+                    )
                 }
             }
         }
@@ -444,9 +544,7 @@ fun MonthTimelineView(
 
     val monthTasks = remember(tasks, yearMonth) {
         tasks.filter { t ->
-            val start = t.startDate ?: t.dueDate ?: monthStart
-            val end = t.endDate ?: t.dueDate ?: start
-            !start.isAfter(monthEnd) && !end.isBefore(monthStart)
+            !t.timelineStart().isAfter(monthEnd) && !t.timelineEnd().isBefore(monthStart)
         }
     }
 
@@ -454,8 +552,8 @@ fun MonthTimelineView(
         if (monthTasks.isEmpty()) return@remember emptyList<TaskLaneAssignment>()
 
         val prep = monthTasks.map { task ->
-            val rawStart = task.startDate ?: task.dueDate ?: monthStart
-            val rawEnd = task.endDate ?: task.dueDate ?: rawStart
+            val rawStart = task.timelineStart()
+            val rawEnd = task.timelineEnd()
             val effStart = if (rawStart.isBefore(monthStart)) monthStart else rawStart
             val effEnd = if (rawEnd.isAfter(monthEnd)) monthEnd else rawEnd
 
@@ -563,200 +661,206 @@ fun MonthTimelineView(
     ) {
         val density = LocalDensity.current
         val totalAvailableHeightPx = with(density) { this@BoxWithConstraints.maxHeight.toPx() }
-        val rowHeightPx = max(density.density * 16f, totalAvailableHeightPx / daysInMonth)
+        // Rows fill the screen, but never get smaller than 22dp. When a month doesn't fit
+        // (small screen, landscape, large fonts) the page scrolls so every day stays reachable.
+        val rowHeightPx = max(density.density * 22f, totalAvailableHeightPx / daysInMonth)
         val rowHeightDp = with(density) { rowHeightPx.toDp() }
 
-        Row(modifier = Modifier.fillMaxSize()) {
-            // Left Column: Days (52dp wide)
-            Column(
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+        ) {
+            Row(
                 modifier = Modifier
-                    .width(52.dp)
-                    .fillMaxHeight()
+                    .fillMaxWidth()
+                    .height(rowHeightDp * daysInMonth)
             ) {
-                days.forEach { date ->
-                    val isWeekend = date.dayOfWeek.value >= 6
-                    val isToday = date == today
-                    val isSelected = date == selectedDay
-                    val dayBg = when {
-                        isSelected -> if (isDark) Color(0xFF2C323A) else Color(0xFFDDE2E8)
-                        isWeekend -> if (isDark) Color(0xFF1E242B) else Color(0xFFEFEFF2)
-                        else -> Color.Transparent
-                    }
+                // Left Column: Days (56dp wide)
+                Column(
+                    modifier = Modifier
+                        .width(56.dp)
+                        .fillMaxHeight()
+                ) {
+                    days.forEach { date ->
+                        val isWeekend = date.dayOfWeek.value >= 6
+                        val isToday = date == today
+                        val isSelected = date == selectedDay
+                        val dayBg = when {
+                            isSelected -> if (isDark) Color(0xFF2C323A) else Color(0xFFDDE2E8)
+                            isWeekend -> if (isDark) Color(0xFF1E242B) else Color(0xFFEFEFF2)
+                            else -> Color.Transparent
+                        }
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(rowHeightDp)
-                            .background(dayBg)
-                            .clickable { onDayClick(date) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        val dayDescription = date.format(DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.getDefault())) +
+                                if (isToday) ", today" else ""
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(rowHeightDp)
+                                .background(dayBg)
+                                .semantics(mergeDescendants = true) { contentDescription = dayDescription }
+                                .clickable { onDayClick(date) },
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(
-                                modifier = Modifier.size(width = 20.dp, height = 20.dp),
-                                contentAlignment = Alignment.Center
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                if (isToday) {
-                                    Surface(
-                                        modifier = Modifier.size(20.dp),
-                                        shape = CircleShape,
-                                        color = tealAccent
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = "${date.dayOfMonth}",
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Color.White,
-                                                textAlign = TextAlign.Center
-                                            )
+                                Box(
+                                    modifier = Modifier.size(width = 20.dp, height = 20.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isToday) {
+                                        Surface(
+                                            modifier = Modifier.size(20.dp),
+                                            shape = CircleShape,
+                                            color = primaryTextColor
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Text(
+                                                    text = "${date.dayOfMonth}",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isDark) Color(0xFF0E1114) else Color.White,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                            }
                                         }
+                                    } else {
+                                        Text(
+                                            text = "${date.dayOfMonth}",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (isWeekend) secondaryTextColor else primaryTextColor,
+                                            textAlign = TextAlign.Center
+                                        )
                                     }
-                                } else {
-                                    Text(
-                                        text = "${date.dayOfMonth}",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = if (isWeekend) secondaryTextColor else primaryTextColor,
-                                        textAlign = TextAlign.Center
-                                    )
                                 }
-                            }
 
-                            Text(
-                                text = date.dayOfWeek.name.take(3).lowercase().replaceFirstChar { it.uppercase() },
-                                fontSize = 9.sp,
-                                color = secondaryTextColor.copy(alpha = 0.7f),
-                                modifier = Modifier.width(22.dp)
-                            )
+                                Text(
+                                    text = date.dayOfWeek.name.take(3).lowercase().replaceFirstChar { it.uppercase() },
+                                    fontSize = 11.sp,
+                                    color = secondaryTextColor,
+                                    modifier = Modifier.width(28.dp)
+                                )
+                            }
                         }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(4.dp))
 
-            // Right Area: Task Timeline & Bars
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-            ) {
-                if (monthTasks.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = "No tasks this month",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = primaryTextColor
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = if (canUserManage) "Tap + to add a task" else "The owner or an admin adds the tasks",
-                                fontSize = 13.sp,
-                                color = secondaryTextColor
-                            )
-                        }
-                    }
-                } else {
-                    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                        val containerWidthDp = this.maxWidth
-                        val containerWidthPx = with(density) { containerWidthDp.toPx() }
-
-                        val lineRows = remember(laneAssignments) {
-                            val set = mutableSetOf<Int>()
-                            laneAssignments.forEach { assign ->
-                                set.add(assign.startRow)
-                                set.add(assign.endRow + 1)
-                            }
-                            set
-                        }
-
-                        // Horizontal lines ONLY at task dates
-                        Canvas(modifier = Modifier.fillMaxSize()) {
-                            lineRows.forEach { r ->
-                                val y = r * rowHeightPx
-                                drawLine(
-                                    color = outlineColor.copy(alpha = 0.45f),
-                                    start = Offset(0f, y),
-                                    end = Offset(size.width, y),
-                                    strokeWidth = 1.dp.toPx()
-                                )
-                            }
-                        }
-
-                        val isHorizontalSwipe = maxClusterLanes > 2
-                        val fixedLaneWidth = 52.dp
-                        val laneGap = 1.dp
-
-                        val calculatedLaneWidth = if (isHorizontalSwipe) {
-                            fixedLaneWidth
-                        } else {
-                            val avail = (containerWidthDp - 4.dp).coerceAtLeast(40.dp)
-                            (avail / max(1, maxClusterLanes)).coerceIn(40.dp, 52.dp)
-                        }
-
-                        val scrollState = rememberScrollState()
-
+                // Right Area: Task Timeline & Bars
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                ) {
+                    if (monthTasks.isEmpty()) {
                         Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .then(
-                                    if (isHorizontalSwipe) Modifier.horizontalScroll(scrollState)
-                                    else Modifier
-                                )
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxHeight()
-                                    .width(
-                                        if (isHorizontalSwipe) {
-                                            (maxClusterLanes * (fixedLaneWidth.value + laneGap.value)).dp + 16.dp
-                                        } else {
-                                            containerWidthDp
-                                        }
-                                    )
-                            ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "No tasks this month",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = primaryTextColor
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = if (canUserManage) "Tap + to add a task" else "The owner or an admin adds the tasks",
+                                    fontSize = 13.sp,
+                                    color = secondaryTextColor
+                                )
+                            }
+                        }
+                    } else {
+                        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                            val containerWidthDp = this.maxWidth
+                            val containerWidthPx = with(density) { containerWidthDp.toPx() }
+
+                            val lineRows = remember(laneAssignments) {
+                                val set = mutableSetOf<Int>()
                                 laneAssignments.forEach { assign ->
-                                    val status = getTaskStatus(assign.task, today)
-                                    val topOffset = (assign.startRow * rowHeightPx).let { with(density) { it.toDp() } }
-                                    val rawHeight = (assign.spanDays * rowHeightPx - 2f).let { with(density) { it.toDp() } }
-                                    val barHeight = if (rawHeight > 16.dp) rawHeight else 16.dp
+                                    set.add(assign.startRow)
+                                    set.add(assign.endRow + 1)
+                                }
+                                set
+                            }
 
-                                    val leftOffset = (assign.laneIndex * (calculatedLaneWidth.value + laneGap.value)).dp
-
-                                    TaskBarItem(
-                                        task = assign.task,
-                                        status = status,
-                                        width = calculatedLaneWidth,
-                                        height = barHeight,
-                                        hasTopChevron = assign.hasTopChevron,
-                                        hasBottomChevron = assign.hasBottomChevron,
-                                        isDark = isDark,
-                                        tealAccent = tealAccent,
-                                        onClick = { onTaskClick(assign.task) },
-                                        modifier = Modifier.offset(x = leftOffset, y = topOffset)
+                            // Horizontal lines ONLY at task dates
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                lineRows.forEach { r ->
+                                    val y = r * rowHeightPx
+                                    drawLine(
+                                        color = outlineColor.copy(alpha = 0.45f),
+                                        start = Offset(0f, y),
+                                        end = Offset(size.width, y),
+                                        strokeWidth = 1.dp.toPx()
                                     )
                                 }
                             }
-                        }
 
-                        if (isHorizontalSwipe) {
+                            val isHorizontalSwipe = maxClusterLanes > 2
+                            val fixedLaneWidth = 76.dp
+                            val laneGap = 1.dp
+
+                            val calculatedLaneWidth = if (isHorizontalSwipe) {
+                                fixedLaneWidth
+                            } else {
+                                val avail = (containerWidthDp - 4.dp).coerceAtLeast(40.dp)
+                                (avail / max(1, maxClusterLanes)).coerceIn(40.dp, 200.dp)
+                            }
+
+                            val scrollState = rememberScrollState()
+
                             Box(
                                 modifier = Modifier
-                                    .align(Alignment.BottomStart)
-                                    .padding(bottom = 2.dp)
-                                    .fillMaxWidth()
-                                    .height(3.dp)
-                                    .background(outlineColor.copy(alpha = 0.3f), CircleShape)
-                            )
+                                    .fillMaxSize()
+                                    .then(
+                                        if (isHorizontalSwipe) Modifier.horizontalScroll(scrollState)
+                                        else Modifier
+                                    )
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxHeight()
+                                        .width(
+                                            if (isHorizontalSwipe) {
+                                                (maxClusterLanes * (fixedLaneWidth.value + laneGap.value)).dp + 16.dp
+                                            } else {
+                                                containerWidthDp
+                                            }
+                                        )
+                                ) {
+                                    laneAssignments.forEach { assign ->
+                                        val status = getTaskStatus(assign.task, today)
+                                        val topOffset = (assign.startRow * rowHeightPx).let { with(density) { it.toDp() } }
+                                        val rawHeight = (assign.spanDays * rowHeightPx - 2f).let { with(density) { it.toDp() } }
+                                        val barHeight = if (rawHeight > 20.dp) rawHeight else 20.dp
+
+                                        val leftOffset = (assign.laneIndex * (calculatedLaneWidth.value + laneGap.value)).dp
+
+                                        TaskBarItem(
+                                            task = assign.task,
+                                            status = status,
+                                            width = calculatedLaneWidth,
+                                            height = barHeight,
+                                            hasTopChevron = assign.hasTopChevron,
+                                            hasBottomChevron = assign.hasBottomChevron,
+                                            isDark = isDark,
+                                            tealAccent = tealAccent,
+                                            dateRange = formatScheduleRange(assign.task.timelineStart(), assign.task.timelineEnd()),
+                                            onClick = { onTaskClick(assign.task) },
+                                            modifier = Modifier.offset(x = leftOffset, y = topOffset)
+                                        )
+                                    }
+                                }
+                            }
+
                         }
                     }
                 }
@@ -775,14 +879,16 @@ fun TaskBarItem(
     hasBottomChevron: Boolean,
     isDark: Boolean,
     tealAccent: Color,
+    dateRange: String = "",
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val (bgColor, textColor) = remember(status, isDark) {
         when (status) {
             TaskStatus.ONGOING -> {
-                if (isDark) Pair(Color(0xFF1F4A46), Color(0xFFBFE3DF))
-                else Pair(Color(0xFFBFE3DF), Color(0xFF1F4A46))
+                // Neutral and strongest, so what is happening now stands out without colour
+                if (isDark) Pair(Color(0xFF3A424C), Color(0xFFF0F3F5))
+                else Pair(Color(0xFFC9D0D8), Color(0xFF11161A))
             }
             TaskStatus.UPCOMING -> {
                 if (isDark) Pair(Color(0xFF243049), Color(0xFFDCE6FB))
@@ -793,19 +899,22 @@ fun TaskBarItem(
                 else Pair(Color(0xFFF4CFCB), Color(0xFF4A2623))
             }
             TaskStatus.COMPLETED -> {
-                if (isDark) Pair(Color(0xFF2A3037), Color(0xFFD6DBE0))
-                else Pair(Color(0xFFD6DBE0), Color(0xFF2A3037))
+                if (isDark) Pair(Color(0xFF1E242B), Color(0xFF8A9199))
+                else Pair(Color(0xFFE6E9ED), Color(0xFF65707A))
             }
         }
     }
 
-    val tapTargetHeight = if (height > 26.dp) height else 26.dp
+    val statusLabel = status.name.lowercase().replaceFirstChar { it.uppercase() }
 
     Box(
         modifier = modifier
             .width(width)
-            .height(tapTargetHeight)
-            .clickable { onClick() },
+            .height(height)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "${task.title}, $statusLabel, $dateRange"
+            }
+            .clickable(onClickLabel = "Open task") { onClick() },
         contentAlignment = Alignment.TopStart
     ) {
         Surface(
@@ -832,7 +941,7 @@ fun TaskBarItem(
 
                         Text(
                             text = task.title,
-                            fontSize = 10.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = textColor,
                             maxLines = if (height >= 38.dp) 3 else 1,
@@ -843,11 +952,9 @@ fun TaskBarItem(
 
                     if (height >= 48.dp) {
                         Spacer(modifier = Modifier.height(1.dp))
-                        val start = task.startDate ?: task.dueDate ?: LocalDate.now()
-                        val end = task.endDate ?: task.dueDate ?: start
                         Text(
-                            text = "${start.dayOfMonth}–${end.dayOfMonth}",
-                            fontSize = 8.5.sp,
+                            text = dateRange,
+                            fontSize = 10.sp,
                             color = textColor.copy(alpha = 0.75f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -936,7 +1043,7 @@ fun getStatusTextColor(status: TaskStatus, isDark: Boolean = true, tealAccent: C
     return when (status) {
         TaskStatus.COMPLETED -> Color(0xFF8A94A0)
         TaskStatus.DELAYED -> Color(0xFFD32F2F)
-        TaskStatus.ONGOING -> tealAccent
+        TaskStatus.ONGOING -> if (isDark) Color(0xFFF0F3F5) else Color(0xFF11161A)
         TaskStatus.UPCOMING -> if (isDark) Color(0xFF8FA9E6) else Color(0xFF3E5EA8)
     }
 }

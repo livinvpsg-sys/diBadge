@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.data.GroupTaskEntity
 import com.fabxdi.dibadge.ui.components.DiBadgeFab
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.GroupTaskViewModel
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
@@ -49,37 +50,21 @@ fun ScheduleScreen(
 
     var showNewTaskSheet by remember { mutableStateOf(false) }
     var initialDateForNewTask by remember { mutableStateOf(LocalDate.now()) }
-    var selectedTaskForPreview by remember { mutableStateOf<GroupTaskEntity?>(null) }
+    var selectedTaskId by remember { mutableStateOf<String?>(null) }
+    val selectedTaskForPreview = tasks.firstOrNull { it.id == selectedTaskId }
 
     val colors = MaterialTheme.colorScheme
     val primaryTextColor = colors.onBackground
     val secondaryTextColor = colors.onSurfaceVariant
     val cardBgColor = colors.surface
     val outlineColor = colors.outline
-    val tealAccent = Color(0xFF1F8A70)
-    val isDark = primaryTextColor.red > 0.5f
+    val tealAccent = DiBadgeTheme.colors.accent
+    val isDark = DiBadgeTheme.colors.isDark
 
-    val monthsList = remember(tasks) {
-        val dates = tasks.mapNotNull { it.startDate ?: it.dueDate } + tasks.mapNotNull { it.endDate ?: it.dueDate }
-        if (dates.isEmpty()) {
-            listOf(YearMonth.now())
-        } else {
-            val minDate = dates.minOrNull() ?: LocalDate.now()
-            val maxDate = dates.maxOrNull() ?: LocalDate.now()
-            val startYM = YearMonth.from(minDate)
-            val endYM = YearMonth.from(maxDate)
-            val list = mutableListOf<YearMonth>()
-            var curr = startYM
-            while (!curr.isAfter(endYM)) {
-                list.add(curr)
-                curr = curr.plusMonths(1)
-            }
-            list.ifEmpty { listOf(YearMonth.now()) }
-        }
-    }
-
-    val pagerState = rememberPagerState(pageCount = { monthsList.size })
+    val monthsList = remember(tasks) { buildScheduleMonths(tasks) }
+    val pagerState = rememberMonthPager(monthsList)
     val currentYearMonth = monthsList.getOrNull(pagerState.currentPage) ?: YearMonth.now()
+    val thisMonthIndex = monthsList.indexOf(YearMonth.now())
 
     var selectedDayForSheet by remember { mutableStateOf<LocalDate?>(null) }
 
@@ -111,7 +96,21 @@ fun ScheduleScreen(
                         fontWeight = FontWeight.SemiBold,
                         color = primaryTextColor
                     )
-                    Spacer(modifier = Modifier.size(44.dp))
+                    if (thisMonthIndex >= 0 && pagerState.currentPage != thisMonthIndex) {
+                        Text(
+                            text = "Today",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = tealAccent,
+                            modifier = Modifier
+                                .clickable {
+                                    coroutineScope.launch { pagerState.animateScrollToPage(thisMonthIndex) }
+                                }
+                                .padding(horizontal = 8.dp, vertical = 10.dp)
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.size(44.dp))
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -208,7 +207,7 @@ fun ScheduleScreen(
                     selectedDayForSheet = date
                 },
                 onTaskClick = { task ->
-                    selectedTaskForPreview = task
+                    selectedTaskId = task.id
                 }
             )
         }
@@ -253,12 +252,12 @@ fun ScheduleScreen(
                 }
             },
             onTaskDeleted = {
-                selectedTaskForPreview = null
+                selectedTaskId = null
                 coroutineScope.launch {
                     snackbarHostState.showSnackbar("Task deleted")
                 }
             },
-            onDismiss = { selectedTaskForPreview = null }
+            onDismiss = { selectedTaskId = null }
         )
     }
 }
