@@ -14,8 +14,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.SentimentSatisfiedAlt
+import androidx.compose.ui.res.painterResource
+import com.fabxdi.dibadge.R
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -438,7 +439,7 @@ fun CommentThreadSheet(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            painter = painterResource(id = R.drawable.ic_send_arrow),
                             contentDescription = "Post reply",
                             tint = if (canSend) tealAccent else dimTextColor,
                             modifier = Modifier.size(24.dp)

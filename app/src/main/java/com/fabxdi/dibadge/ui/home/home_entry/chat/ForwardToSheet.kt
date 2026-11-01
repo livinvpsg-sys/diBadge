@@ -14,7 +14,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.ui.res.painterResource
+import com.fabxdi.dibadge.R
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
@@ -270,7 +271,7 @@ fun ForwardToSheet(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            painter = painterResource(id = R.drawable.ic_send_arrow),
                             contentDescription = "Send forward",
                             tint = if (canSend) tealAccent else dimTextColor,
                             modifier = Modifier.size(24.dp)

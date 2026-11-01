@@ -28,6 +28,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,12 +49,15 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Reply
-import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.ui.res.painterResource
+import com.fabxdi.dibadge.R
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.AudioFile
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.DocumentScanner
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -62,6 +66,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.Color
@@ -149,7 +154,11 @@ data class ChatMessage(
     val isVoiceNote: Boolean = false,
     val isListened: Boolean = false,
     val waveformArray: List<Int> = emptyList(),
-    val isForwarded: Boolean = false
+    val isForwarded: Boolean = false,
+    val isDeleted: Boolean = false,
+    val deletedByRole: String? = null,
+    val isHiddenForMe: Boolean = false,
+    val sendStatus: String = "SENT"
 )
 
 data class PollOptionItem(
@@ -159,6 +168,432 @@ data class PollOptionItem(
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DeleteMessageSheet(
+    selectedCount: Int,
+    canDeleteForEveryone: Boolean,
+    deleteForEveryoneExplanation: String,
+    onDeleteForEveryone: () -> Unit,
+    onDeleteForMe: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val cardColor = colors.surface
+    val outlineColor = colors.outline
+    val tealAccent = diBadgeColors.accent
+    val errorColor = colors.error
+
+    val titleText = if (selectedCount == 1) "Delete message?" else "Delete $selectedCount messages?"
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = cardColor,
+        scrimColor = Color.Black.copy(alpha = 0.45f),
+        tonalElevation = 0.dp,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp, bottom = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    modifier = Modifier.size(width = 36.dp, height = 4.dp),
+                    shape = RoundedCornerShape(2.dp),
+                    color = secondaryTextColor.copy(alpha = 0.40f)
+                ) {}
+            }
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 20.dp)
+        ) {
+            Text(
+                text = titleText,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = primaryTextColor,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+
+            if (canDeleteForEveryone) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onDeleteForEveryone()
+                            onDismiss()
+                        }
+                        .padding(vertical = 10.dp)
+                ) {
+                    Text(
+                        text = "Delete for everyone",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = errorColor
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = deleteForEveryoneExplanation,
+                        fontSize = 12.sp,
+                        color = secondaryTextColor
+                    )
+                }
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 4.dp),
+                    thickness = 1.dp,
+                    color = outlineColor
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        onDeleteForMe()
+                        onDismiss()
+                    }
+                    .padding(vertical = 10.dp)
+            ) {
+                Text(
+                    text = "Delete for me",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = primaryTextColor
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Removed only from your phone",
+                    fontSize = 12.sp,
+                    color = secondaryTextColor
+                )
+            }
+
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 8.dp),
+                thickness = 1.dp,
+                color = outlineColor
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onDismiss() }
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Cancel",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = tealAccent
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun EditMessagePreviewCard(
+    editingMessage: ChatMessage,
+    onCancelEdit: () -> Unit,
+    cardColor: Color,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    outlineColor: Color,
+    isDark: Boolean
+) {
+    val hasMentions = editingMessage.isGroupMention || editingMessage.text.contains("@")
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 6.dp)
+    ) {
+        if (hasMentions) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 4.dp, start = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Lock,
+                    contentDescription = null,
+                    tint = secondaryTextColor,
+                    modifier = Modifier.size(13.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "Mentioned groups and members can't be changed",
+                    fontSize = 12.sp,
+                    color = secondaryTextColor
+                )
+            }
+        }
+
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = cardColor,
+            border = BorderStroke(1.dp, outlineColor),
+            shadowElevation = if (!isDark) 1.5.dp else 0.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (editingMessage.attachments.isNotEmpty()) {
+                    val thumbUri = editingMessage.attachments.firstOrNull()
+                    if (thumbUri != null) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            AsyncImage(
+                                model = thumbUri,
+                                contentDescription = "Edit Thumbnail",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    } else {
+                        Icon(
+                            imageVector = Icons.Outlined.Edit,
+                            contentDescription = null,
+                            tint = secondaryTextColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                } else {
+                    Icon(
+                        imageVector = Icons.Outlined.Edit,
+                        contentDescription = null,
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    val labelText = if (editingMessage.attachments.isNotEmpty()) "Edit caption" else "Edit message"
+                    Text(
+                        text = labelText,
+                        fontSize = 12.sp,
+                        color = secondaryTextColor
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = editingMessage.text.ifBlank { "Caption" },
+                        fontSize = 14.sp,
+                        color = primaryTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                IconButton(
+                    onClick = onCancelEdit,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Cancel edit",
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FailedMessageSheet(
+    message: ChatMessage,
+    onResend: () -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val cardColor = colors.surface
+    val outlineColor = colors.outline
+    val errorColor = colors.error
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = cardColor,
+        scrimColor = Color.Black.copy(alpha = 0.45f),
+        tonalElevation = 0.dp,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp, bottom = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    modifier = Modifier.size(width = 36.dp, height = 4.dp),
+                    shape = RoundedCornerShape(2.dp),
+                    color = secondaryTextColor.copy(alpha = 0.40f)
+                ) {}
+            }
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 20.dp)
+        ) {
+            Text(
+                text = "Message failed to send",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = primaryTextColor,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        onResend()
+                        onDismiss()
+                    }
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Resend",
+                    tint = primaryTextColor,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(14.dp))
+                Text(
+                    text = "Resend",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = primaryTextColor
+                )
+            }
+
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 4.dp),
+                thickness = 1.dp,
+                color = outlineColor
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        onDelete()
+                        onDismiss()
+                    }
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Delete",
+                    tint = errorColor,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(14.dp))
+                Text(
+                    text = "Delete",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = errorColor
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun SystemLibraryChip(
+    message: ChatMessage,
+    cardFillColor: Color,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    onChipClick: () -> Unit
+) {
+    val actorName = message.libraryActorName ?: message.senderName
+    val count = message.libraryCount
+    val fileName = message.libraryFileName ?: "File"
+    val categoryName = message.libraryCategoryName
+    val revision = message.libraryRevision
+
+    val formattedText = remember(actorName, count, fileName, categoryName, revision) {
+        when {
+            !revision.isNullOrBlank() -> {
+                "$actorName added a new revision of $fileName ($revision)"
+            }
+            count > 1 -> {
+                if (!categoryName.isNullOrBlank()) {
+                    "$actorName added $count files to Library · $categoryName"
+                } else {
+                    "$actorName added $count files to Library"
+                }
+            }
+            else -> {
+                if (!categoryName.isNullOrBlank()) {
+                    "$actorName added $fileName to Library · $categoryName"
+                } else {
+                    "$actorName added $fileName to Library"
+                }
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = cardFillColor,
+            modifier = Modifier.clickable { onChipClick() }
+        ) {
+            Text(
+                text = formattedText,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Normal,
+                color = primaryTextColor,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
     entry: HomeEntryEntity,
@@ -187,6 +622,7 @@ fun ChatScreen(
 
     val messages by chatViewModel.messages.collectAsState()
     val members by detailsViewModel.members.collectAsState()
+    val isAdmin by detailsViewModel.isAdmin.collectAsState()
     val acceptedConnections by detailsViewModel.acceptedConnections.collectAsState()
     val currentUserId = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
 
@@ -233,6 +669,28 @@ fun ChatScreen(
     var isDocInfoPreSend by remember { mutableStateOf(false) }
     var seenThreadIds by remember { mutableStateOf(setOf<String>()) }
     var activePickerTabOverride by remember { mutableStateOf<MentionPickerMode?>(null) }
+    var selectedFailedMessage by remember { mutableStateOf<ChatMessage?>(null) }
+
+    val prefs = remember(context) { context.getSharedPreferences("chat_drafts", Context.MODE_PRIVATE) }
+    val draftKey = remember(currentEntry.id) { "draft_${currentEntry.id}" }
+
+    LaunchedEffect(currentEntry.id) {
+        val savedDraft = prefs.getString(draftKey, "") ?: ""
+        if (savedDraft.isNotBlank() && inputText.isBlank()) {
+            inputText = savedDraft
+        }
+    }
+
+    DisposableEffect(currentEntry.id) {
+        onDispose {
+            val current = inputText.trim()
+            if (current.isNotBlank()) {
+                prefs.edit().putString(draftKey, current).apply()
+            } else {
+                prefs.edit().remove(draftKey).apply()
+            }
+        }
+    }
 
     var voiceRecordState by remember { mutableStateOf(VoiceRecordState.NONE) }
     var voiceRecordDurationMs by remember { mutableLongStateOf(0L) }
@@ -561,81 +1019,65 @@ fun ChatScreen(
 
     val listState = rememberLazyListState()
 
-    val isScrolling = listState.isScrollInProgress
-    var isFloatingDateVisible by remember { mutableStateOf(false) }
-
-    LaunchedEffect(isScrolling) {
-        if (isScrolling) {
-            isFloatingDateVisible = true
-        } else {
-            delay(1500)
-            isFloatingDateVisible = false
-        }
-    }
-
-    val floatingAlpha by animateFloatAsState(
-        targetValue = if (isFloatingDateVisible) 1f else 0f,
-        animationSpec = tween(durationMillis = 300)
-    )
-
-    val topVisibleDate = remember(listState.firstVisibleItemIndex, groupedMessages) {
-        if (messages.isNotEmpty()) {
-            val firstIdx = listState.firstVisibleItemIndex
-            val msg = messages.getOrNull(firstIdx.coerceIn(0, messages.size - 1))
-            msg?.timestamp?.toLocalDate() ?: LocalDate.now()
-        } else LocalDate.now()
-    }
-
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
         }
     }
 
-    // Delete Confirmation Dialog
-    if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = {
-                Text(
-                    text = "Delete this message?",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = primaryTextColor
+    // Delete Message Sheet
+    if (showDeleteDialog && selectedMessages.isNotEmpty()) {
+        val selectedMsgObjects = remember(selectedMessages, messages) {
+            messages.filter { selectedMessages.contains(it.id) }
+        }
+        val allOwn = remember(selectedMsgObjects) {
+            selectedMsgObjects.isNotEmpty() && selectedMsgObjects.all { it.isSentByMe }
+        }
+        val canDeleteForEveryone = remember(allOwn, isAdmin, selectedMsgObjects) {
+            allOwn || (isAdmin && selectedMsgObjects.all { !it.isSentByMe })
+        }
+        val deleteForEveryoneExplanation = if (allOwn) {
+            "Removed for all members, in every group it was sent to"
+        } else {
+            "Removed for all members as admin"
+        }
+
+        DeleteMessageSheet(
+            selectedCount = selectedMessages.size,
+            canDeleteForEveryone = canDeleteForEveryone,
+            deleteForEveryoneExplanation = deleteForEveryoneExplanation,
+            onDeleteForEveryone = {
+                chatViewModel.deleteForEveryone(
+                    context = context,
+                    groupId = currentEntry.id.toString(),
+                    selectedMessageIds = selectedMessages,
+                    deletedByRole = if (allOwn) "sender" else "admin"
                 )
+                selectedMessages = emptySet()
+                showDeleteDialog = false
+                showMessageOptionsSheet = false
             },
-            text = {
-                Text(
-                    text = if (deleteModeForMeOnly) "Only you will no longer see it." else "This message will be deleted for everyone.",
-                    fontSize = 14.sp,
-                    color = secondaryTextColor
+            onDeleteForMe = {
+                chatViewModel.deleteForMe(
+                    context = context,
+                    groupId = currentEntry.id.toString(),
+                    selectedMessageIds = selectedMessages
                 )
+                selectedMessages = emptySet()
+                showDeleteDialog = false
+                showMessageOptionsSheet = false
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        chatViewModel.deleteMessages(context, currentEntry.id.toString(), selectedMessages)
-                        selectedMessages = emptySet()
-                        showDeleteDialog = false
-                        showMessageOptionsSheet = false
-                    }
-                ) {
-                    Text("Delete", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = errorColor)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel", fontSize = 15.sp, color = secondaryTextColor)
-                }
-            },
-            containerColor = cardColor,
-            shape = RoundedCornerShape(20.dp)
+            onDismiss = {
+                showDeleteDialog = false
+            }
         )
     }
 
     // Long Press Message Options Bottom Sheet
     if (showMessageOptionsSheet && selectedMessages.isNotEmpty()) {
         val selectedMsg = messages.find { it.id == selectedMessages.first() }
+        val isDeletedMsg = selectedMsg?.isDeleted == true
+
         ModalBottomSheet(
             onDismissRequest = {
                 showMessageOptionsSheet = false
@@ -652,40 +1094,15 @@ fun ChatScreen(
                     .navigationBarsPadding()
                     .padding(bottom = 20.dp)
             ) {
-                // Option: Reply
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .clickable {
-                            replyingTo = selectedMsg
-                            replyingToAttachmentUriState = selectedAttachmentUri
-                            showMessageOptionsSheet = false
-                            selectedMessages = emptySet()
-                        }
-                        .padding(horizontal = 20.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Reply,
-                        contentDescription = "Reply",
-                        tint = primaryTextColor,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text(text = "Reply", fontSize = 15.sp, color = primaryTextColor)
-                }
-
-                // Option: Copy
-                if (selectedMsg != null && selectedMsg.text.isNotBlank()) {
+                if (!isDeletedMsg) {
+                    // Option: Reply
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp)
                             .clickable {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clip = ClipData.newPlainText("chat_message", selectedMsg.text)
-                                clipboard.setPrimaryClip(clip)
+                                replyingTo = selectedMsg
+                                replyingToAttachmentUriState = selectedAttachmentUri
                                 showMessageOptionsSheet = false
                                 selectedMessages = emptySet()
                             }
@@ -693,23 +1110,80 @@ fun ChatScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "Copy",
+                            imageVector = Icons.AutoMirrored.Filled.Reply,
+                            contentDescription = "Reply",
                             tint = primaryTextColor,
                             modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(16.dp))
-                        Text(text = "Copy", fontSize = 15.sp, color = primaryTextColor)
+                        Text(text = "Reply", fontSize = 15.sp, color = primaryTextColor)
+                    }
+
+                    // Option: Copy
+                    if (selectedMsg != null && selectedMsg.text.isNotBlank()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp)
+                                .clickable {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    val clip = ClipData.newPlainText("chat_message", selectedMsg.text)
+                                    clipboard.setPrimaryClip(clip)
+                                    showMessageOptionsSheet = false
+                                    selectedMessages = emptySet()
+                                }
+                                .padding(horizontal = 20.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "Copy",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(text = "Copy", fontSize = 15.sp, color = primaryTextColor)
+                        }
+                    }
+                    // Option: Edit
+                    val canEdit = selectedMessages.size == 1 && selectedMsg != null && selectedMsg.isSentByMe && !selectedMsg.isDeleted && !selectedMsg.isForwarded && !selectedMsg.isVoiceNote
+                    if (canEdit && selectedMsg != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp)
+                                .clickable {
+                                    editingMessage = selectedMsg
+                                    inputText = selectedMsg.text
+                                    showMessageOptionsSheet = false
+                                    selectedMessages = emptySet()
+                                }
+                                .padding(horizontal = 20.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Edit,
+                                contentDescription = "Edit",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = if (selectedMsg.attachments.isNotEmpty()) "Edit caption" else "Edit message",
+                                fontSize = 15.sp,
+                                color = primaryTextColor
+                            )
+                        }
                     }
                 }
 
-                // Option: Delete for me
+                // Option: Delete
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp)
                         .clickable {
-                            deleteModeForMeOnly = true
+                            showMessageOptionsSheet = false
                             showDeleteDialog = true
                         }
                         .padding(horizontal = 20.dp),
@@ -717,36 +1191,12 @@ fun ChatScreen(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Delete,
-                        contentDescription = "Delete for me",
+                        contentDescription = "Delete",
                         tint = errorColor,
                         modifier = Modifier.size(22.dp)
                     )
                     Spacer(modifier = Modifier.width(16.dp))
-                    Text(text = "Delete for me", fontSize = 15.sp, color = errorColor)
-                }
-
-                // Option: Delete for everyone (if sent by me)
-                if (selectedMsg?.isSentByMe == true) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                            .clickable {
-                                deleteModeForMeOnly = false
-                                showDeleteDialog = true
-                            }
-                            .padding(horizontal = 20.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete for everyone",
-                            tint = errorColor,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text(text = "Delete for everyone", fontSize = 15.sp, color = errorColor)
-                    }
+                    Text(text = "Delete", fontSize = 15.sp, color = errorColor)
                 }
             }
         }
@@ -1293,6 +1743,22 @@ fun ChatScreen(
                     }
                 }
 
+                // Composer Edit Preview Card
+                if (editingMessage != null) {
+                    EditMessagePreviewCard(
+                        editingMessage = editingMessage!!,
+                        onCancelEdit = {
+                            editingMessage = null
+                            inputText = ""
+                        },
+                        cardColor = cardColor,
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        outlineColor = outlineColor,
+                        isDark = isDark
+                    )
+                }
+
                 if (showEmojiPicker) {
                     Surface(
                         modifier = Modifier
@@ -1688,7 +2154,7 @@ fun ChatScreen(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Send,
+                                        painter = painterResource(id = R.drawable.ic_send_arrow),
                                         contentDescription = "Send voice note",
                                         tint = tealAccent,
                                         modifier = Modifier.size(24.dp)
@@ -1764,13 +2230,13 @@ fun ChatScreen(
                                 modifier = Modifier
                                     .padding(start = 12.dp)
                                     .size(40.dp)
-                                    .clickable { showAttachmentOptions = true },
+                                    .clickable(enabled = editingMessage == null) { showAttachmentOptions = true },
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.AttachFile,
                                     contentDescription = "Attach",
-                                    tint = secondaryTextColor,
+                                    tint = if (editingMessage != null) secondaryTextColor.copy(alpha = 0.35f) else secondaryTextColor,
                                     modifier = Modifier.size(24.dp)
                                 )
                             }
@@ -1824,22 +2290,24 @@ fun ChatScreen(
                                     BasicTextField(
                                         value = inputText,
                                         onValueChange = { newValue ->
-                                            val oldValue = inputText
-                                            if (newValue.length < oldValue.length) {
-                                                val pattern = Regex("""@([A-Za-z0-9_]+(?:\s+[A-Za-z0-9_]+)*)\s?""")
-                                                var handled = false
-                                                pattern.findAll(oldValue).forEach { match ->
-                                                    val range = match.range
-                                                    if (newValue.length in (range.first + 1)..range.last) {
-                                                        inputText = oldValue.removeRange(range.first, range.last + 1)
-                                                        handled = true
+                                            if (newValue.length <= 4000) {
+                                                val oldValue = inputText
+                                                if (newValue.length < oldValue.length) {
+                                                    val pattern = Regex("""@([A-Za-z0-9_]+(?:\s+[A-Za-z0-9_]+)*)\s?""")
+                                                    var handled = false
+                                                    pattern.findAll(oldValue).forEach { match ->
+                                                        val range = match.range
+                                                        if (newValue.length in (range.first + 1)..range.last) {
+                                                            inputText = oldValue.removeRange(range.first, range.last + 1)
+                                                            handled = true
+                                                        }
                                                     }
-                                                }
-                                                if (!handled) {
+                                                    if (!handled) {
+                                                        inputText = newValue
+                                                    }
+                                                } else {
                                                     inputText = newValue
                                                 }
-                                            } else {
-                                                inputText = newValue
                                             }
                                         },
                                         maxLines = 5,
@@ -1858,7 +2326,18 @@ fun ChatScreen(
                                             TransformedText(formatted, OffsetMapping.Identity)
                                         },
                                         cursorBrush = SolidColor(primaryTextColor),
-                                        modifier = Modifier.fillMaxWidth()
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .onKeyEvent { keyEvent ->
+                                                val textWithoutMentions = stripGroupMention(inputText)
+                                                val canSendMsg = (textWithoutMentions.isNotEmpty() || attachedFiles.isNotEmpty()) && selectedAttachmentUris.isEmpty()
+                                                if (keyEvent.type == KeyEventType.KeyDown && keyEvent.key == Key.Enter) {
+                                                    if (!keyEvent.isShiftPressed && canSendMsg) {
+                                                        // trigger send logic via check or send
+                                                        true
+                                                    } else false
+                                                } else false
+                                            }
                                     )
                                 }
 
@@ -1893,11 +2372,44 @@ fun ChatScreen(
 
                         Spacer(modifier = Modifier.width(8.dp))
 
-                        // Microphone OR Send OR Trash/Delete Icon (24dp, in 44dp touch area)
-                        val isSelectionMode = selectedAttachmentUris.isNotEmpty()
-                        val textWithoutGroupMentions = stripGroupMention(inputText)
-                        val isTyping = (textWithoutGroupMentions.isNotEmpty() || attachedFiles.isNotEmpty()) && !isSelectionMode
-                        val isActionEnabled = isSelectionMode || isTyping
+                        // Microphone OR Send OR Check (Save Edit) Slot
+                        if (editingMessage != null) {
+                            val isMediaCaptionEdit = editingMessage!!.attachments.isNotEmpty()
+                            val canSaveEdit = if (isMediaCaptionEdit) {
+                                inputText.trim() != editingMessage!!.text.trim()
+                            } else {
+                                inputText.trim().isNotBlank() && inputText.trim() != editingMessage!!.text.trim()
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clickable(enabled = canSaveEdit) {
+                                        if (canSaveEdit) {
+                                            chatViewModel.editMessage(
+                                                context = context,
+                                                groupId = currentEntry.id.toString(),
+                                                messageId = editingMessage!!.id,
+                                                newText = inputText
+                                            )
+                                            editingMessage = null
+                                            inputText = ""
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Save edit",
+                                    tint = if (canSaveEdit) tealAccent else secondaryTextColor.copy(alpha = 0.40f),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        } else {
+                            val isSelectionMode = selectedAttachmentUris.isNotEmpty()
+                            val textWithoutGroupMentions = stripGroupMention(inputText)
+                            val isTyping = (textWithoutGroupMentions.isNotEmpty() || attachedFiles.isNotEmpty()) && !isSelectionMode
+                            val isActionEnabled = isSelectionMode || isTyping
 
                         Box(
                             modifier = Modifier
@@ -1992,6 +2504,9 @@ fun ChatScreen(
                                             }
                                         }
 
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        prefs.edit().remove(draftKey).apply()
+
                                         inputText = ""
                                         attachedFiles = emptyList()
                                         showEmojiPicker = false
@@ -2011,8 +2526,8 @@ fun ChatScreen(
                                 )
                             } else if (isTyping) {
                                 Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = "Send",
+                                    painter = painterResource(id = R.drawable.ic_send_arrow),
+                                    contentDescription = "Send message",
                                     tint = tealAccent,
                                     modifier = Modifier.size(24.dp)
                                 )
@@ -2083,8 +2598,7 @@ fun ChatScreen(
                                     Icon(
                                         imageVector = Icons.Default.Mic,
                                         contentDescription = "Record audio",
-                                        tint = primaryTextColor,
-                                        modifier = Modifier.size(24.dp)
+                                        tint = primaryTextColor
                                     )
                                 }
                             }
@@ -2094,6 +2608,7 @@ fun ChatScreen(
             }
         }
     }
+}
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -2108,69 +2623,12 @@ fun ChatScreen(
                     showAttachmentOptions = false
                 }
         ) {
-            if (messages.isEmpty()) {
-                // Empty State: Centered a bit above middle
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 40.dp)
-                        .offset(y = (-40).dp),
-                    contentAlignment = Alignment.Center
+            Box(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            imageVector = Icons.Default.ChatBubbleOutline,
-                            contentDescription = null,
-                            tint = dimTextColor,
-                            modifier = Modifier.size(44.dp)
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Text(
-                            text = "Start the conversation",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = primaryTextColor
-                        )
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Text(
-                            text = "Messages, photos and documents shared here are seen by everyone in this group",
-                            fontSize = 13.sp,
-                            color = secondaryTextColor,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            } else {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    // Two 1dp vertical lines in outline color 14dp from left & right screen edges
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val lineXLeft = 14.dp.toPx()
-                        val lineXRight = size.width - 14.dp.toPx()
-                        val strokeWidthPx = 1.dp.toPx()
-
-                        drawLine(
-                            color = outlineColor,
-                            start = Offset(lineXLeft, 0f),
-                            end = Offset(lineXLeft, size.height),
-                            strokeWidth = strokeWidthPx
-                        )
-                        drawLine(
-                            color = outlineColor,
-                            start = Offset(lineXRight, 0f),
-                            end = Offset(lineXRight, size.height),
-                            strokeWidth = strokeWidthPx
-                        )
-                    }
-
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
                     if (groupCreatedDateText != null) {
                         item {
                             GroupCreatedHeader(
@@ -2181,10 +2639,13 @@ fun ChatScreen(
                     }
 
                     groupedMessages.forEach { (date, dateMessages) ->
-                        item {
+                        stickyHeader(key = "date-$date") {
                             DateHeader(date = date, isDark = isDark, secondaryTextColor = secondaryTextColor)
                         }
-                        items(dateMessages.size) { index ->
+                        items(
+                            count = dateMessages.size,
+                            key = { index -> dateMessages[index].id }
+                        ) { index ->
                             val rawMsg = dateMessages[index]
                             val isFirstInRun = index == 0 || dateMessages[index - 1].senderName != rawMsg.senderName || dateMessages[index - 1].isSentByMe != rawMsg.isSentByMe
 
@@ -2272,26 +2733,15 @@ fun ChatScreen(
                                     onSwipeToReply = { uri ->
                                         replyingTo = msgToRender
                                         replyingToAttachmentUriState = uri
+                                    },
+                                    onRetryFailedMessage = { clickedMsg ->
+                                        selectedFailedMessage = clickedMsg
                                     }
                                 )
                             }
                         }
                     }
                 }
-            }
-
-            // Floating date pill while scrolling
-            if (floatingAlpha > 0f && messages.isNotEmpty()) {
-                DateHeader(
-                    date = topVisibleDate,
-                    isDark = isDark,
-                    secondaryTextColor = secondaryTextColor,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 8.dp)
-                        .graphicsLayer { alpha = floatingAlpha }
-                )
-            }
 
             // 50% Black Scrim over chat area when mention picker is open
             if (showMentionPicker) {
@@ -2311,7 +2761,6 @@ fun ChatScreen(
                 )
             }
         }
-    }
 
     // Attach Sheet (The Paper Clip): 4 columns, 2 rows, card background, 24dp top corners
     if (showAttachmentOptions) {
@@ -2822,64 +3271,21 @@ fun ChatScreen(
             }
         )
     }
+
+    if (selectedFailedMessage != null) {
+        FailedMessageSheet(
+            message = selectedFailedMessage!!,
+            onResend = {
+                chatViewModel.resendMessage(context, currentEntry.id.toString(), selectedFailedMessage!!.id)
+                selectedFailedMessage = null
+            },
+            onDelete = {
+                chatViewModel.deleteForMe(context, currentEntry.id.toString(), setOf(selectedFailedMessage!!.id))
+                selectedFailedMessage = null
+            },
+            onDismiss = { selectedFailedMessage = null }
+        )
+    }
 }
 }
-
-@Composable
-fun SystemLibraryChip(
-    message: ChatMessage,
-    cardFillColor: Color,
-    primaryTextColor: Color,
-    secondaryTextColor: Color,
-    onChipClick: () -> Unit
-) {
-    val actorName = message.libraryActorName ?: message.senderName
-    val count = message.libraryCount
-    val fileName = message.libraryFileName ?: "File"
-    val categoryName = message.libraryCategoryName
-    val revision = message.libraryRevision
-
-    val formattedText = remember(actorName, count, fileName, categoryName, revision) {
-        when {
-            !revision.isNullOrBlank() -> {
-                "$actorName added a new revision of $fileName ($revision)"
-            }
-            count > 1 -> {
-                if (!categoryName.isNullOrBlank()) {
-                    "$actorName added $count files to Library · $categoryName"
-                } else {
-                    "$actorName added $count files to Library"
-                }
-            }
-            else -> {
-                if (!categoryName.isNullOrBlank()) {
-                    "$actorName added $fileName to Library · $categoryName"
-                } else {
-                    "$actorName added $fileName to Library"
-                }
-            }
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = cardFillColor,
-            modifier = Modifier.clickable { onChipClick() }
-        ) {
-            Text(
-                text = formattedText,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Normal,
-                color = primaryTextColor,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                textAlign = TextAlign.Center
-            )
-        }
-    }
 }

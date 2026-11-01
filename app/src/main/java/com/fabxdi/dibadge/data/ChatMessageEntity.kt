@@ -28,5 +28,9 @@ data class ChatMessageEntity(
     val libraryCount: Int = 1,
     val libraryActorUid: String? = null,
     val libraryActorName: String? = null,
-    val libraryRevision: String? = null
+    val libraryRevision: String? = null,
+    val isDeleted: Boolean = false,
+    val deletedByRole: String? = null,
+    val isHiddenForMe: Boolean = false,
+    val sendStatus: String = "SENT"
 )

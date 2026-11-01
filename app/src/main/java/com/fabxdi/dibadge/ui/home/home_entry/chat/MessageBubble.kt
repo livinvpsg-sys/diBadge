@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Mic
@@ -27,6 +28,8 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.DoNotDisturbOn
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -155,7 +158,8 @@ fun MessageBubble(
     onStopLiveLocation: (String) -> Unit = {},
     onVoteOption: (messageId: String, optionId: String) -> Unit = { _, _ -> },
     onViewVotesClick: (ChatMessage) -> Unit = {},
-    onSwipeToReply: (String?) -> Unit = {}
+    onSwipeToReply: (String?) -> Unit = {},
+    onRetryFailedMessage: (ChatMessage) -> Unit = {}
 ) {
     val timeFormatter = remember { DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()) }
     val alignment = if (message.isSentByMe) Alignment.End else Alignment.Start
@@ -356,7 +360,15 @@ fun MessageBubble(
                     }
                 }
 
-                if (isEmojiOnly) {
+                if (message.isDeleted) {
+                    DeletedMessagePlaceholderBubble(
+                        message = message,
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        outlineColor = outlineColor,
+                        timeFormatter = timeFormatter
+                    )
+                } else if (isEmojiOnly) {
                     EmojiMessage(message.text, message.timestamp.format(timeFormatter).lowercase(), alignment, secondaryTextColor, primaryTextColor)
                 } else if (message.attachments.isNotEmpty()) {
                     if (message.replyingTo != null) {
@@ -378,7 +390,10 @@ fun MessageBubble(
                         }
                     }
 
-                    val formattedTimeStr = remember(message.timestamp) { message.timestamp.format(timeFormatter).lowercase() }
+                    val rawTimeStr = remember(message.timestamp) { message.timestamp.format(timeFormatter).lowercase() }
+                    val formattedTimeStr = remember(rawTimeStr, message.isEdited) {
+                        if (message.isEdited) "Edited $rawTimeStr" else rawTimeStr
+                    }
 
                     Column(
                         horizontalAlignment = alignment,
@@ -435,12 +450,43 @@ fun MessageBubble(
                                         )
                                         if (message.isSentByMe) {
                                             Spacer(modifier = Modifier.width(4.dp))
-                                            Icon(
-                                                imageVector = Icons.Default.DoneAll,
-                                                contentDescription = "Read",
-                                                tint = tealAccent,
-                                                modifier = Modifier.size(13.dp)
-                                            )
+                                            when (message.sendStatus) {
+                                                "SENDING" -> {
+                                                    Icon(
+                                                        imageVector = Icons.Outlined.Schedule,
+                                                        contentDescription = "Sending",
+                                                        tint = secondaryTextColor,
+                                                        modifier = Modifier.size(13.dp)
+                                                    )
+                                                }
+                                                "FAILED" -> {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier.clickable { onRetryFailedMessage(message) }
+                                                    ) {
+                                                        Text(
+                                                            text = "Not sent",
+                                                            fontSize = 11.sp,
+                                                            color = errorColor
+                                                        )
+                                                        Spacer(modifier = Modifier.width(3.dp))
+                                                        Icon(
+                                                            imageVector = Icons.Default.ErrorOutline,
+                                                            contentDescription = "Failed",
+                                                            tint = errorColor,
+                                                            modifier = Modifier.size(13.dp)
+                                                        )
+                                                    }
+                                                }
+                                                else -> {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Check,
+                                                        contentDescription = "Sent",
+                                                        tint = secondaryTextColor,
+                                                        modifier = Modifier.size(13.dp)
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -498,6 +544,53 @@ fun MessageBubble(
         }
     }
 }
+}
+
+@Composable
+fun DeletedMessagePlaceholderBubble(
+    message: ChatMessage,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    outlineColor: Color,
+    timeFormatter: DateTimeFormatter
+) {
+    val formattedTime = remember(message.timestamp) { message.timestamp.format(timeFormatter).lowercase() }
+    val placeholderText = if (message.deletedByRole == "admin") "Removed by an admin" else "This message was deleted"
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = Color.Transparent,
+        border = BorderStroke(1.dp, outlineColor)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.DoNotDisturbOn,
+                contentDescription = null,
+                tint = secondaryTextColor,
+                modifier = Modifier.size(15.dp)
+            )
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            Text(
+                text = placeholderText,
+                fontSize = 14.sp,
+                fontStyle = FontStyle.Italic,
+                color = secondaryTextColor
+            )
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            Text(
+                text = formattedTime,
+                fontSize = 11.sp,
+                color = secondaryTextColor
+            )
+        }
+    }
 }
 
 @Composable
@@ -569,51 +662,66 @@ private fun ReplyPreviewAboveBubble(
             shape = RoundedCornerShape(14.dp),
             modifier = Modifier
                 .widthIn(max = 200.dp)
-                .clickable { onReplyClick(replyingTo.id, message.replyingToAttachmentUri) }
+                .clickable {
+                    if (!replyingTo.isDeleted) {
+                        onReplyClick(replyingTo.id, message.replyingToAttachmentUri)
+                    }
+                }
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val hasThumb = !message.replyingToAttachmentUri.isNullOrBlank() || replyingTo.attachments.isNotEmpty()
-                val thumbUri = message.replyingToAttachmentUri ?: replyingTo.attachments.firstOrNull()
-
-                Column(modifier = Modifier.weight(1f, fill = false)) {
-                    val previewText = if (replyingTo.text.isNotBlank()) {
-                        replyingTo.text.take(200)
-                    } else if (replyingTo.isVoiceNote) {
-                        "Voice message"
-                    } else if (replyingTo.msgType == "location") {
-                        "Location"
-                    } else if (replyingTo.msgType == "poll") {
-                        "Poll"
-                    } else {
-                        "Attachment"
-                    }
-
+                if (replyingTo.isDeleted) {
                     Text(
-                        text = previewText,
+                        text = "Message deleted",
                         fontSize = 13.sp,
+                        fontStyle = FontStyle.Italic,
                         color = secondaryTextColor,
-                        maxLines = 2,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                }
+                } else {
+                    val hasThumb = !message.replyingToAttachmentUri.isNullOrBlank() || replyingTo.attachments.isNotEmpty()
+                    val thumbUri = message.replyingToAttachmentUri ?: replyingTo.attachments.firstOrNull()
 
-                if (hasThumb && thumbUri != null) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier
-                            .padding(4.dp)
-                            .size(64.dp)
-                    ) {
-                        AsyncImage(
-                            model = thumbUri,
-                            contentDescription = "Quoted photo/video",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
+                    Column(modifier = Modifier.weight(1f, fill = false)) {
+                        val previewText = if (replyingTo.text.isNotBlank()) {
+                            replyingTo.text.take(200)
+                        } else if (replyingTo.isVoiceNote) {
+                            "Voice message"
+                        } else if (replyingTo.msgType == "location") {
+                            "Location"
+                        } else if (replyingTo.msgType == "poll") {
+                            "Poll"
+                        } else {
+                            "Attachment"
+                        }
+
+                        Text(
+                            text = previewText,
+                            fontSize = 13.sp,
+                            color = secondaryTextColor,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
+                    }
+
+                    if (hasThumb && thumbUri != null) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .padding(4.dp)
+                                .size(64.dp)
+                        ) {
+                            AsyncImage(
+                                model = thumbUri,
+                                contentDescription = "Quoted photo/video",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                 }
             }
@@ -1866,6 +1974,9 @@ private fun AttachmentTimeFooterLine(
     isSentByMe: Boolean,
     secondaryTextColor: Color,
     tealAccent: Color,
+    sendStatus: String = "SENT",
+    errorColor: Color = Color.Red,
+    onRetryFailedMessage: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -1882,12 +1993,43 @@ private fun AttachmentTimeFooterLine(
         )
         if (isSentByMe) {
             Spacer(modifier = Modifier.width(4.dp))
-            Icon(
-                imageVector = Icons.Default.DoneAll,
-                contentDescription = "Read",
-                tint = tealAccent,
-                modifier = Modifier.size(13.dp)
-            )
+            when (sendStatus) {
+                "SENDING" -> {
+                    Icon(
+                        imageVector = Icons.Outlined.Schedule,
+                        contentDescription = "Sending",
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
+                "FAILED" -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable { onRetryFailedMessage() }
+                    ) {
+                        Text(
+                            text = "Not sent",
+                            fontSize = 11.sp,
+                            color = errorColor
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Icon(
+                            imageVector = Icons.Default.ErrorOutline,
+                            contentDescription = "Failed",
+                            tint = errorColor,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
+                }
+                else -> {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Sent",
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
+            }
         }
     }
 }

@@ -38,6 +38,9 @@ interface ToDoDao {
     @Query("SELECT * FROM chat_messages WHERE groupId = :groupId ORDER BY timestampMs ASC")
     fun getChatMessagesForGroup(groupId: String): Flow<List<ChatMessageEntity>>
 
+    @Query("SELECT * FROM chat_messages WHERE id = :id")
+    suspend fun getChatMessageById(id: String): ChatMessageEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertChatMessage(message: ChatMessageEntity)
 

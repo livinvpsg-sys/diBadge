@@ -17,6 +17,7 @@ import com.fabxdi.dibadge.util.FilePickerUtils
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
@@ -61,7 +62,11 @@ fun ChatMessage.toEntity(groupId: String): ChatMessageEntity {
         libraryCount = this.libraryCount,
         libraryActorUid = this.libraryActorUid,
         libraryActorName = this.libraryActorName,
-        libraryRevision = this.libraryRevision
+        libraryRevision = this.libraryRevision,
+        isDeleted = this.isDeleted,
+        deletedByRole = this.deletedByRole,
+        isHiddenForMe = this.isHiddenForMe,
+        sendStatus = this.sendStatus
     )
 }
 
@@ -106,7 +111,11 @@ fun ChatMessageEntity.toDomain(): ChatMessage {
         libraryCount = this.libraryCount,
         libraryActorUid = this.libraryActorUid,
         libraryActorName = this.libraryActorName,
-        libraryRevision = this.libraryRevision
+        libraryRevision = this.libraryRevision,
+        isDeleted = this.isDeleted,
+        deletedByRole = this.deletedByRole,
+        isHiddenForMe = this.isHiddenForMe,
+        sendStatus = this.sendStatus
     )
 }
 
@@ -213,6 +222,11 @@ class ChatViewModel : ViewModel() {
                             val libraryActorName = doc.getString("libraryActorName")
                             val libraryRevision = doc.getString("libraryRevision")
 
+                            val isDeleted = doc.getBoolean("deleted") ?: false
+                            val deletedByRole = doc.getString("deletedByRole") ?: "sender"
+                            val hiddenUserUids = (doc.get("hiddenUsers") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
+                            val isHiddenForMe = hiddenUserUids.contains(currentUid)
+
                             entitiesToInsert.add(
                                 ChatMessageEntity(
                                     id = id,
@@ -237,7 +251,10 @@ class ChatViewModel : ViewModel() {
                                     libraryCount = libraryCount,
                                     libraryActorUid = libraryActorUid,
                                     libraryActorName = libraryActorName,
-                                    libraryRevision = libraryRevision
+                                    libraryRevision = libraryRevision,
+                                    isDeleted = isDeleted,
+                                    deletedByRole = deletedByRole,
+                                    isHiddenForMe = isHiddenForMe
                                 )
                             )
                         } catch (e: Exception) {
@@ -281,7 +298,8 @@ class ChatViewModel : ViewModel() {
             attachmentDurations = durationsMap,
             timestamp = LocalDateTime.ofInstant(Instant.ofEpochMilli(ts), ZoneId.systemDefault()),
             replyingTo = replyingTo,
-            replyingToAttachmentUri = replyingToAttachmentUri
+            replyingToAttachmentUri = replyingToAttachmentUri,
+            sendStatus = "SENDING"
         )
 
         val dao = AppDatabase.getDatabase(context).reminderDao()
@@ -342,16 +360,12 @@ class ChatViewModel : ViewModel() {
                     }
                 }
 
-                try {
-                    db.collection("personalGroups")
-                        .document(groupId)
-                        .collection("messages")
-                        .document(msgId)
-                        .set(docData)
-                        .await()
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+                db.collection("personalGroups")
+                    .document(groupId)
+                    .collection("messages")
+                    .document(msgId)
+                    .set(docData)
+                    .await()
 
                 val preview = when {
                     text.isNotBlank() -> text.trim()
@@ -374,33 +388,134 @@ class ChatViewModel : ViewModel() {
                     e.printStackTrace()
                 }
 
+                val sentMsg = optimisticMsg.copy(attachments = uploadedUrls, sendStatus = "SENT")
+                dao.insertChatMessage(sentMsg.toEntity(groupId))
+
             } catch (e: Exception) {
                 e.printStackTrace()
+                val failedMsg = optimisticMsg.copy(sendStatus = "FAILED")
+                dao.insertChatMessage(failedMsg.toEntity(groupId))
             }
         }
     }
 
-    fun deleteMessages(context: Context, groupId: String, messageIds: Set<String>) {
-        if (groupId.isBlank() || messageIds.isEmpty()) return
+    fun resendMessage(context: Context, groupId: String, messageId: String) {
+        if (groupId.isBlank() || messageId.isBlank()) return
         val dao = AppDatabase.getDatabase(context).reminderDao()
 
         viewModelScope.launch(Dispatchers.IO) {
-            dao.deleteChatMessages(messageIds.toList())
+            val entity = dao.getChatMessageById(messageId) ?: return@launch
+            val sendingEntity = entity.copy(sendStatus = "SENDING")
+            dao.insertChatMessage(sendingEntity)
+
+            try {
+                val attachmentsList = if (sendingEntity.attachmentsJson.isBlank()) emptyList() else sendingEntity.attachmentsJson.split("|||")
+                val currentUid = auth.currentUser?.uid ?: ""
+
+                val docData = mutableMapOf<String, Any>(
+                    "id" to messageId,
+                    "text" to sendingEntity.text,
+                    "senderName" to sendingEntity.senderName,
+                    "senderUid" to currentUid,
+                    "attachments" to attachmentsList,
+                    "timestamp" to sendingEntity.timestampMs,
+                    "isEdited" to sendingEntity.isEdited
+                )
+
+                db.collection("personalGroups")
+                    .document(groupId)
+                    .collection("messages")
+                    .document(messageId)
+                    .set(docData)
+                    .await()
+
+                dao.insertChatMessage(sendingEntity.copy(sendStatus = "SENT"))
+            } catch (e: Exception) {
+                e.printStackTrace()
+                dao.insertChatMessage(sendingEntity.copy(sendStatus = "FAILED"))
+            }
         }
+    }
+
+    fun deleteForEveryone(
+        context: Context,
+        groupId: String,
+        selectedMessageIds: Set<String>,
+        deletedByRole: String = "sender"
+    ) {
+        if (groupId.isBlank() || selectedMessageIds.isEmpty()) return
+        val currentUid = auth.currentUser?.uid ?: ""
 
         viewModelScope.launch {
-            for (id in messageIds) {
+            val dao = AppDatabase.getDatabase(context).reminderDao()
+
+            for (msgId in selectedMessageIds) {
                 try {
-                    db.collection("personalGroups")
-                        .document(groupId)
-                        .collection("messages")
-                        .document(id)
-                        .delete()
+                    val updates = mapOf<String, Any?>(
+                        "deleted" to true,
+                        "deletedBy" to currentUid,
+                        "deletedByRole" to deletedByRole,
+                        "deletedAt" to FieldValue.serverTimestamp(),
+                        "text" to "",
+                        "attachments" to emptyList<String>(),
+                        "replyingToText" to null,
+                        "replyingToAttachmentUri" to null
+                    )
+
+                    db.collection("personalGroups").document(groupId)
+                        .collection("messages").document(msgId)
+                        .update(updates)
+                        .await()
+
+                    dao.getChatMessageById(msgId)?.let { entity ->
+                        dao.insertChatMessage(
+                            entity.copy(
+                                isDeleted = true,
+                                deletedByRole = deletedByRole,
+                                text = "",
+                                attachmentsJson = ""
+                            )
+                        )
+                    }
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
             }
         }
+    }
+
+    fun deleteForMe(
+        context: Context,
+        groupId: String,
+        selectedMessageIds: Set<String>
+    ) {
+        if (groupId.isBlank() || selectedMessageIds.isEmpty()) return
+        val currentUid = auth.currentUser?.uid ?: ""
+
+        viewModelScope.launch {
+            val dao = AppDatabase.getDatabase(context).reminderDao()
+
+            for (msgId in selectedMessageIds) {
+                try {
+                    if (currentUid.isNotBlank()) {
+                        db.collection("personalGroups").document(groupId)
+                            .collection("messages").document(msgId)
+                            .update("hiddenUsers", FieldValue.arrayUnion(currentUid))
+                            .await()
+                    }
+
+                    dao.getChatMessageById(msgId)?.let { entity ->
+                        dao.insertChatMessage(entity.copy(isHiddenForMe = true))
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
+    fun deleteMessages(context: Context, groupId: String, messageIds: Set<String>) {
+        deleteForMe(context, groupId, messageIds)
     }
 
     fun editMessage(context: Context, groupId: String, messageId: String, newText: String) {
