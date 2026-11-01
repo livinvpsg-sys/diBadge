@@ -7,7 +7,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Matrix
 import android.graphics.RectF
+import android.media.ExifInterface
 import android.net.Uri
 import android.util.Log
 import androidx.camera.core.*
@@ -45,6 +47,7 @@ import kotlinx.coroutines.delay
 import java.io.File
 import java.io.FileOutputStream
 import java.time.LocalDateTime
+import java.util.TimeZone
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.Executor
@@ -86,11 +89,17 @@ fun CameraCaptureScreen(
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     var camera by remember { mutableStateOf<Camera?>(null) }
 
-    val dateTimeStr = remember {
-        LocalDateTime.now().format(DateTimeFormatter.ofPattern("d MMM yyyy · h:mm a", Locale.getDefault()))
+    // Real location for the stamp. The clock ticks so the viewfinder never shows a stale time.
+    val locationState = rememberLocationState(enabled = isStampEnabled)
+    val deviceLocation = locationState.location
+    var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(15_000)
+            nowTick = System.currentTimeMillis()
+        }
     }
-    val timeZoneAndPlace = "GMT+8 · Singapore"
-    val coordsStr = "1.34042° N, 103.70901° E"
+    val liveStamp = remember(nowTick, deviceLocation) { buildStampText(nowTick, deviceLocation) }
 
     // If photo is captured, show Review Screen
     if (capturedPhotoUri != null) {
@@ -227,21 +236,30 @@ fun CameraCaptureScreen(
             ) {
                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                     Text(
-                        text = dateTimeStr,
+                        text = liveStamp.dateTime,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
                     Text(
-                        text = timeZoneAndPlace,
+                        text = liveStamp.zoneAndPlace,
                         fontSize = 11.sp,
                         color = Color.White
                     )
-                    Text(
-                        text = coordsStr,
-                        fontSize = 10.sp,
-                        color = Color.White.copy(alpha = 0.85f)
-                    )
+                    if (liveStamp.coords != null) {
+                        Text(
+                            text = liveStamp.coords,
+                            fontSize = 10.sp,
+                            color = Color.White.copy(alpha = 0.85f)
+                        )
+                    } else if (locationState.status == LocationStatus.NeedsPermission) {
+                        Text(
+                            text = "Tap to add location",
+                            fontSize = 10.sp,
+                            color = Color.White.copy(alpha = 0.85f),
+                            modifier = Modifier.clickable { locationState.requestPermission() }
+                        )
+                    }
                 }
             }
         }
@@ -330,9 +348,8 @@ fun CameraCaptureScreen(
                                 imageCapture = imageCapture,
                                 executor = cameraExecutor,
                                 isStampEnabled = isStampEnabled,
-                                dateTimeStr = dateTimeStr,
-                                timeZoneAndPlace = timeZoneAndPlace,
-                                coordsStr = coordsStr
+                                // Time is read at the moment of capture, not when the screen opened.
+                                stamp = buildStampText(System.currentTimeMillis(), deviceLocation)
                             ) { uri ->
                                 capturedPhotoUri = uri
                             }
@@ -438,9 +455,7 @@ private fun takePhoto(
     imageCapture: ImageCapture,
     executor: Executor,
     isStampEnabled: Boolean,
-    dateTimeStr: String,
-    timeZoneAndPlace: String,
-    coordsStr: String,
+    stamp: StampText,
     onImageCaptured: (Uri) -> Unit
 ) {
     val photoFile = File(
@@ -457,14 +472,12 @@ private fun takePhoto(
             override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                 try {
                     if (isStampEnabled) {
-                        val originalBitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
-                        if (originalBitmap != null) {
-                            val stampedBitmap = drawStampOnBitmap(
-                                originalBitmap,
-                                dateTimeStr,
-                                timeZoneAndPlace,
-                                coordsStr
-                            )
+                        val decoded = BitmapFactory.decodeFile(photoFile.absolutePath)
+                        if (decoded != null) {
+                            // Apply the EXIF rotation first so the stamp sits at the bottom of
+                            // the photo as the user sees it, not the sensor's bottom.
+                            val originalBitmap = rotateByExif(decoded, photoFile.absolutePath)
+                            val stampedBitmap = drawStampOnBitmap(originalBitmap, stamp)
                             FileOutputStream(photoFile).use { out ->
                                 stampedBitmap.compress(Bitmap.CompressFormat.JPEG, 80, out)
                             }
@@ -488,12 +501,40 @@ private fun takePhoto(
     )
 }
 
-private fun drawStampOnBitmap(
-    bitmap: Bitmap,
-    dateTimeStr: String,
-    timeZoneAndPlace: String,
-    coordsStr: String
-): Bitmap {
+class StampText(val dateTime: String, val zoneAndPlace: String, val coords: String?)
+
+private fun buildStampText(millis: Long, loc: DeviceLocation?): StampText {
+    val tz = TimeZone.getDefault()
+    val dateTime = java.text.SimpleDateFormat("d MMM yyyy · h:mm a", Locale.getDefault())
+        .apply { timeZone = tz }
+        .format(java.util.Date(millis))
+    val zone = tz.getDisplayName(tz.inDaylightTime(java.util.Date(millis)), TimeZone.SHORT, Locale.getDefault())
+    val zoneAndPlace = if (loc != null && loc.placeName.isNotBlank()) "$zone · ${loc.placeName}" else zone
+    val coords = loc?.let {
+        val ns = if (it.lat >= 0) "N" else "S"
+        val ew = if (it.lng >= 0) "E" else "W"
+        String.format(Locale.US, "%.5f° %s, %.5f° %s", kotlin.math.abs(it.lat), ns, kotlin.math.abs(it.lng), ew)
+    }
+    return StampText(dateTime, zoneAndPlace, coords)
+}
+
+private fun rotateByExif(bitmap: Bitmap, path: String): Bitmap {
+    val degrees = try {
+        when (ExifInterface(path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
+        }
+    } catch (e: Exception) {
+        0f
+    }
+    if (degrees == 0f) return bitmap
+    val m = Matrix().apply { postRotate(degrees) }
+    return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, m, true)
+}
+
+private fun drawStampOnBitmap(bitmap: Bitmap, stamp: StampText): Bitmap {
     val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
     val canvas = Canvas(mutableBitmap)
 
@@ -503,6 +544,7 @@ private fun drawStampOnBitmap(
     val line1Size = width * 0.032f
     val line2Size = width * 0.026f
     val line3Size = width * 0.022f
+    val hasCoords = stamp.coords != null
 
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.WHITE
@@ -511,31 +553,40 @@ private fun drawStampOnBitmap(
 
     val margin = width * 0.04f
     val startX = margin
-    var startY = height - margin - (line3Size + line2Size + line1Size)
+    val textBlock = line1Size * 1.3f + line2Size * 1.3f + if (hasCoords) line3Size else 0f
+    var startY = height - margin - textBlock + line1Size
 
     val bgPaint = Paint().apply {
         color = android.graphics.Color.argb(140, 0, 0, 0)
     }
+    paint.textSize = line2Size
+    val widest = maxOf(
+        paint.measureText(stamp.zoneAndPlace),
+        paint.measureText(stamp.coords ?: ""),
+        width * 0.30f
+    ).coerceAtMost(width * 0.92f - startX)
     val rect = RectF(
         startX - 16f,
         startY - line1Size - 16f,
-        startX + (width * 0.55f),
+        startX + widest + 16f,
         height - margin + 16f
     )
     canvas.drawRoundRect(rect, 16f, 16f, bgPaint)
 
     paint.textSize = line1Size
     paint.isFakeBoldText = true
-    canvas.drawText(dateTimeStr, startX, startY, paint)
+    canvas.drawText(stamp.dateTime, startX, startY, paint)
 
     startY += line1Size * 1.3f
     paint.textSize = line2Size
     paint.isFakeBoldText = false
-    canvas.drawText(timeZoneAndPlace, startX, startY, paint)
+    canvas.drawText(stamp.zoneAndPlace, startX, startY, paint)
 
-    startY += line2Size * 1.3f
-    paint.textSize = line3Size
-    canvas.drawText(coordsStr, startX, startY, paint)
+    if (hasCoords) {
+        startY += line2Size * 1.3f
+        paint.textSize = line3Size
+        canvas.drawText(stamp.coords!!, startX, startY, paint)
+    }
 
     return mutableBitmap
 }

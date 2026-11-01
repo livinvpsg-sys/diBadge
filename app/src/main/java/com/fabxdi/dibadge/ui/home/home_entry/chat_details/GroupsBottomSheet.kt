@@ -39,7 +39,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupsBottomSheet(
-    ownGroupCode: String = "7N4K-!HVE",
+    ownGroupCode: String = "",
     connectedGroups: List<GroupConnectionItem>,
     pendingRequests: List<GroupConnectionItem>, // Incoming invitations
     canUserManage: Boolean = true, // Owner or Admin
@@ -70,7 +70,7 @@ fun GroupsBottomSheet(
     val dimColor = diBadgeColors.tabInactive
     val tealAccent = diBadgeColors.accent
     val errorColor = colors.error
-    val isDark = primaryTextColor.red > 0.5f
+    val isDark = diBadgeColors.isDark
     val searchBgColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
 
     // Code Input Formatting: uppercase, ignore spaces, auto-dash after 4th char
@@ -88,7 +88,7 @@ fun GroupsBottomSheet(
     LaunchedEffect(searchInput) {
         if (searchInput.length == 9) {
             searchAttempted = true
-            if (searchInput.equals(ownGroupCode, ignoreCase = true) || searchInput.replace("-", "").equals(ownGroupCode.replace("-", ""), ignoreCase = true)) {
+            if (ownGroupCode.isNotBlank() && (searchInput.equals(ownGroupCode, ignoreCase = true) || searchInput.replace("-", "").equals(ownGroupCode.replace("-", ""), ignoreCase = true))) {
                 snackbarHostState.showSnackbar("This is your own group code")
             } else {
                 onCodeLookup(searchInput)
@@ -233,7 +233,7 @@ fun GroupsBottomSheet(
                                     letterSpacing = 1.sp,
                                     color = primaryTextColor
                                 ),
-                                cursorBrush = SolidColor(tealAccent),
+                                cursorBrush = SolidColor(primaryTextColor),
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -487,7 +487,7 @@ fun GroupsBottomSheet(
                                     Text(displayName, fontSize = 16.sp, color = primaryTextColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = if (isInvitedOutgoing) "Waiting for a reply" else "12 members",
+                                        text = if (isInvitedOutgoing) "Waiting for a reply" else "Connected",
                                         fontSize = 13.sp,
                                         color = secondaryTextColor
                                     )
@@ -503,6 +503,12 @@ fun GroupsBottomSheet(
                     }
                 }
             }
+
+            // "Invite sent", "Invitation declined" and similar messages show here, inside the sheet.
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 

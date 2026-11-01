@@ -81,3 +81,24 @@ fun GroupCreatedHeader(
         )
     }
 }
+
+@Composable
+fun ChatStartedHeader(
+    createdDateText: String,
+    secondaryTextColor: Color
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 14.dp, bottom = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = "Chat started $createdDateText",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Normal,
+            color = secondaryTextColor,
+            textAlign = TextAlign.Center
+        )
+    }
+}

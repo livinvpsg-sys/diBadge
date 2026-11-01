@@ -14,12 +14,13 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.DocumentScanner
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -34,7 +35,8 @@ data class UploadFileConfigState(
     val uri: Uri,
     var name: String,
     var categoryId: String? = null,
-    var categoryName: String? = null
+    var categoryName: String? = null,
+    val id: Long = System.nanoTime()
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,12 +45,11 @@ fun UploadToLibrarySheet(
     initialCategoryId: String? = null,
     initialCategoryName: String? = null,
     isDark: Boolean,
-    onUploadFiles: (configs: List<UploadFileConfigState>, notifyMembers: Boolean) -> Unit,
+    onUploadFiles: (configs: List<UploadFileConfigState>) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     val uploadConfigs = remember { mutableStateListOf<UploadFileConfigState>() }
-    var notifyMembers by remember { mutableStateOf(true) }
 
     val colors = MaterialTheme.colorScheme
     val diBadgeColors = DiBadgeTheme.colors
@@ -160,7 +161,7 @@ fun UploadToLibrarySheet(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Source Option 2: Scan a document
+            // Source Option 2: Upload a photo from the gallery
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -176,14 +177,14 @@ fun UploadToLibrarySheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Outlined.DocumentScanner,
+                        imageVector = Icons.Outlined.Image,
                         contentDescription = null,
                         tint = primaryTextColor,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Scan a document (up to 10 pages)",
+                        text = "Upload a photo",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
                         color = primaryTextColor
@@ -209,7 +210,7 @@ fun UploadToLibrarySheet(
                         .heightIn(max = 220.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(uploadConfigs.size) { idx ->
+                    items(uploadConfigs.size, key = { uploadConfigs[it].id }) { idx ->
                         val config = uploadConfigs[idx]
                         Surface(
                             shape = RoundedCornerShape(12.dp),
@@ -234,6 +235,7 @@ fun UploadToLibrarySheet(
                                         },
                                         singleLine = true,
                                         textStyle = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = primaryTextColor),
+                                        cursorBrush = SolidColor(primaryTextColor),
                                         modifier = Modifier.weight(1f)
                                     )
 
@@ -257,32 +259,6 @@ fun UploadToLibrarySheet(
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            // Notify members switch
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "Notify members",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = primaryTextColor
-                )
-                Switch(
-                    checked = notifyMembers,
-                    onCheckedChange = { notifyMembers = it },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = tealAccent,
-                        uncheckedThumbColor = secondaryTextColor,
-                        uncheckedTrackColor = outlineColor
-                    )
-                )
-            }
-
             Spacer(modifier = Modifier.height(16.dp))
 
             // Buttons: Cancel & Upload
@@ -302,7 +278,7 @@ fun UploadToLibrarySheet(
                     enabled = canUpload,
                     onClick = {
                         if (canUpload) {
-                            onUploadFiles(uploadConfigs.toList(), notifyMembers)
+                            onUploadFiles(uploadConfigs.toList())
                         }
                     }
                 ) {

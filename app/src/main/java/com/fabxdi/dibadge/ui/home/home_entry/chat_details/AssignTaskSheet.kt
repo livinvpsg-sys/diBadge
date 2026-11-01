@@ -152,7 +152,7 @@ fun AssignTaskSheet(
                             fontSize = 20.sp,
                             color = primaryTextColor
                         ),
-                        cursorBrush = SolidColor(tealAccent),
+                        cursorBrush = SolidColor(primaryTextColor),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -340,9 +340,18 @@ fun AssignTaskSheet(
                 OutlinedTextField(
                     value = tempNote,
                     onValueChange = { tempNote = it },
-                    placeholder = { Text("Add note details...") },
+                    placeholder = { Text("Add note details...", color = secondaryTextColor) },
                     modifier = Modifier.fillMaxWidth(),
-                    maxLines = 4
+                    maxLines = 4,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = primaryTextColor,
+                        unfocusedTextColor = primaryTextColor,
+                        cursorColor = primaryTextColor,
+                        focusedBorderColor = primaryTextColor,
+                        unfocusedBorderColor = outlineColor,
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent
+                    )
                 )
             },
             confirmButton = {

@@ -14,6 +14,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
@@ -40,6 +42,7 @@ import com.fabxdi.dibadge.viewmodel.ConnectionsViewModel
 fun ConnectionsScreen(
     onBack: () -> Unit = {},
     bottomBar: @Composable () -> Unit = {},
+    onOpenChat: (ConnectionItem) -> Unit = {},
     viewModel: ConnectionsViewModel = viewModel()
 ) {
     val connections by viewModel.connections.collectAsState()
@@ -230,11 +233,13 @@ fun ConnectionsScreen(
                                     primaryTextColor = primaryTextColor,
                                     secondaryTextColor = secondaryTextColor,
                                     cardBgColor = cardBgColor,
+                                    tealAccent = tealAccent,
                                     errorColor = errorColor,
                                     onClick = {
                                         expandedConnectionId = if (expandedConnectionId == item.id) null else item.id
                                     },
-                                    onRemove = { viewModel.removeConnection(item) }
+                                    onRemove = { viewModel.removeConnection(item) },
+                                    onChatClick = { onOpenChat(item) }
                                 )
                             }
                         }
@@ -343,11 +348,13 @@ fun ConnectionsScreen(
                                 primaryTextColor = primaryTextColor,
                                 secondaryTextColor = secondaryTextColor,
                                 cardBgColor = cardBgColor,
+                                tealAccent = tealAccent,
                                 errorColor = errorColor,
                                 onClick = {
                                     expandedConnectionId = if (expandedConnectionId == item.id) null else item.id
                                 },
-                                onRemove = { viewModel.removeConnection(item) }
+                                onRemove = { viewModel.removeConnection(item) },
+                                onChatClick = { onOpenChat(item) }
                             )
                         }
                     }
@@ -478,9 +485,11 @@ fun ConnectionRow(
     primaryTextColor: Color,
     secondaryTextColor: Color,
     cardBgColor: Color,
+    tealAccent: Color,
     errorColor: Color,
     onClick: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    onChatClick: () -> Unit = {}
 ) {
     val avatarBgColor = remember(item.id) { UserColorUtils.getColorForName(item.id) }
     val sublineText = remember(item.organization, item.role) {
@@ -555,24 +564,79 @@ fun ConnectionRow(
                 color = cardBgColor
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
+                    // Header Row with subline/company/role on left and Chat icon + Red Trash icon at top right
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (sublineText.isNotBlank()) {
+                            Text(
+                                text = sublineText,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = secondaryTextColor,
+                                modifier = Modifier.weight(1f)
+                            )
+                        } else {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = onChatClick,
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.ChatBubbleOutline,
+                                    contentDescription = "Chat with ${item.name}",
+                                    tint = tealAccent,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = onRemove,
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Remove connection",
+                                    tint = errorColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+
                     if (item.bio.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = item.bio,
                             fontSize = 13.sp,
                             color = secondaryTextColor
                         )
-                        Spacer(modifier = Modifier.height(10.dp))
                     }
-                    IconButton(
-                        onClick = onRemove,
-                        modifier = Modifier.size(32.dp)
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Bottom Row: Collapse Chevron at right
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Remove connection",
-                            tint = errorColor,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        IconButton(
+                            onClick = onClick,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowUp,
+                                contentDescription = "Collapse",
+                                tint = secondaryTextColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
             }

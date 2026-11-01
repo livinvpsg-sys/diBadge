@@ -223,7 +223,7 @@ fun SelectSignersSheet(
                                 },
                                 singleLine = true,
                                 textStyle = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp, color = primaryTextColor),
-                                cursorBrush = SolidColor(tealAccent),
+                                cursorBrush = SolidColor(primaryTextColor),
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }

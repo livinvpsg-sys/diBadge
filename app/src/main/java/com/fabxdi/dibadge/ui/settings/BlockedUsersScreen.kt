@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material3.*
@@ -22,22 +21,57 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.UserColorUtils
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.launch
 
 data class BlockedUserItem(
     val id: String,
     val name: String,
-    val organization: String
+    val nickname: String = "",
+    val organization: String = ""
 )
 
 @Composable
 fun BlockedUsersScreen(
     onBack: () -> Unit
 ) {
+    val currentUid = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
     var blockedUsers by remember { mutableStateOf(emptyList<BlockedUserItem>()) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(currentUid) {
+        if (currentUid.isNotBlank()) {
+            val db = FirebaseFirestore.getInstance()
+            db.collection("blockedUsers").document(currentUid)
+                .collection("blocked")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null || snapshot == null) return@addSnapshotListener
+                    val items = snapshot.documents.mapNotNull { doc ->
+                        val uid = doc.id
+                        val name = doc.getString("name") ?: "User"
+                        val org = doc.getString("organization") ?: ""
+                        BlockedUserItem(id = uid, name = name, organization = org)
+                    }
+
+                    blockedUsers = items
+
+                    // Listen to private nicknames given by current user
+                    items.forEach { item ->
+                        db.collection("users").document(currentUid)
+                            .collection("nicknames").document(item.id)
+                            .addSnapshotListener { nickSnap, _ ->
+                                val nick = if (nickSnap != null && nickSnap.exists()) nickSnap.getString("nickname") ?: "" else ""
+                                blockedUsers = blockedUsers.map { u ->
+                                    if (u.id == item.id) u.copy(nickname = nick) else u
+                                }
+                            }
+                    }
+                }
+        }
+    }
 
     BackHandler(enabled = true, onBack = onBack)
 
@@ -148,9 +182,10 @@ fun BlockedUsersScreen(
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                    if (user.organization.isNotBlank()) {
+                                    val subText = if (user.nickname.isNotBlank()) user.nickname else user.organization
+                                    if (subText.isNotBlank()) {
                                         Text(
-                                            text = user.organization,
+                                            text = subText,
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Normal,
                                             color = secondaryTextColor,
@@ -169,9 +204,14 @@ fun BlockedUsersScreen(
                                 modifier = Modifier
                                     .clickable {
                                         val targetName = user.name
-                                        blockedUsers = blockedUsers.filter { it.id != user.id }
-                                        coroutineScope.launch {
-                                            snackbarHostState.showSnackbar("Unblocked $targetName")
+                                        val db = FirebaseFirestore.getInstance()
+                                        if (currentUid.isNotBlank()) {
+                                            db.collection("blockedUsers").document(currentUid)
+                                                .collection("blocked").document(user.id)
+                                                .delete()
+                                            coroutineScope.launch {
+                                                snackbarHostState.showSnackbar("Unblocked $targetName")
+                                            }
                                         }
                                     }
                                     .padding(horizontal = 8.dp, vertical = 8.dp)

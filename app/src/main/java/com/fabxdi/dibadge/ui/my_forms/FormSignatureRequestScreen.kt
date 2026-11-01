@@ -96,9 +96,10 @@ fun FormSignatureRequestScreen(
     val firstSigIndex = remember(questions) {
         questions.indexOfFirst { it.type in listOf("signatures", "single_signature", "multiple_signatures") }
     }
-    val visibleQuestions = remember(questions, isApplicant, firstSigIndex) {
-        if (isApplicant || firstSigIndex == -1) questions
-        else questions.take(firstSigIndex)
+    val visibleIds = remember(questions, answersMap) { FormAnswers.visibleIds(questions, answersMap) }
+    val visibleQuestions = remember(questions, isApplicant, firstSigIndex, visibleIds) {
+        (if (isApplicant || firstSigIndex == -1) questions else questions.take(firstSigIndex))
+            .filter { it.id in visibleIds }
     }
 
     val workers = remember(currentSubmission.workersJson) {
@@ -266,8 +267,20 @@ fun FormSignatureRequestScreen(
             FormHeaderLogosStrip(logos = logosData)
 
             // Form fields above signature question for signers, or full form for applicant
-            visibleQuestions.forEachIndexed { idx, q ->
-                val ans = answersMap[q.id]?.ifBlank { "N/A" } ?: "N/A"
+            var shownNumber = 0
+            visibleQuestions.forEach { q ->
+                if (q.type == "instruction") {
+                    Text(
+                        text = q.label,
+                        fontSize = 15.sp,
+                        color = primaryTextColor,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                    )
+                    return@forEach
+                }
+                shownNumber += 1
+                val idx = shownNumber - 1
+                val ans = FormAnswers.displayText(q, answersMap[q.id] ?: "").ifBlank { "N/A" }
                 Surface(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                     shape = RoundedCornerShape(14.dp),

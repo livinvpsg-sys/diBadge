@@ -49,6 +49,7 @@ fun MembersBottomSheet(
     onRoleChange: (memberId: String, newRole: String) -> Unit,
     onTransferOwnership: (newOwnerId: String) -> Unit,
     onExitGroup: () -> Unit,
+    onInviteMember: (GroupMember) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     var warningMessage by remember { mutableStateOf<String?>(null) }
@@ -56,7 +57,13 @@ fun MembersBottomSheet(
     var showExitConfirmDialog by remember { mutableStateOf(false) }
     var showAddPeopleSheet by remember { mutableStateOf(false) }
     var invitedMemberIds by remember { mutableStateOf(setOf<String>()) }
-    var connectedMemberIds by remember { mutableStateOf(setOf<String>()) }
+
+    // Members who are already in my connections don't need an Invite action.
+    val connectionsViewModel: ConnectionsViewModel = viewModel()
+    val userConnections by connectionsViewModel.connections.collectAsState()
+    val connectedMemberIds = remember(userConnections) {
+        userConnections.map { it.uid.ifBlank { it.id } }.toSet()
+    }
 
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -71,7 +78,6 @@ fun MembersBottomSheet(
     val errorColor = colors.error
     val dimColor = diBadgeColors.tabInactive
     val tealAccent = diBadgeColors.accent
-    val isDark = primaryTextColor.red > 0.5f
 
     val isUserOwner = currentRole.equals("owner", ignoreCase = true)
     val isUserAdmin = currentRole.equals("admin", ignoreCase = true) || isUserOwner
@@ -180,7 +186,7 @@ fun MembersBottomSheet(
                     val isSelf = member.id == currentUserId || member.name.contains("(You)", ignoreCase = true)
                     val isOwner = member.role.equals("owner", ignoreCase = true)
                     val isAdmin = member.role.equals("admin", ignoreCase = true)
-                    val isConnected = connectedMemberIds.contains(member.id)
+                    val isConnected = connectedMemberIds.contains(member.uid)
                     val isInvited = invitedMemberIds.contains(member.id)
 
                     val roleLabel = when {
@@ -290,6 +296,7 @@ fun MembersBottomSheet(
                                     modifier = Modifier
                                         .clickable {
                                             invitedMemberIds = invitedMemberIds + member.id
+                                            onInviteMember(member)
                                             coroutineScope.launch {
                                                 snackbarHostState.showSnackbar("Invite sent to ${member.name}")
                                             }
@@ -307,6 +314,12 @@ fun MembersBottomSheet(
                     )
                 }
             }
+
+            // Messages such as "Invite sent" and "2 people added" show here, inside the sheet.
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 
@@ -488,9 +501,7 @@ fun MembersBottomSheet(
     }
 
     if (showAddPeopleSheet) {
-        val connectionsViewModel: ConnectionsViewModel = viewModel()
         val detailsViewModel: GroupDetailsViewModel = viewModel()
-        val userConnections by connectionsViewModel.connections.collectAsState()
 
         val existingMemberUids = remember(members) { members.map { it.uid }.toSet() }
         val existingMemberNames = remember(members) { members.map { it.displayName.lowercase() }.toSet() }

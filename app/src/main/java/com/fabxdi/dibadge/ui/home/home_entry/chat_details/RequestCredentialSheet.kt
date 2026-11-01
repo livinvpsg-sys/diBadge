@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -109,6 +110,7 @@ fun RequestCredentialSheet(
                     onValueChange = { certNameInput = it },
                     singleLine = true,
                     textStyle = TextStyle(fontSize = 15.sp, color = primaryTextColor),
+                    cursorBrush = SolidColor(primaryTextColor),
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -156,7 +158,7 @@ fun RequestCredentialSheet(
                     .heightIn(max = 200.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                items(otherMembers) { member ->
+                items(otherMembers, key = { it.id }) { member ->
                     val isSelected = selectedMembers.contains(member)
                     Surface(
                         modifier = Modifier

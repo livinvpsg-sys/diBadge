@@ -29,6 +29,9 @@ interface ToDoDao {
     @Query("SELECT * FROM home_entries ORDER BY timestamp DESC")
     fun getAllHomeEntries(): Flow<List<HomeEntryEntity>>
 
+    @Query("SELECT * FROM home_entries")
+    suspend fun getAllHomeEntriesList(): List<HomeEntryEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertHomeEntry(entry: HomeEntryEntity): Long
 

@@ -31,11 +31,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
@@ -43,19 +43,27 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.fabxdi.dibadge.util.FilePickerUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 
+/**
+ * One brush stroke. Points are stored as fractions (0..1) of the photo itself, so the stroke
+ * lands in the same place on screen and in the saved file, whatever size either one is.
+ */
 data class DrawPathData(
-    val path: Path,
+    val points: List<Offset>,
     val color: Color,
-    val strokeWidth: Float = 10f
+    /** Brush width as a fraction of the photo's width. */
+    val strokeWidthFraction: Float = 0.008f
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,10 +76,11 @@ fun MediaGalleryScreen(
     onRemovePhoto: (Int) -> Unit = {},
     onSaveEditedPhoto: (Int, Uri) -> Unit = { _, _ -> }
 ) {
-    if (mediaUris.isEmpty()) {
-        onClose()
-        return
+    // Closing is a side effect, so it runs in an effect and not during composition.
+    LaunchedEffect(mediaUris.isEmpty()) {
+        if (mediaUris.isEmpty()) onClose()
     }
+    if (mediaUris.isEmpty()) return
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -100,6 +109,7 @@ fun MediaGalleryScreen(
 
     val currentPage = pagerState.currentPage.coerceIn(0, mediaUris.size - 1)
     val currentUri = mediaUris[currentPage]
+    val currentIsVideo = remember(currentUri) { isVideoUri(context, currentUri) }
 
     Box(
         modifier = Modifier
@@ -162,13 +172,18 @@ fun MediaGalleryScreen(
                         color = tealAccent,
                         modifier = Modifier
                             .clickable {
-                                scope.launch {
-                                    val newUri = saveEditedPhotoWithPaths(context, currentUri, drawPaths)
-                                    if (newUri != null) {
-                                        onSaveEditedPhoto(currentPage, newUri)
-                                    }
-                                    drawPaths.clear()
+                                if (drawPaths.isEmpty()) {
                                     isDrawMode = false
+                                } else {
+                                    val strokes = drawPaths.toList()
+                                    scope.launch {
+                                        val newUri = saveEditedPhotoWithPaths(context, currentUri, strokes)
+                                        if (newUri != null) {
+                                            onSaveEditedPhoto(currentPage, newUri)
+                                        }
+                                        drawPaths.clear()
+                                        isDrawMode = false
+                                    }
                                 }
                             }
                             .padding(horizontal = 12.dp, vertical = 8.dp)
@@ -189,47 +204,70 @@ fun MediaGalleryScreen(
                         modifier = Modifier.fillMaxSize()
                     )
 
-                    var currentPath by remember { mutableStateOf<Path?>(null) }
+                    // The photo's real (rotated) size, so strokes can be tied to the picture
+                    // and not to the screen.
+                    var photoSize by remember(currentUri) { mutableStateOf<IntSize?>(null) }
+                    LaunchedEffect(currentUri) {
+                        photoSize = withContext(Dispatchers.IO) { readOrientedSize(context, currentUri) }
+                    }
+                    var livePoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
 
                     Canvas(
                         modifier = Modifier
                             .fillMaxSize()
-                            .pointerInput(currentDrawColor) {
+                            .pointerInput(currentDrawColor, photoSize) {
+                                val photo = photoSize ?: return@pointerInput
+                                val rect = fitRect(size.width.toFloat(), size.height.toFloat(), photo)
+                                fun toFraction(o: Offset) = Offset(
+                                    ((o.x - rect.left) / rect.width).coerceIn(0f, 1f),
+                                    ((o.y - rect.top) / rect.height).coerceIn(0f, 1f)
+                                )
                                 detectDragGestures(
                                     onDragStart = { offset ->
-                                        val p = Path().apply { moveTo(offset.x, offset.y) }
-                                        currentPath = p
+                                        val f = toFraction(offset)
+                                        livePoints = listOf(f, f)
                                     },
                                     onDrag = { change, _ ->
-                                        currentPath?.lineTo(change.position.x, change.position.y)
+                                        livePoints = livePoints + toFraction(change.position)
                                     },
                                     onDragEnd = {
-                                        currentPath?.let {
-                                            drawPaths.add(DrawPathData(it, currentDrawColor))
+                                        if (livePoints.isNotEmpty()) {
+                                            drawPaths.add(DrawPathData(livePoints, currentDrawColor))
                                         }
-                                        currentPath = null
-                                    }
+                                        livePoints = emptyList()
+                                    },
+                                    onDragCancel = { livePoints = emptyList() }
                                 )
                             }
                     ) {
+                        val photo = photoSize ?: return@Canvas
+                        val rect = fitRect(size.width, size.height, photo)
+                        fun strokePath(points: List<Offset>): Path = Path().apply {
+                            points.forEachIndexed { i, f ->
+                                val x = rect.left + f.x * rect.width
+                                val y = rect.top + f.y * rect.height
+                                if (i == 0) moveTo(x, y) else lineTo(x, y)
+                            }
+                        }
+
                         drawPaths.forEach { drawData ->
                             drawPath(
-                                path = drawData.path,
+                                path = strokePath(drawData.points),
                                 color = drawData.color,
                                 style = Stroke(
-                                    width = drawData.strokeWidth,
+                                    width = drawData.strokeWidthFraction * rect.width,
                                     cap = StrokeCap.Round,
                                     join = StrokeJoin.Round
                                 )
                             )
                         }
 
-                        currentPath?.let { path ->
+                        if (livePoints.isNotEmpty()) {
                             drawPath(
-                                path = path,
+                                path = strokePath(livePoints),
                                 color = currentDrawColor,
                                 style = Stroke(
-                                    width = 10f,
+                                    width = 0.008f * rect.width,
                                     cap = StrokeCap.Round,
                                     join = StrokeJoin.Round
                                 )
@@ -308,17 +346,19 @@ fun MediaGalleryScreen(
                     )
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Pencil icon to draw
-                        IconButton(
-                            onClick = { isDrawMode = true },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = "Draw",
-                                tint = primaryTextColor,
-                                modifier = Modifier.size(24.dp)
-                            )
+                        // Pencil icon to draw (photos only)
+                        if (!currentIsVideo) {
+                            IconButton(
+                                onClick = { isDrawMode = true },
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Draw",
+                                    tint = primaryTextColor,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
 
                         // Delete / Trash icon (errorColor)
@@ -344,9 +384,7 @@ fun MediaGalleryScreen(
                         .weight(1f)
                 ) { page ->
                     val uri = mediaUris[page]
-                    val mimeType = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
-                    val isVideo = mimeType?.startsWith("video/") == true ||
-                            FilePickerUtils.getFileName(context, uri).lowercase().endsWith(".mp4")
+                    val isVideo = remember(uri) { isVideoUri(context, uri) }
 
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -439,18 +477,81 @@ fun MediaGalleryScreen(
     }
 }
 
-private fun saveEditedPhotoWithPaths(
+private class FitRect(val left: Float, val top: Float, val width: Float, val height: Float)
+
+/** Where a photo ends up inside a box of the given size under ContentScale.Fit. */
+private fun fitRect(boxW: Float, boxH: Float, photo: IntSize): FitRect {
+    val scale = minOf(boxW / photo.width, boxH / photo.height)
+    val w = photo.width * scale
+    val h = photo.height * scale
+    return FitRect((boxW - w) / 2f, (boxH - h) / 2f, w, h)
+}
+
+private fun isVideoUri(context: Context, uri: Uri): Boolean {
+    val mimeType = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
+    return mimeType?.startsWith("video/") == true ||
+        FilePickerUtils.getFileName(context, uri).lowercase().endsWith(".mp4")
+}
+
+private fun readExifDegrees(context: Context, uri: Uri): Int = try {
+    context.contentResolver.openInputStream(uri)?.use { input ->
+        when (android.media.ExifInterface(input).getAttributeInt(
+            android.media.ExifInterface.TAG_ORIENTATION,
+            android.media.ExifInterface.ORIENTATION_NORMAL
+        )) {
+            android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90
+            android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180
+            android.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270
+            else -> 0
+        }
+    } ?: 0
+} catch (e: Exception) {
+    0
+}
+
+/** Photo size as the user sees it (after EXIF rotation), read without loading the pixels. */
+private fun readOrientedSize(context: Context, uri: Uri): IntSize? = try {
+    val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+    if (opts.outWidth <= 0 || opts.outHeight <= 0) {
+        null
+    } else if (readExifDegrees(context, uri) % 180 != 0) {
+        IntSize(opts.outHeight, opts.outWidth)
+    } else {
+        IntSize(opts.outWidth, opts.outHeight)
+    }
+} catch (e: Exception) {
+    null
+}
+
+private suspend fun saveEditedPhotoWithPaths(
     context: Context,
     originalUri: Uri,
-    pathsList: List<DrawPathData>
-): Uri? {
-    return try {
-        val inputStream = context.contentResolver.openInputStream(originalUri) ?: return null
-        val baseBitmap = BitmapFactory.decodeStream(inputStream) ?: return null
-        inputStream.close()
+    strokes: List<DrawPathData>
+): Uri? = withContext(Dispatchers.IO) {
+    try {
+        // Decode at a sensible size so a 50 MP photo doesn't exhaust memory.
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(originalUri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 4096) sample *= 2
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        val decoded = context.contentResolver.openInputStream(originalUri)?.use {
+            BitmapFactory.decodeStream(it, null, opts)
+        } ?: return@withContext null
 
-        val mutableBitmap = baseBitmap.copy(Bitmap.Config.ARGB_8888, true)
+        val degrees = readExifDegrees(context, originalUri)
+        val upright = if (degrees != 0) {
+            val m = android.graphics.Matrix().apply { postRotate(degrees.toFloat()) }
+            Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, m, true)
+        } else {
+            decoded
+        }
+
+        val mutableBitmap = upright.copy(Bitmap.Config.ARGB_8888, true)
         val canvas = android.graphics.Canvas(mutableBitmap)
+        val w = mutableBitmap.width.toFloat()
+        val h = mutableBitmap.height.toFloat()
 
         val paint = Paint().apply {
             isAntiAlias = true
@@ -459,15 +560,19 @@ private fun saveEditedPhotoWithPaths(
             strokeJoin = Paint.Join.ROUND
         }
 
-        pathsList.forEach { drawData ->
-            paint.color = drawData.color.toArgb()
-            paint.strokeWidth = drawData.strokeWidth * (baseBitmap.width / 1000f).coerceAtLeast(1f)
-            canvas.drawPath(drawData.path.asAndroidPath(), paint)
+        strokes.forEach { stroke ->
+            val path = android.graphics.Path()
+            stroke.points.forEachIndexed { i, f ->
+                if (i == 0) path.moveTo(f.x * w, f.y * h) else path.lineTo(f.x * w, f.y * h)
+            }
+            paint.color = stroke.color.toArgb()
+            paint.strokeWidth = stroke.strokeWidthFraction * w
+            canvas.drawPath(path, paint)
         }
 
         val editedFile = File(context.cacheDir, "EDITED_${System.currentTimeMillis()}.jpg")
         FileOutputStream(editedFile).use { out ->
-            mutableBitmap.compress(Bitmap.CompressFormat.JPEG, 80, out)
+            mutableBitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
         }
 
         FileProvider.getUriForFile(

@@ -54,6 +54,12 @@ data class UserProfileData(
     val signatureUrl: String = ""
 )
 
+data class VerifiedOrganizationItem(
+    val name: String,
+    val role: String? = null,
+    val verifiedAt: Long = System.currentTimeMillis()
+)
+
 data class EmailVerificationState(
     val isOpen: Boolean = false,
     val challengeId: String = "",
@@ -106,6 +112,16 @@ class ProfileViewModel : ViewModel() {
     private val _isUploadingPhoto = MutableStateFlow(false)
     val isUploadingPhoto: StateFlow<Boolean> = _isUploadingPhoto.asStateFlow()
 
+    private val _verifiedOrganization = MutableStateFlow<VerifiedOrganizationItem?>(null)
+    val verifiedOrganization: StateFlow<VerifiedOrganizationItem?> = _verifiedOrganization.asStateFlow()
+
+    private val _verificationUpdateMessage = MutableStateFlow<String?>(null)
+    val verificationUpdateMessage: StateFlow<String?> = _verificationUpdateMessage.asStateFlow()
+
+    fun clearVerificationUpdateMessage() {
+        _verificationUpdateMessage.value = null
+    }
+
     private var initialProfileData = UserProfileData()
     private var resendTimerJob: Job? = null
     private var usernameCheckJob: Job? = null
@@ -120,6 +136,39 @@ class ProfileViewModel : ViewModel() {
             _uiState.value = ProfileUiState.Error("No user signed in")
             return
         }
+
+        var previousOrgName: String? = null
+
+        // Listen to verifiedOrganization
+        firestore.collection("users").document(user.uid)
+            .collection("verifiedOrganizations")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null || snapshot.isEmpty) {
+                    _verifiedOrganization.value = null
+                    previousOrgName = null
+                    return@addSnapshotListener
+                }
+                val doc = snapshot.documents.firstOrNull()
+                val name = doc?.getString("name") ?: ""
+                val role = doc?.getString("role")
+                if (name.isNotBlank()) {
+                    val verifiedAt = doc?.getTimestamp("verifiedAt")?.toDate()?.time
+                        ?: doc?.getLong("verifiedAt") ?: System.currentTimeMillis()
+                    val newOrg = VerifiedOrganizationItem(
+                        name = name,
+                        role = role,
+                        verifiedAt = verifiedAt
+                    )
+                    if (previousOrgName != null && previousOrgName != name) {
+                        _verificationUpdateMessage.value = "You are now verified by $name"
+                    }
+                    previousOrgName = name
+                    _verifiedOrganization.value = newOrg
+                } else {
+                    _verifiedOrganization.value = null
+                    previousOrgName = null
+                }
+            }
 
         val emailVal = user.email ?: ""
         val displayName = user.displayName ?: ""

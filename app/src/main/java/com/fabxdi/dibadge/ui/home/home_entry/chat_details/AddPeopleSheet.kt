@@ -169,7 +169,7 @@ fun AddPeopleSheet(
                                 fontSize = 16.sp,
                                 color = primaryTextColor
                             ),
-                            cursorBrush = SolidColor(tealAccent),
+                            cursorBrush = SolidColor(primaryTextColor),
                             modifier = Modifier.fillMaxWidth()
                         )
                     }

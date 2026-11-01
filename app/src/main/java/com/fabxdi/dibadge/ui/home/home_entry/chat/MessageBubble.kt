@@ -148,6 +148,7 @@ fun MessageBubble(
     isAnySelected: Boolean,
     isFirstInRun: Boolean = true,
     isHighlighted: Boolean = false,
+    isOneToOne: Boolean = false,
     onLongClick: (String?) -> Unit,
     onClick: () -> Unit,
     onReplyClick: (String, String?) -> Unit,
@@ -165,7 +166,7 @@ fun MessageBubble(
     val alignment = if (message.isSentByMe) Alignment.End else Alignment.Start
 
     val colors = MaterialTheme.colorScheme
-    val isDark = colors.onBackground.red > 0.5f
+    val isDark = DiBadgeTheme.colors.isDark
 
     // Theme tokens
     val primaryTextColor = if (isDark) Color(0xFFF0F3F5) else Color(0xFF11161A)
@@ -315,7 +316,7 @@ fun MessageBubble(
                         modifier = Modifier.size(13.dp)
                     )
                 }
-            } else if (!message.isSentByMe && isFirstInRun) {
+            } else if (!isOneToOne && !message.isSentByMe && isFirstInRun) {
                 // Normal Incoming Sender Name (using per-identity color palette, never teal)
                 val senderColor = remember(message.senderName, isDark) {
                     UserColorUtils.getColorForName(message.senderName, isDark)
@@ -334,7 +335,7 @@ fun MessageBubble(
                 horizontalArrangement = if (message.isSentByMe) Arrangement.End else Arrangement.Start,
                 verticalAlignment = Alignment.Bottom
             ) {
-                if (!message.isSentByMe) {
+                if (!isOneToOne && !message.isSentByMe) {
                     if (isFirstInRun || message.isGroupMention) {
                         val avatarShape = if (message.isGroupMention) RoundedCornerShape(10.dp) else CircleShape
                         val avatarText = (message.sendingGroupName ?: message.senderName).take(1).uppercase()
@@ -1241,9 +1242,9 @@ private fun AttachmentAndTextSection(
                                 val durationSec = message.attachmentDurations[firstUriStr] ?: 0L
                                 val durationStr = if (durationSec > 0) {
                                     String.format(Locale.getDefault(), "%d:%02d", durationSec / 60, durationSec % 60)
-                                } else "0:42"
+                                } else ""
 
-                                Surface(
+                                if (durationStr.isNotEmpty()) Surface(
                                     color = Color.Black.copy(alpha = 0.55f),
                                     shape = RoundedCornerShape(6.dp),
                                     modifier = Modifier
@@ -1299,14 +1300,15 @@ private fun AttachmentAndTextSection(
                                     Spacer(modifier = Modifier.height(2.dp))
                                     val sizeBytes = FilePickerUtils.getFileSizeBytes(context, firstUri)
                                     val sizeStr = FilePickerUtils.formatFileSize(sizeBytes)
-                                    val isFailed = false // TODO: Check message failed state
+                                    val isFailed = message.sendStatus == "FAILED"
                                     if (isFailed && message.isSentByMe) {
                                         Text(
                                             text = "Not sent. Tap to retry",
                                             fontSize = 12.sp,
                                             color = MaterialTheme.colorScheme.error,
                                             maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.clickable { onRetryFailedMessage(message) }
                                         )
                                     } else {
                                         Text(
@@ -1602,8 +1604,8 @@ private fun AttachmentAndTextSection(
                                                                 val durationSec = message.attachmentDurations[uriStr] ?: 0L
                                                                 val durationStr = if (durationSec > 0) {
                                                                     String.format(Locale.getDefault(), "%d:%02d", durationSec / 60, durationSec % 60)
-                                                                } else "0:42"
-                                                                Surface(
+                                                                } else ""
+                                                                if (durationStr.isNotEmpty()) Surface(
                                                                     color = Color.Black.copy(alpha = 0.55f),
                                                                     shape = RoundedCornerShape(4.dp),
                                                                     modifier = Modifier
@@ -1729,8 +1731,8 @@ private fun AttachmentAndTextSection(
                                                         val durationSec = message.attachmentDurations[uri.toString()] ?: 0L
                                                         val durationStr = if (durationSec > 0) {
                                                             String.format(Locale.getDefault(), "%d:%02d", durationSec / 60, durationSec % 60)
-                                                        } else "0:42"
-                                                        Surface(
+                                                        } else ""
+                                                        if (durationStr.isNotEmpty()) Surface(
                                                             color = Color.Black.copy(alpha = 0.55f),
                                                             shape = RoundedCornerShape(6.dp),
                                                             modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)

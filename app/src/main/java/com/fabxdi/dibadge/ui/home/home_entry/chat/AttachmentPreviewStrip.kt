@@ -163,9 +163,9 @@ fun AttachmentPreviewStrip(
             horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            itemsIndexed(attachedUris) { index, uri ->
+            itemsIndexed(attachedUris, key = { _, uri -> uri.toString() }) { index, uri ->
                 val fileName = remember(uri) { FilePickerUtils.getFileName(context, uri) }
-                val mimeType = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
+                val mimeType = remember(uri) { try { context.contentResolver.getType(uri) } catch (e: Exception) { null } }
                 val ext = fileName.substringAfterLast('.', "").lowercase()
 
                 val isImage = mimeType?.startsWith("image/") == true || ext in listOf("jpg", "jpeg", "png")
@@ -231,9 +231,9 @@ fun AttachmentPreviewStrip(
                                     // Duration chip at bottom right (4dp from edges)
                                     val durationStr = if (durationSec > 0) {
                                         String.format(Locale.getDefault(), "%d:%02d", durationSec / 60, durationSec % 60)
-                                    } else "0:42"
+                                    } else ""
 
-                                    Surface(
+                                    if (durationStr.isNotEmpty()) Surface(
                                         color = Color.Black.copy(alpha = 0.55f),
                                         shape = RoundedCornerShape(6.dp),
                                         modifier = Modifier

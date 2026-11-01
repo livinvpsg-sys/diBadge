@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
+import android.net.ConnectivityManager
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -45,6 +46,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.QrCode
 import androidx.compose.material.icons.filled.ContentCopy
@@ -156,6 +158,17 @@ fun ChatDetailsScreen(
     val isLoading by detailsViewModel.isLoading.collectAsState()
     val codeLookupResult by detailsViewModel.codeLookupResult.collectAsState()
     val memberSearchCandidates by detailsViewModel.memberSearchCandidates.collectAsState()
+
+    val isOneToOne by detailsViewModel.isOneToOne.collectAsState()
+    val otherUserName by detailsViewModel.otherUserName.collectAsState()
+    val otherUserFirstName by detailsViewModel.otherUserFirstName.collectAsState()
+    val otherUserNickname by detailsViewModel.otherUserNickname.collectAsState()
+    val otherUserPhotoUrl by detailsViewModel.otherUserPhotoUrl.collectAsState()
+    val otherUserOrg by detailsViewModel.otherUserOrg.collectAsState()
+    val isOtherUserBlocked by detailsViewModel.isOtherUserBlocked.collectAsState()
+
+    var showBlockUserDialog by remember { mutableStateOf(false) }
+    var showNicknameSheet by remember { mutableStateOf(false) }
 
     val colors = MaterialTheme.colorScheme
     val isDark = colors.onBackground.red > 0.5f
@@ -435,16 +448,18 @@ fun ChatDetailsScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(18.dp)
                         ) {
-                            IconButton(
-                                onClick = { showGroupCalendarScreen = true },
-                                modifier = Modifier.size(48.dp)
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_calendar),
-                                    contentDescription = "Schedule",
-                                    tint = primaryTextColor,
-                                    modifier = Modifier.size(22.dp)
-                                )
+                            if (!isOneToOne) {
+                                IconButton(
+                                    onClick = { showGroupCalendarScreen = true },
+                                    modifier = Modifier.size(48.dp)
+                                ) {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_calendar),
+                                        contentDescription = "Schedule",
+                                        tint = primaryTextColor,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
                             }
 
                             IconButton(
@@ -458,7 +473,7 @@ fun ChatDetailsScreen(
                                         tint = primaryTextColor,
                                         modifier = Modifier.size(22.dp)
                                     )
-                                    if (isAdmin && pendingRequests.isNotEmpty()) {
+                                    if (!isOneToOne && isAdmin && pendingRequests.isNotEmpty()) {
                                         Box(
                                             modifier = Modifier
                                                 .align(Alignment.TopEnd)
@@ -511,6 +526,9 @@ fun ChatDetailsScreen(
                 ) {
                     // 88dp Round Avatar
                     val raisedFill = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
+                    val avatarPhoto = if (isOneToOne) otherUserPhotoUrl else groupPhotoUrl
+                    val avatarInitial = (if (isOneToOne) (otherUserName.ifBlank { entry.title }) else groupName).take(1).uppercase()
+
                     Surface(
                         modifier = Modifier
                             .size(88.dp)
@@ -519,9 +537,9 @@ fun ChatDetailsScreen(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null
                             ) {
-                                if (groupPhotoUrl.isNotBlank()) {
+                                if (avatarPhoto.isNotBlank()) {
                                     showFullscreenAvatarViewer = true
-                                } else {
+                                } else if (!isOneToOne) {
                                     avatarPickerLauncher.launch("image/*")
                                 }
                             },
@@ -529,17 +547,17 @@ fun ChatDetailsScreen(
                         color = raisedFill,
                         border = BorderStroke(1.dp, outlineColor)
                     ) {
-                        if (groupPhotoUrl.isNotBlank()) {
+                        if (avatarPhoto.isNotBlank()) {
                             AsyncImage(
-                                model = groupPhotoUrl,
-                                contentDescription = "Group Photo",
+                                model = avatarPhoto,
+                                contentDescription = "Photo",
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop
                             )
                         } else {
                             Box(contentAlignment = Alignment.Center) {
                                 Text(
-                                    text = groupName.take(1).uppercase(),
+                                    text = avatarInitial,
                                     fontSize = 36.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = primaryTextColor
@@ -550,9 +568,10 @@ fun ChatDetailsScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Group Name (22sp Medium)
+                    // Name (22sp Medium)
+                    val displayName = if (isOneToOne) (otherUserName.ifBlank { entry.title }) else groupName.ifBlank { "Group" }
                     Text(
-                        text = groupName.ifBlank { "Group" },
+                        text = displayName,
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Medium,
                         color = primaryTextColor,
@@ -560,6 +579,7 @@ fun ChatDetailsScreen(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.clickable(
+                            enabled = !isOneToOne,
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
                         ) {
@@ -570,44 +590,83 @@ fun ChatDetailsScreen(
 
                     Spacer(modifier = Modifier.height(2.dp))
 
-                    // Line 2: Description (14sp Secondary, max 3 lines; "Add group description" if blank)
-                    val isMemberCountStr = remember(groupSubtitle) {
-                        val sub = groupSubtitle.trim().lowercase()
-                        sub.endsWith("member") || sub.endsWith("members")
-                    }
-                    val displayDescription = if (groupSubtitle == "test" || isMemberCountStr) "" else groupSubtitle
-                    Text(
-                        text = displayDescription.ifBlank { "Add group description" },
-                        fontSize = 14.sp,
-                        color = secondaryTextColor,
-                        textAlign = TextAlign.Center,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            editDescriptionInput = displayDescription
-                            showEditDescriptionDialog = true
+                    // Line 2: Nickname (if 1-to-1) OR Description (if group)
+                    if (isOneToOne) {
+                        if (otherUserNickname.isNotBlank()) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier
+                                    .clickable { showNicknameSheet = true }
+                                    .padding(vertical = 2.dp, horizontal = 6.dp)
+                            ) {
+                                Text(
+                                    text = otherUserNickname,
+                                    fontSize = 14.sp,
+                                    color = secondaryTextColor,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.Outlined.Edit,
+                                    contentDescription = "Edit nickname",
+                                    tint = secondaryTextColor,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        } else {
+                            Text(
+                                text = "Add nickname",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = tealAccent,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .clickable { showNicknameSheet = true }
+                                    .padding(vertical = 2.dp, horizontal = 6.dp)
+                            )
                         }
-                    )
+                    } else {
+                        val isMemberCountStr = remember(groupSubtitle) {
+                            val sub = groupSubtitle.trim().lowercase()
+                            sub.endsWith("member") || sub.endsWith("members")
+                        }
+                        val displayDescription = if (groupSubtitle == "test" || isMemberCountStr) "" else groupSubtitle
+                        Text(
+                            text = displayDescription.ifBlank { "Add group description" },
+                            fontSize = 14.sp,
+                            color = secondaryTextColor,
+                            textAlign = TextAlign.Center,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                editDescriptionInput = displayDescription
+                                showEditDescriptionDialog = true
+                            }
+                        )
 
-                    Spacer(modifier = Modifier.height(2.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
 
-                    // Line 3: Member Count (13sp Secondary)
-                    val memberCountText = if (members.size == 1) "1 member" else "${members.size} members"
-                    Text(
-                        text = memberCountText,
-                        fontSize = 13.sp,
-                        color = secondaryTextColor,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.clickable { showMembersSheet = true }
-                    )
+                        // Line 3: Member Count (13sp Secondary)
+                        val memberCountText = if (members.size == 1) "1 member" else "${members.size} members"
+                        Text(
+                            text = memberCountText,
+                            fontSize = 13.sp,
+                            color = secondaryTextColor,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.clickable { showMembersSheet = true }
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // Four Equal-Width Tabs: Media | Docs | Audio | Links (44dp high)
+                // Tabs: Media | Docs (if 1-to-1) or Media | Docs | Audio | Links (if group)
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Row(
                         modifier = Modifier
@@ -615,7 +674,7 @@ fun ChatDetailsScreen(
                             .height(44.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val categories = listOf("Media", "Docs", "Audio", "Links")
+                        val categories = if (isOneToOne) listOf("Media", "Docs") else listOf("Media", "Docs", "Audio", "Links")
                         categories.forEach { category ->
                             val isSelected = selectedMediaCategory == category
                             Box(
@@ -1222,11 +1281,17 @@ fun ChatDetailsScreen(
     }
 
     if (showHeaderDropdown) {
+        val otherMember = members.find { !it.isYou }
+        val otherUid = otherMember?.uid ?: ""
+        val fullNameStr = if (otherUserName.isNotBlank()) otherUserName else groupName
+
         ChatDetailsMenuSheet(
             isMuted = isMuted,
             canUserManage = canUserManage,
             waitingInvitesCount = pendingRequests.size,
             isConnectedToOrg = acceptedConnections.isNotEmpty(),
+            isOneToOne = isOneToOne,
+            isBlocked = isOtherUserBlocked,
             onSelectMembers = { showMembersSheet = true },
             onSelectGroups = { showGroupsSheet = true },
             onSelectForms = { showGroupFormsScreen = true },
@@ -1240,7 +1305,147 @@ fun ChatDetailsScreen(
             },
             onSelectClearChat = { showClearChatDialog = true },
             onSelectGroupCode = { showGroupCodeDialog = true },
+            onSelectBlockUser = { showBlockUserDialog = true },
+            onSelectUnblockUser = {
+                detailsViewModel.unblockUser(otherUid) {
+                    val fn = otherUserFirstName.ifBlank { fullNameStr.split(" ").firstOrNull().orEmpty() }
+                    Toast.makeText(context, "$fn unblocked", Toast.LENGTH_SHORT).show()
+                }
+            },
             onDismiss = { showHeaderDropdown = false }
+        )
+    }
+
+    if (showBlockUserDialog) {
+        val otherMember = members.find { !it.isYou }
+        val otherUid = otherMember?.uid ?: ""
+        val fullNameStr = if (otherUserName.isNotBlank()) otherUserName else groupName
+        val fn = otherUserFirstName.ifBlank { fullNameStr.split(" ").firstOrNull().orEmpty() }
+
+        AlertDialog(
+            onDismissRequest = { showBlockUserDialog = false },
+            containerColor = cardColor,
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text(
+                    text = "Block $fullNameStr?",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryTextColor
+                )
+            },
+            text = {
+                Text(
+                    text = "$fn won't be able to send you messages. You can unblock anytime in Settings, Blocked users.",
+                    fontSize = 14.sp,
+                    color = secondaryTextColor
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBlockUserDialog = false
+                        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                        val isOnline = cm?.activeNetwork != null
+                        if (!isOnline) {
+                            Toast.makeText(context, "You're offline. Try again when connected", Toast.LENGTH_SHORT).show()
+                        } else {
+                            detailsViewModel.blockUser(otherUid, fullNameStr, otherUserOrg) {
+                                Toast.makeText(context, "$fn blocked", Toast.LENGTH_SHORT).show()
+                                onBack()
+                            }
+                        }
+                    }
+                ) {
+                    Text(
+                        text = "Block",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = errorColor
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBlockUserDialog = false }) {
+                    Text(
+                        text = "Cancel",
+                        fontSize = 15.sp,
+                        color = secondaryTextColor
+                    )
+                }
+            }
+        )
+    }
+
+    if (showClearChatDialog) {
+        val fullNameStr = if (otherUserName.isNotBlank()) otherUserName else groupName
+        val clearText = if (isOneToOne) {
+            "Messages will be removed only for you. $fullNameStr still sees them."
+        } else {
+            "Messages will be removed only for you. Other group members will still see them."
+        }
+
+        AlertDialog(
+            onDismissRequest = { showClearChatDialog = false },
+            containerColor = cardColor,
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text(
+                    text = "Clear this chat?",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryTextColor
+                )
+            },
+            text = {
+                Text(
+                    text = clearText,
+                    fontSize = 14.sp,
+                    color = secondaryTextColor
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearChatDialog = false
+                        detailsViewModel.clearChatLocally(context, entry.id.toString())
+                        Toast.makeText(context, "Chat cleared", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text(
+                        text = "Clear",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = errorColor
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearChatDialog = false }) {
+                    Text(
+                        text = "Cancel",
+                        fontSize = 15.sp,
+                        color = secondaryTextColor
+                    )
+                }
+            }
+        )
+    }
+
+    if (showNicknameSheet) {
+        val otherMember = members.find { !it.isYou }
+        val otherUid = otherMember?.uid ?: ""
+        val fullNameStr = if (otherUserName.isNotBlank()) otherUserName else groupName
+
+        NicknameSheet(
+            fullName = fullNameStr,
+            currentNickname = otherUserNickname,
+            onSave = { newNick ->
+                detailsViewModel.saveNickname(context, otherUid, newNick) {
+                    customToastMessage = if (newNick.isNotBlank()) "Nickname saved" else "Nickname removed"
+                }
+            },
+            onDismiss = { showNicknameSheet = false }
         )
     }
 
@@ -1276,7 +1481,7 @@ fun ChatDetailsScreen(
     }
 
     if (showTasksSheet) {
-        val currentUserName = FirebaseAuth.getInstance().currentUser?.displayName?.ifBlank { null } ?: "Livin Varghese"
+        val currentUserName = FirebaseAuth.getInstance().currentUser?.displayName?.ifBlank { null } ?: "Me"
         TasksBottomSheet(
             groupId = entry.id.toString(),
             tasks = groupTasks,

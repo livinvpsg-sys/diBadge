@@ -70,14 +70,41 @@ data class FormSubmissionEntity(
     val submittedAtMs: Long = System.currentTimeMillis()
 )
 
+data class ChecklistItem(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String = "",
+    val note: String = ""
+)
+
+data class FormQuestionShowIf(
+    val questionId: String,
+    val itemId: String? = null,
+    val equals: String // "yes"|"no"|"na"|optionName|"{itemId} is Not OK"|"ok"|"notok"
+)
+
+data class ChecklistItemAnswer(
+    val result: String = "ok", // "ok", "notok", "na"
+    val remark: String = "",
+    val photoPaths: List<String> = emptyList()
+)
+
 data class FormQuestionData(
     val id: String = UUID.randomUUID().toString(),
-    val type: String, // "short_answer", "long_answer", "number", "date", "time", "single_choice", "multiple_choice", "dropdown", "checklist", "photos", "signatures"
+    val type: String, // "short_answer", "long_answer", "number", "date", "time", "single_choice", "multiple_choice", "dropdown", "checklist", "photos", "yesno", "declaration", "instruction", "auto", "single_signature", "multiple_signatures"
     val label: String = "",
     val isRequired: Boolean = false,
     val options: List<String> = emptyList(),
     val hasWorkerBlock: Boolean = true,
-    val hasSupervisorBlock: Boolean = true
+    val hasSupervisorBlock: Boolean = true,
+
+    // New Fields
+    val allowNa: Boolean = true,
+    val requireRemarkOnNotOk: Boolean = true,
+    val items: List<ChecklistItem> = emptyList(),
+    val instructionText: String = "",
+    val instructionStyle: String = "plain", // "heading" or "plain"
+    val autoKind: String = "project", // "project", "name", "badge", "date"
+    val showIf: FormQuestionShowIf? = null
 )
 
 data class FormSigner(

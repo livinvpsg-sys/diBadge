@@ -196,7 +196,7 @@ fun InAppDocInfoScreen(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = if (isPreSend) "Preview is ready after sending" else "Preview not available",
+                    text = if (isPreSend) "Preview is ready after sending" else "Open it in another app, or save a copy to your device",
                     fontSize = 14.sp,
                     color = secondaryTextColor,
                     textAlign = TextAlign.Center

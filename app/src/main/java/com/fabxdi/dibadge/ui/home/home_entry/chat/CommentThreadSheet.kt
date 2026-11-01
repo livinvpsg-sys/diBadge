@@ -116,7 +116,7 @@ fun CommentThreadSheet(
 
     val colors = MaterialTheme.colorScheme
     val diBadgeColors = DiBadgeTheme.colors
-    val isDark = colors.onBackground.red > 0.5f
+    val isDark = DiBadgeTheme.colors.isDark
 
     val cardColor = if (isDark) Color(0xFF181C21) else Color(0xFFF5F7F9)
     val cardFillColor = if (isDark) Color(0xFF181C21) else Color(0xFFF5F7F9)
@@ -151,12 +151,19 @@ fun CommentThreadSheet(
         animationSpec = tween(durationMillis = 300)
     )
 
-    val topVisibleDate = remember(listState.firstVisibleItemIndex, comments) {
-        if (comments.isNotEmpty()) {
-            val firstIdx = listState.firstVisibleItemIndex
-            val comment = comments.getOrNull(firstIdx.coerceIn(0, comments.size - 1))
-            comment?.date ?: LocalDate.now()
-        } else LocalDate.now()
+    // The list holds one header row per day plus the comments, so the date for each row
+    // is worked out from that same layout.
+    val rowDates = remember(groupedComments) {
+        buildList {
+            groupedComments.forEach { (date, dateComments) ->
+                add(date)
+                repeat(dateComments.size) { add(date) }
+            }
+        }
+    }
+    val topVisibleDate = remember(listState.firstVisibleItemIndex, rowDates) {
+        rowDates.getOrNull(listState.firstVisibleItemIndex.coerceIn(0, (rowDates.size - 1).coerceAtLeast(0)))
+            ?: LocalDate.now()
     }
 
     val commonEmojis = remember {
@@ -170,7 +177,8 @@ fun CommentThreadSheet(
 
     LaunchedEffect(comments.size) {
         if (comments.isNotEmpty()) {
-            listState.animateScrollToItem(comments.size - 1)
+            // Last row = every comment plus one date header per day.
+            listState.animateScrollToItem(comments.size + groupedComments.size - 1)
         }
     }
 

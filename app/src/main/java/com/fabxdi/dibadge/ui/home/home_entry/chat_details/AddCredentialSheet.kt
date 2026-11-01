@@ -22,6 +22,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +38,7 @@ import com.fabxdi.dibadge.viewmodel.GroupMember
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.UUID
@@ -58,7 +60,9 @@ fun AddCredentialSheet(
     var showDatePickerDialog by remember { mutableStateOf(false) }
 
     val otherMembers = remember(members) { members.filter { !it.isYou } }
-    var selectedTargetMember by remember { mutableStateOf<GroupMember?>(otherMembers.firstOrNull()) }
+    // Admins can add a credential for themselves (default) or for another member.
+    var addForSelf by remember { mutableStateOf(true) }
+    var selectedTargetMember by remember { mutableStateOf<GroupMember?>(null) }
 
     val colors = MaterialTheme.colorScheme
     val diBadgeColors = DiBadgeTheme.colors
@@ -131,16 +135,16 @@ fun AddCredentialSheet(
                 color = primaryTextColor
             )
             Text(
-                text = if (isAdmin) "Manual upload for a member" else "From My Docs",
+                text = if (isAdmin) "For yourself or a member" else "From My Docs",
                 fontSize = 13.sp,
                 color = secondaryTextColor,
                 modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
             )
 
-            // Member picker if Admin
-            if (isAdmin && otherMembers.isNotEmpty()) {
+            // Member picker if Admin: "You" first, then the other members
+            if (isAdmin) {
                 Text(
-                    text = "Member",
+                    text = "Add for",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = secondaryTextColor,
@@ -150,57 +154,37 @@ fun AddCredentialSheet(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 120.dp),
+                        .heightIn(max = 140.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    items(otherMembers) { member ->
-                        val isSelected = selectedTargetMember?.uid == member.uid
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { selectedTargetMember = member },
-                            shape = RoundedCornerShape(10.dp),
-                            color = cardFillColor,
-                            border = if (isSelected) BorderStroke(1.5.dp, tealAccent) else BorderStroke(1.dp, outlineColor)
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Surface(
-                                    modifier = Modifier.size(26.dp),
-                                    shape = CircleShape,
-                                    color = cardBgColor
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = member.displayName.take(1).uppercase(),
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = primaryTextColor
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = member.displayName,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = primaryTextColor,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                if (isSelected) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = "Selected",
-                                        tint = tealAccent,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                }
+                    item(key = "self") {
+                        CredentialPickRow(
+                            label = "You",
+                            selected = addForSelf,
+                            isDark = isDark,
+                            cardBgColor = cardBgColor,
+                            cardFillColor = cardFillColor,
+                            outlineColor = outlineColor,
+                            primaryTextColor = primaryTextColor,
+                            tealAccent = tealAccent,
+                            onClick = { addForSelf = true }
+                        )
+                    }
+                    items(otherMembers, key = { it.id }) { member ->
+                        CredentialPickRow(
+                            label = member.displayName,
+                            selected = !addForSelf && selectedTargetMember?.uid == member.uid,
+                            isDark = isDark,
+                            cardBgColor = cardBgColor,
+                            cardFillColor = cardFillColor,
+                            outlineColor = outlineColor,
+                            primaryTextColor = primaryTextColor,
+                            tealAccent = tealAccent,
+                            onClick = {
+                                addForSelf = false
+                                selectedTargetMember = member
                             }
-                        }
+                        )
                     }
                 }
 
@@ -265,7 +249,7 @@ fun AddCredentialSheet(
                         )
                     }
                 } else {
-                    items(myDocsList) { doc ->
+                    items(myDocsList, key = { it.id }) { doc ->
                         val isSelected = selectedDoc?.id == doc.id
                         Surface(
                             modifier = Modifier
@@ -273,7 +257,7 @@ fun AddCredentialSheet(
                                 .clickable { selectedDoc = doc },
                             shape = RoundedCornerShape(10.dp),
                             color = cardFillColor,
-                            border = if (isSelected) BorderStroke(1.5.dp, tealAccent) else BorderStroke(1.dp, outlineColor)
+                            border = if (isSelected) BorderStroke(1.5.dp, primaryTextColor) else BorderStroke(1.dp, outlineColor)
                         ) {
                             Row(
                                 modifier = Modifier
@@ -341,6 +325,7 @@ fun AddCredentialSheet(
                 onValueChange = { certNameInput = it },
                 singleLine = true,
                 textStyle = TextStyle(fontSize = 15.sp, color = primaryTextColor),
+                cursorBrush = SolidColor(primaryTextColor),
                 modifier = Modifier.fillMaxWidth()
             )
             HorizontalDivider(
@@ -402,14 +387,14 @@ fun AddCredentialSheet(
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                val canAdd = selectedDoc != null && certNameInput.isNotBlank() && (!isAdmin || selectedTargetMember != null)
+                val canAdd = selectedDoc != null && certNameInput.isNotBlank() && (!isAdmin || addForSelf || selectedTargetMember != null)
                 TextButton(
                     enabled = canAdd,
                     onClick = {
                         if (canAdd) {
                             val doc = selectedDoc!!
                             val expiresAtMs = selectedExpiryDate?.atStartOfDay(ZoneId.systemDefault())?.toInstant()?.toEpochMilli()
-                            onAddCredential(doc, certNameInput.trim(), expiresAtMs, selectedTargetMember)
+                            onAddCredential(doc, certNameInput.trim(), expiresAtMs, if (isAdmin && !addForSelf) selectedTargetMember else null)
                         }
                     }
                 ) {
@@ -425,7 +410,9 @@ fun AddCredentialSheet(
     }
 
     if (showDatePickerDialog) {
-        val datePickerState = rememberDatePickerState()
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = selectedExpiryDate?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toEpochMilli()
+        )
         DatePickerDialog(
             onDismissRequest = { showDatePickerDialog = false },
             confirmButton = {
@@ -433,7 +420,7 @@ fun AddCredentialSheet(
                     onClick = {
                         val selMs = datePickerState.selectedDateMillis
                         if (selMs != null) {
-                            selectedExpiryDate = Instant.ofEpochMilli(selMs).atZone(ZoneId.systemDefault()).toLocalDate()
+                            selectedExpiryDate = Instant.ofEpochMilli(selMs).atZone(ZoneOffset.UTC).toLocalDate()
                         }
                         showDatePickerDialog = false
                     }
@@ -515,6 +502,7 @@ fun EditCredentialSheet(
                 onValueChange = { nameInput = it },
                 singleLine = true,
                 textStyle = TextStyle(fontSize = 15.sp, color = primaryTextColor),
+                cursorBrush = SolidColor(primaryTextColor),
                 modifier = Modifier.fillMaxWidth()
             )
             HorizontalDivider(
@@ -586,7 +574,9 @@ fun EditCredentialSheet(
     }
 
     if (showDatePickerDialog) {
-        val datePickerState = rememberDatePickerState()
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = selectedExpiryDate?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toEpochMilli()
+        )
         DatePickerDialog(
             onDismissRequest = { showDatePickerDialog = false },
             confirmButton = {
@@ -594,7 +584,7 @@ fun EditCredentialSheet(
                     onClick = {
                         val selMs = datePickerState.selectedDateMillis
                         if (selMs != null) {
-                            selectedExpiryDate = Instant.ofEpochMilli(selMs).atZone(ZoneId.systemDefault()).toLocalDate()
+                            selectedExpiryDate = Instant.ofEpochMilli(selMs).atZone(ZoneOffset.UTC).toLocalDate()
                         }
                         showDatePickerDialog = false
                     }
@@ -609,6 +599,82 @@ fun EditCredentialSheet(
             }
         ) {
             DatePicker(state = datePickerState)
+        }
+    }
+}
+
+@Composable
+private fun CredentialPickRow(
+    label: String,
+    selected: Boolean,
+    isDark: Boolean,
+    cardBgColor: Color,
+    cardFillColor: Color,
+    outlineColor: Color,
+    primaryTextColor: Color,
+    tealAccent: Color,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(10.dp),
+        color = cardFillColor,
+        border = if (selected) BorderStroke(1.5.dp, primaryTextColor) else BorderStroke(1.dp, outlineColor)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                modifier = Modifier.size(26.dp),
+                shape = CircleShape,
+                color = cardBgColor
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = label.take(1).uppercase(),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryTextColor
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = label,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = primaryTextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            if (selected) {
+                Surface(
+                    modifier = Modifier.size(20.dp),
+                    shape = CircleShape,
+                    color = tealAccent
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Selected",
+                            tint = if (isDark) Color(0xFF0E1114) else Color.White,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .border(BorderStroke(1.5.dp, outlineColor), CircleShape)
+                )
+            }
         }
     }
 }

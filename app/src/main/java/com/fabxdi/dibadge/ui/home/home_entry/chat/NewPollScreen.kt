@@ -11,7 +11,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -39,8 +38,8 @@ fun NewPollScreen(
     var optionsList by remember {
         mutableStateOf(
             listOf(
-                PollOptionInput("1", ""),
-                PollOptionInput("2", "")
+                PollOptionInput(java.util.UUID.randomUUID().toString(), ""),
+                PollOptionInput(java.util.UUID.randomUUID().toString(), "")
             )
         )
     }
@@ -158,22 +157,13 @@ fun NewPollScreen(
                     )
                 }
 
-                itemsIndexed(optionsList) { index, option ->
+                itemsIndexed(optionsList, key = { _, option -> option.id }) { index, option ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.DragHandle,
-                            contentDescription = "Drag",
-                            tint = secondaryTextColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
                         Box(
                             modifier = Modifier.weight(1f),
                             contentAlignment = Alignment.CenterStart
@@ -224,7 +214,7 @@ fun NewPollScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    optionsList = optionsList + PollOptionInput((optionsList.size + 1).toString(), "")
+                                    optionsList = optionsList + PollOptionInput(java.util.UUID.randomUUID().toString(), "")
                                 }
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -232,7 +222,7 @@ fun NewPollScreen(
                             Icon(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = "Add option",
-                                tint = tealAccent,
+                                tint = primaryTextColor,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -240,7 +230,7 @@ fun NewPollScreen(
                                 text = "Add option",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = tealAccent
+                                color = primaryTextColor
                             )
                         }
                     }

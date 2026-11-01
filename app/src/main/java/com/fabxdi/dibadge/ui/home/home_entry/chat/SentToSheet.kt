@@ -33,7 +33,7 @@ fun SentToSheet(
 ) {
     val colors = MaterialTheme.colorScheme
     val diBadgeColors = DiBadgeTheme.colors
-    val isDark = colors.onBackground.red > 0.5f
+    val isDark = DiBadgeTheme.colors.isDark
 
     val cardColor = if (isDark) Color(0xFF181C21) else Color(0xFFF5F7F9)
     val cardFillColor = if (isDark) Color(0xFF181C21) else Color(0xFFF5F7F9)
@@ -86,7 +86,7 @@ fun SentToSheet(
                     .heightIn(max = 280.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                items(targetGroups) { group ->
+                items(targetGroups, key = { it.groupId }) { group ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

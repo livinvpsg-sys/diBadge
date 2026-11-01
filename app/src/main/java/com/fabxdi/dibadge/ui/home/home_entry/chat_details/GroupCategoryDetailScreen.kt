@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.*
@@ -27,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -80,14 +82,7 @@ fun GroupCategoryDetailScreen(
         }
     }
 
-    var selectedFileForMenu by remember { mutableStateOf<LibraryFileItem?>(null) }
-    var fileToRename by remember { mutableStateOf<LibraryFileItem?>(null) }
-    var fileToMove by remember { mutableStateOf<LibraryFileItem?>(null) }
-    var fileToDelete by remember { mutableStateOf<LibraryFileItem?>(null) }
-    var fileForNewRevision by remember { mutableStateOf<LibraryFileItem?>(null) }
-
-    var renameInput by remember { mutableStateOf("") }
-    var newRevInput by remember { mutableStateOf("") }
+    val fileActions = rememberLibraryFileActions(groupId, detailsViewModel)
     var showMenu by remember { mutableStateOf(false) }
 
     var showRenameCategoryDialog by remember { mutableStateOf(false) }
@@ -105,27 +100,6 @@ fun GroupCategoryDetailScreen(
     val tealAccent = diBadgeColors.accent
     val errorColor = colors.error
     val dimTextColor = if (isDark) Color(0xFF6E757C) else Color(0xFF8A929A)
-
-    val revisionPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
-        onResult = { uri ->
-            if (uri != null && fileForNewRevision != null) {
-                val targetFile = fileForNewRevision!!
-                detailsViewModel.uploadNewRevisionToLibrary(
-                    groupId = groupId,
-                    fileItem = targetFile,
-                    fileUri = uri,
-                    newRevision = newRevInput.ifBlank { "Rev B" },
-                    notifyMembers = true,
-                    context = context,
-                    onComplete = {
-                        fileForNewRevision = null
-                        newRevInput = ""
-                    }
-                )
-            }
-        }
-    )
 
     // Filter files if searching
     val searchTrimmed = searchQuery.trim()
@@ -222,6 +196,7 @@ fun GroupCategoryDetailScreen(
                                         onValueChange = { searchQuery = it },
                                         singleLine = true,
                                         textStyle = TextStyle(fontSize = 14.sp, color = primaryTextColor),
+                                        cursorBrush = SolidColor(primaryTextColor),
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .focusRequester(focusRequester)
@@ -378,6 +353,29 @@ fun GroupCategoryDetailScreen(
                 }
                 HorizontalDivider(thickness = 1.dp, color = outlineColor)
             }
+        },
+        floatingActionButton = {
+            if (canUpload && !isSearching) {
+                Surface(
+                    modifier = Modifier
+                        .padding(end = 4.dp, bottom = 12.dp)
+                        .size(56.dp)
+                        .clickable { onOpenUploadSheet() },
+                    shape = RoundedCornerShape(18.dp),
+                    color = cardBgColor,
+                    border = BorderStroke(1.dp, outlineColor),
+                    shadowElevation = 4.dp
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Upload,
+                            contentDescription = "Upload",
+                            tint = primaryTextColor,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+            }
         }
     ) { innerPadding ->
         Box(
@@ -410,18 +408,6 @@ fun GroupCategoryDetailScreen(
                         fontSize = 15.sp,
                         color = secondaryTextColor
                     )
-                    if (canUpload) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "Upload",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = tealAccent,
-                            modifier = Modifier
-                                .clickable { onOpenUploadSheet() }
-                                .padding(8.dp)
-                        )
-                    }
                 }
             } else {
                 LazyColumn(
@@ -430,7 +416,7 @@ fun GroupCategoryDetailScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     groupedByDateFiles.forEach { (dateHeading, filesInDate) ->
-                        item {
+                        item(key = dateHeading) {
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 Text(
                                     text = dateHeading,
@@ -444,7 +430,8 @@ fun GroupCategoryDetailScreen(
                                     filesInDate.forEach { fileItem ->
                                         LibraryFileCardItem(
                                             fileItem = fileItem,
-                                            canDelete = canUserManage || fileItem.uploadedByUid == currentUserId,
+                                            canEdit = canUserManage || fileItem.uploadedByUid == currentUserId,
+                                            canRevise = canUpload,
                                             isDark = isDark,
                                             cardBgColor = cardBgColor,
                                             outlineColor = outlineColor,
@@ -456,17 +443,10 @@ fun GroupCategoryDetailScreen(
                                                     FilePickerUtils.openFile(context, Uri.parse(fileItem.downloadUrl))
                                                 }
                                             },
-                                            onNewRevisionClick = {
-                                                fileForNewRevision = fileItem
-                                                newRevInput = "Rev B"
-                                                revisionPickerLauncher.launch("*/*")
-                                            },
-                                            onRenameClick = {
-                                                fileToRename = fileItem
-                                                renameInput = fileItem.name
-                                            },
-                                            onMoveClick = { fileToMove = fileItem },
-                                            onDeleteClick = { fileToDelete = fileItem }
+                                            onNewRevisionClick = { fileActions.newRevision(fileItem) },
+                                            onRenameClick = { fileActions.rename(fileItem) },
+                                            onMoveClick = { fileActions.move(fileItem) },
+                                            onDeleteClick = { fileActions.delete(fileItem) }
                                         )
                                     }
                                 }
@@ -486,13 +466,17 @@ fun GroupCategoryDetailScreen(
             containerColor = cardBgColor,
             title = { Text("Rename category", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = primaryTextColor) },
             text = {
-                BasicTextField(
-                    value = categoryNameInput,
-                    onValueChange = { categoryNameInput = it },
-                    singleLine = true,
-                    textStyle = TextStyle(fontSize = 15.sp, color = primaryTextColor),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column {
+                    BasicTextField(
+                        value = categoryNameInput,
+                        onValueChange = { categoryNameInput = it },
+                        singleLine = true,
+                        textStyle = TextStyle(fontSize = 15.sp, color = primaryTextColor),
+                        cursorBrush = SolidColor(primaryTextColor),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    HorizontalDivider(thickness = 1.dp, color = outlineColor, modifier = Modifier.padding(top = 4.dp))
+                }
             },
             confirmButton = {
                 TextButton(
@@ -559,131 +543,19 @@ fun GroupCategoryDetailScreen(
         )
     }
 
-    // Rename Dialog
-    if (fileToRename != null) {
-        val target = fileToRename!!
-        AlertDialog(
-            onDismissRequest = { fileToRename = null },
-            shape = RoundedCornerShape(20.dp),
-            containerColor = cardBgColor,
-            title = { Text("Rename document", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = primaryTextColor) },
-            text = {
-                BasicTextField(
-                    value = renameInput,
-                    onValueChange = { renameInput = it },
-                    singleLine = true,
-                    textStyle = TextStyle(fontSize = 15.sp, color = primaryTextColor),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (renameInput.isNotBlank()) {
-                            detailsViewModel.renameLibraryFile(groupId, target.id, renameInput.trim())
-                            Toast.makeText(context, "Renamed", Toast.LENGTH_SHORT).show()
-                            fileToRename = null
-                        }
-                    }
-                ) {
-                    Text("Save", color = tealAccent, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { fileToRename = null }) {
-                    Text("Cancel", color = secondaryTextColor)
-                }
-            }
-        )
-    }
-
-    // Move to another category dialog
-    if (fileToMove != null) {
-        val target = fileToMove!!
-        val otherCategories = allCategories.filter { it.id != category.id }
-        var selectedCategoryForMove by remember { mutableStateOf(otherCategories.firstOrNull()) }
-
-        AlertDialog(
-            onDismissRequest = { fileToMove = null },
-            shape = RoundedCornerShape(20.dp),
-            containerColor = cardBgColor,
-            title = { Text("Move to category", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = primaryTextColor) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    otherCategories.forEach { cat ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { selectedCategoryForMove = cat }
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = selectedCategoryForMove?.id == cat.id,
-                                onClick = { selectedCategoryForMove = cat },
-                                colors = RadioButtonDefaults.colors(selectedColor = tealAccent)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = cat.name, fontSize = 15.sp, color = primaryTextColor)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (selectedCategoryForMove != null) {
-                            val targetCat = selectedCategoryForMove!!
-                            detailsViewModel.moveLibraryFile(groupId, target.id, targetCat.id, targetCat.name)
-                            Toast.makeText(context, "Moved to ${targetCat.name}", Toast.LENGTH_SHORT).show()
-                            fileToMove = null
-                        }
-                    }
-                ) {
-                    Text("Move", color = tealAccent, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { fileToMove = null }) {
-                    Text("Cancel", color = secondaryTextColor)
-                }
-            }
-        )
-    }
-
-    // Delete confirm dialog
-    if (fileToDelete != null) {
-        val target = fileToDelete!!
-        AlertDialog(
-            onDismissRequest = { fileToDelete = null },
-            shape = RoundedCornerShape(20.dp),
-            containerColor = cardBgColor,
-            title = { Text("Delete document?", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = primaryTextColor) },
-            text = { Text("Are you sure you want to delete ${target.name}?", fontSize = 14.sp, color = secondaryTextColor) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        detailsViewModel.deleteLibraryFile(groupId, target.id)
-                        Toast.makeText(context, "Document deleted", Toast.LENGTH_SHORT).show()
-                        fileToDelete = null
-                    }
-                ) {
-                    Text("Delete", color = errorColor, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { fileToDelete = null }) {
-                    Text("Cancel", color = secondaryTextColor)
-                }
-            }
-        )
-    }
+    LibraryFileDialogs(
+        actions = fileActions,
+        groupId = groupId,
+        allCategories = allCategories,
+        detailsViewModel = detailsViewModel
+    )
 }
 
 @Composable
 fun LibraryFileCardItem(
     fileItem: LibraryFileItem,
-    canDelete: Boolean,
+    canEdit: Boolean,
+    canRevise: Boolean,
     isDark: Boolean,
     cardBgColor: Color,
     outlineColor: Color,
@@ -761,7 +633,7 @@ fun LibraryFileCardItem(
                 )
             }
 
-            Box {
+            if (canRevise || canEdit) Box {
                 IconButton(
                     onClick = { showMenu = true },
                     modifier = Modifier.size(36.dp)
@@ -778,28 +650,30 @@ fun LibraryFileCardItem(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false }
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("Upload new revision") },
-                        onClick = {
-                            showMenu = false
-                            onNewRevisionClick()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Rename") },
-                        onClick = {
-                            showMenu = false
-                            onRenameClick()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Move to another category") },
-                        onClick = {
-                            showMenu = false
-                            onMoveClick()
-                        }
-                    )
-                    if (canDelete) {
+                    if (canRevise) {
+                        DropdownMenuItem(
+                            text = { Text("Upload new revision") },
+                            onClick = {
+                                showMenu = false
+                                onNewRevisionClick()
+                            }
+                        )
+                    }
+                    if (canEdit) {
+                        DropdownMenuItem(
+                            text = { Text("Rename") },
+                            onClick = {
+                                showMenu = false
+                                onRenameClick()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Move") },
+                            onClick = {
+                                showMenu = false
+                                onMoveClick()
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text("Delete", color = errorColor) },
                             onClick = {

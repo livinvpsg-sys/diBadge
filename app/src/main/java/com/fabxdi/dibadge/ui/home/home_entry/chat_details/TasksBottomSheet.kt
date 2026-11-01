@@ -148,7 +148,7 @@ fun TasksBottomSheet(
     tasks: List<GroupTaskEntity>,
     members: List<GroupMember>,
     currentRole: String = "admin", // "owner", "admin", "member"
-    currentUserName: String = "Livin Varghese",
+    currentUserName: String = "",
     currentUserUid: String = "me",
     onAssignTaskConfirmed: (title: String, assignees: List<GroupMember>, dueDate: LocalDate?, dueTime: String?, note: String) -> Unit,
     onDismiss: () -> Unit
@@ -167,7 +167,7 @@ fun TasksBottomSheet(
     val cardBgColor = colors.surface
     val outlineColor = colors.outline
     val tealAccent = diBadgeColors.accent
-    val isDark = primaryTextColor.red > 0.5f
+    val isDark = diBadgeColors.isDark
 
     val canAssign = canUserAssignTasks(currentRole)
     val today = remember { LocalDate.now() }
@@ -309,6 +309,12 @@ fun TasksBottomSheet(
                     }
                 }
             }
+
+            // "Task assigned to ..." shows here, inside the sheet.
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 
@@ -325,7 +331,8 @@ fun TasksBottomSheet(
                     if (task.dueDate != null) {
                         Spacer(modifier = Modifier.height(4.dp))
                         val timeStr = if (!task.dueTime.isNullOrBlank()) ", ${task.dueTime}" else ""
-                        Text("Due: ${task.dueDate}$timeStr", fontSize = 14.sp, color = secondaryTextColor)
+                        val dueText = task.dueDate.format(DateTimeFormatter.ofPattern("EEE d MMM yyyy", Locale.getDefault()))
+                        Text("Due: $dueText$timeStr", fontSize = 14.sp, color = secondaryTextColor)
                     }
                     if (task.note.isNotBlank()) {
                         Spacer(modifier = Modifier.height(8.dp))
@@ -366,24 +373,16 @@ fun TaskRowItem(
         }
     }
 
-    val (statusLabel, statusBg, statusFg) = remember(task.isCompleted, task.dueDate, today, isDark) {
-        when {
-            task.isCompleted -> Triple(
-                "Done",
-                if (isDark) Color(0x2E58B5AC) else Color(0x241B6F69),
-                if (isDark) Color(0xFF58B5AC) else Color(0xFF1B6F69)
-            )
-            task.dueDate != null && task.dueDate.isBefore(today) -> Triple(
-                "Overdue",
-                if (isDark) Color(0x29E8837A) else Color(0x1FC4433A),
-                if (isDark) Color(0xFFE8837A) else Color(0xFFC4433A)
-            )
-            else -> Triple(
-                "Pending",
-                if (isDark) Color(0xFF262D35) else Color(0xFFDDE3E8),
-                if (isDark) Color(0xFFA3AEB8) else Color(0xFF4A5661)
-            )
-        }
+    // Plain text status: only Overdue gets colour (a soft red); Done and Pending stay neutral.
+    val statusLabel = when {
+        task.isCompleted -> "Done"
+        task.dueDate != null && task.dueDate.isBefore(today) -> "Overdue"
+        else -> "Pending"
+    }
+    val statusFg = if (statusLabel == "Overdue") {
+        if (isDark) Color(0xFFE8837A) else Color(0xFFC4433A)
+    } else {
+        secondaryTextColor
     }
 
     val accessibilityDesc = "${task.title}, $sublineText, $statusLabel"
@@ -427,24 +426,12 @@ fun TaskRowItem(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Status Label Pill (12sp semibold, 4x10dp padding, 12dp corners)
-            Surface(
-                modifier = Modifier.height(24.dp),
-                shape = RoundedCornerShape(12.dp),
-                color = statusBg
-            ) {
-                Box(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = statusLabel,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = statusFg
-                    )
-                }
-            }
+            Text(
+                text = statusLabel,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = statusFg
+            )
         }
 
         HorizontalDivider(thickness = 1.dp, color = outlineColor)

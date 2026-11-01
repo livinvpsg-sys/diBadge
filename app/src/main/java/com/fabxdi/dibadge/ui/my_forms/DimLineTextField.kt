@@ -5,6 +5,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -21,6 +22,7 @@ fun DimLineTextField(
     onValueChange: (String) -> Unit,
     isError: Boolean = false,
     isSingleLine: Boolean = true,
+    placeholder: String = "",
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     modifier: Modifier = Modifier
 ) {
@@ -46,6 +48,14 @@ fun DimLineTextField(
                 .heightIn(min = 36.dp),
             contentAlignment = Alignment.BottomStart
         ) {
+            if (value.isEmpty() && placeholder.isNotEmpty()) {
+                Text(
+                    text = placeholder,
+                    fontSize = 16.sp,
+                    color = DiBadgeTheme.colors.tabInactive,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+            }
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
@@ -56,7 +66,7 @@ fun DimLineTextField(
                     fontSize = 16.sp,
                     color = primaryTextColor
                 ),
-                cursorBrush = SolidColor(tealAccent),
+                cursorBrush = SolidColor(primaryTextColor), // never teal
                 modifier = Modifier
                     .fillMaxWidth()
                     .onFocusChanged { isFocused = it.isFocused }

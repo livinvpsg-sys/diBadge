@@ -24,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -153,6 +154,7 @@ fun ForwardToSheet(
                             onValueChange = { searchQuery = it },
                             singleLine = true,
                             textStyle = TextStyle(fontSize = 14.sp, color = primaryTextColor),
+                            cursorBrush = SolidColor(primaryTextColor),
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -176,7 +178,7 @@ fun ForwardToSheet(
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
                         )
                     }
-                    items(filteredRecent) { entry ->
+                    items(filteredRecent, key = { "recent-${it.id}" }) { entry ->
                         val isSelected = selectedTargets.contains(entry)
                         ForwardTargetRow(
                             entry = entry,
@@ -209,7 +211,7 @@ fun ForwardToSheet(
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
                         )
                     }
-                    items(filteredGroups) { entry ->
+                    items(filteredGroups, key = { "group-${it.id}" }) { entry ->
                         val isSelected = selectedTargets.contains(entry)
                         ForwardTargetRow(
                             entry = entry,

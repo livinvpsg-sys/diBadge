@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -87,7 +88,9 @@ fun GroupLibraryScreen(
         }
     }
 
-    var selectedCategoryForDetail by remember { mutableStateOf<LibraryCategoryItem?>(null) }
+    // Keep only the id: the category is looked up live, so a rename shows up straight away and a delete closes the screen.
+    var selectedCategoryId by remember { mutableStateOf<String?>(null) }
+    val selectedCategoryForDetail = categories.firstOrNull { it.id == selectedCategoryId }
     var showUploadSheet by remember { mutableStateOf(false) }
     var targetCategoryForUpload by remember { mutableStateOf<LibraryCategoryItem?>(null) }
 
@@ -99,10 +102,7 @@ fun GroupLibraryScreen(
     var categoryNameInput by remember { mutableStateOf("") }
     var showMenu by remember { mutableStateOf(false) }
 
-    var fileToRename by remember { mutableStateOf<LibraryFileItem?>(null) }
-    var fileToMove by remember { mutableStateOf<LibraryFileItem?>(null) }
-    var fileToDelete by remember { mutableStateOf<LibraryFileItem?>(null) }
-    var renameFileInput by remember { mutableStateOf("") }
+    val fileActions = rememberLibraryFileActions(groupId, detailsViewModel)
 
     val colors = MaterialTheme.colorScheme
     val diBadgeColors = DiBadgeTheme.colors
@@ -130,15 +130,41 @@ fun GroupLibraryScreen(
         else libraryFiles.filter { it.name.contains(searchTrimmed, ignoreCase = true) }.sortedByDescending { it.uploadedAt }
     }
 
+    // Upload sheet. It is drawn before the category screen branch below so it also opens from inside a category.
+    if (showUploadSheet) {
+        val targetCat = targetCategoryForUpload
+        UploadToLibrarySheet(
+            initialCategoryId = targetCat?.id,
+            initialCategoryName = targetCat?.name,
+            isDark = isDark,
+            onUploadFiles = { uploadConfigs ->
+                uploadConfigs.forEach { config ->
+                    detailsViewModel.uploadFileToLibrary(
+                        groupId = groupId,
+                        categoryId = config.categoryId ?: targetCat?.id,
+                        categoryName = config.categoryName ?: targetCat?.name,
+                        fileUri = config.uri,
+                        name = config.name,
+                        revision = null,
+                        notifyMembers = true,
+                        context = context
+                    )
+                }
+                showUploadSheet = false
+            },
+            onDismiss = { showUploadSheet = false }
+        )
+    }
+
     if (selectedCategoryForDetail != null) {
-        val targetCat = selectedCategoryForDetail!!
+        val targetCat = selectedCategoryForDetail
         GroupCategoryDetailScreen(
             groupId = groupId,
             category = targetCat,
             allCategories = categories,
             canUpload = canUpload,
             canUserManage = canUserManage,
-            onBack = { selectedCategoryForDetail = null },
+            onBack = { selectedCategoryId = null },
             onOpenUploadSheet = {
                 targetCategoryForUpload = targetCat
                 showUploadSheet = true
@@ -219,6 +245,7 @@ fun GroupLibraryScreen(
                                         onValueChange = { searchQuery = it },
                                         singleLine = true,
                                         textStyle = TextStyle(fontSize = 14.sp, color = primaryTextColor),
+                                        cursorBrush = SolidColor(primaryTextColor),
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .focusRequester(focusRequester)
@@ -436,7 +463,7 @@ fun GroupLibraryScreen(
                                     modifier = Modifier.padding(bottom = 4.dp)
                                 )
                             }
-                            items(matchingCategories) { categoryItem ->
+                            items(matchingCategories, key = { "c_${it.id}" }) { categoryItem ->
                                 val fileCount = libraryFiles.count { it.categoryId == categoryItem.id }
                                 LibraryCategoryCardRow(
                                     category = categoryItem,
@@ -449,7 +476,7 @@ fun GroupLibraryScreen(
                                     primaryTextColor = primaryTextColor,
                                     secondaryTextColor = secondaryTextColor,
                                     errorColor = errorColor,
-                                    onCategoryClick = { selectedCategoryForDetail = categoryItem },
+                                    onCategoryClick = { selectedCategoryId = categoryItem.id },
                                     onRenameClick = {
                                         categoryToRename = categoryItem
                                         categoryNameInput = categoryItem.name
@@ -469,10 +496,11 @@ fun GroupLibraryScreen(
                                     modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
                                 )
                             }
-                            items(matchingFiles) { fileItem ->
+                            items(matchingFiles, key = { "f_${it.id}" }) { fileItem ->
                                 LibraryFileCardItem(
                                     fileItem = fileItem,
-                                    canDelete = canUserManage || fileItem.uploadedByUid == currentUserId,
+                                    canEdit = canUserManage || fileItem.uploadedByUid == currentUserId,
+                                    canRevise = canUpload,
                                     isDark = isDark,
                                     cardBgColor = cardBgColor,
                                     outlineColor = outlineColor,
@@ -484,13 +512,10 @@ fun GroupLibraryScreen(
                                             FilePickerUtils.openFile(context, Uri.parse(fileItem.downloadUrl))
                                         }
                                     },
-                                    onNewRevisionClick = {},
-                                    onRenameClick = {
-                                        fileToRename = fileItem
-                                        renameFileInput = fileItem.name
-                                    },
-                                    onMoveClick = { fileToMove = fileItem },
-                                    onDeleteClick = { fileToDelete = fileItem }
+                                    onNewRevisionClick = { fileActions.newRevision(fileItem) },
+                                    onRenameClick = { fileActions.rename(fileItem) },
+                                    onMoveClick = { fileActions.move(fileItem) },
+                                    onDeleteClick = { fileActions.delete(fileItem) }
                                 )
                             }
                         }
@@ -519,7 +544,7 @@ fun GroupLibraryScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     // Categories list
-                    items(categories) { categoryItem ->
+                    items(categories, key = { "c_${it.id}" }) { categoryItem ->
                         val fileCount = libraryFiles.count { it.categoryId == categoryItem.id }
                         LibraryCategoryCardRow(
                             category = categoryItem,
@@ -532,7 +557,7 @@ fun GroupLibraryScreen(
                             primaryTextColor = primaryTextColor,
                             secondaryTextColor = secondaryTextColor,
                             errorColor = errorColor,
-                            onCategoryClick = { selectedCategoryForDetail = categoryItem },
+                            onCategoryClick = { selectedCategoryId = categoryItem.id },
                             onRenameClick = {
                                 categoryToRename = categoryItem
                                 categoryNameInput = categoryItem.name
@@ -553,10 +578,11 @@ fun GroupLibraryScreen(
                             )
                         }
 
-                        items(uncategorizedFiles) { fileItem ->
+                        items(uncategorizedFiles, key = { "f_${it.id}" }) { fileItem ->
                             LibraryFileCardItem(
                                 fileItem = fileItem,
-                                canDelete = canUserManage || fileItem.uploadedByUid == currentUserId,
+                                canEdit = canUserManage || fileItem.uploadedByUid == currentUserId,
+                                canRevise = canUpload,
                                 isDark = isDark,
                                 cardBgColor = cardBgColor,
                                 outlineColor = outlineColor,
@@ -568,13 +594,10 @@ fun GroupLibraryScreen(
                                         FilePickerUtils.openFile(context, Uri.parse(fileItem.downloadUrl))
                                     }
                                 },
-                                onNewRevisionClick = {},
-                                onRenameClick = {
-                                    fileToRename = fileItem
-                                    renameFileInput = fileItem.name
-                                },
-                                onMoveClick = { fileToMove = fileItem },
-                                onDeleteClick = { fileToDelete = fileItem }
+                                onNewRevisionClick = { fileActions.newRevision(fileItem) },
+                                onRenameClick = { fileActions.rename(fileItem) },
+                                onMoveClick = { fileActions.move(fileItem) },
+                                onDeleteClick = { fileActions.delete(fileItem) }
                             )
                         }
                     }
@@ -583,31 +606,12 @@ fun GroupLibraryScreen(
         }
     }
 
-    // Upload Sheet
-    if (showUploadSheet) {
-        val targetCat = targetCategoryForUpload
-        UploadToLibrarySheet(
-            initialCategoryId = targetCat?.id,
-            initialCategoryName = targetCat?.name,
-            isDark = isDark,
-            onUploadFiles = { uploadConfigs, notifyMembers ->
-                uploadConfigs.forEach { config ->
-                    detailsViewModel.uploadFileToLibrary(
-                        groupId = groupId,
-                        categoryId = config.categoryId ?: targetCat?.id,
-                        categoryName = config.categoryName ?: targetCat?.name,
-                        fileUri = config.uri,
-                        name = config.name,
-                        revision = null,
-                        notifyMembers = notifyMembers,
-                        context = context
-                    )
-                }
-                showUploadSheet = false
-            },
-            onDismiss = { showUploadSheet = false }
-        )
-    }
+    LibraryFileDialogs(
+        actions = fileActions,
+        groupId = groupId,
+        allCategories = categories,
+        detailsViewModel = detailsViewModel
+    )
 
     // Create Category Dialog
     if (showAddCategoryDialog) {
@@ -625,6 +629,7 @@ fun GroupLibraryScreen(
                         onValueChange = { categoryNameInput = it },
                         singleLine = true,
                         textStyle = TextStyle(fontSize = 15.sp, color = primaryTextColor),
+                        cursorBrush = SolidColor(primaryTextColor),
                         modifier = Modifier.fillMaxWidth()
                     )
                     HorizontalDivider(thickness = 1.dp, color = outlineColor, modifier = Modifier.padding(top = 4.dp))
@@ -660,13 +665,17 @@ fun GroupLibraryScreen(
             containerColor = cardBgColor,
             title = { Text("Rename category", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = primaryTextColor) },
             text = {
-                BasicTextField(
-                    value = categoryNameInput,
-                    onValueChange = { categoryNameInput = it },
-                    singleLine = true,
-                    textStyle = TextStyle(fontSize = 15.sp, color = primaryTextColor),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column {
+                    BasicTextField(
+                        value = categoryNameInput,
+                        onValueChange = { categoryNameInput = it },
+                        singleLine = true,
+                        textStyle = TextStyle(fontSize = 15.sp, color = primaryTextColor),
+                        cursorBrush = SolidColor(primaryTextColor),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    HorizontalDivider(thickness = 1.dp, color = outlineColor, modifier = Modifier.padding(top = 4.dp))
+                }
             },
             confirmButton = {
                 TextButton(

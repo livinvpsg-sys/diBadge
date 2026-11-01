@@ -182,6 +182,7 @@ fun ProfileNameCard(
             ProfileCardRow(
                 label = "Middle name",
                 value = profileData.middleName,
+                placeholderText = "Optional",
                 onValueChange = { viewModel.updateMiddleName(it) },
                 errorMessage = middleNameError,
                 enabled = !isSaving,
@@ -505,33 +506,143 @@ fun ProfileWorkCard(
     isSaving: Boolean,
     cardBgColor: Color,
     dividerColor: Color,
-    focusManager: FocusManager
+    secondaryTextColor: Color,
+    focusManager: FocusManager,
+    onShowToast: (String) -> Unit = {}
 ) {
+    val verifiedOrg by viewModel.verifiedOrganization.collectAsState()
+
+    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
+    val tickGreen = if (isDark) Color(0xFF3FA66B) else Color(0xFF2C8A55)
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         color = cardBgColor
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            ProfileCardRow(
-                label = "Organization",
-                value = profileData.organization,
-                onValueChange = { viewModel.updateOrganization(it) },
-                enabled = !isSaving,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
-            )
+            if (verifiedOrg == null) {
+                // Free-text Organization row
+                ProfileCardRow(
+                    label = "Organization",
+                    value = profileData.organization,
+                    placeholderText = "Add your organization",
+                    onValueChange = { viewModel.updateOrganization(it) },
+                    enabled = !isSaving,
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Words,
+                        imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
+                )
 
-            HorizontalDivider(thickness = 1.dp, color = dividerColor)
+                HorizontalDivider(thickness = 1.dp, color = dividerColor)
 
-            ProfileCardRow(
-                label = "Role",
-                value = profileData.role,
-                onValueChange = { viewModel.updateRole(it) },
-                enabled = !isSaving,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
-            )
+                // Free-text Role row
+                ProfileCardRow(
+                    label = "Role",
+                    value = profileData.role,
+                    placeholderText = "Add your role",
+                    onValueChange = { viewModel.updateRole(it) },
+                    enabled = !isSaving,
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Words,
+                        imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
+                )
+            } else {
+                val org = verifiedOrg!!
+
+                // Single Verified Organization row
+                ProfileCardRow(
+                    label = "Organization",
+                    value = org.name,
+                    onValueChange = {},
+                    readOnly = true,
+                    enabled = false,
+                    onFieldClick = {
+                        onShowToast("Verified by ${org.name}. It can be changed after the organisation removes the verification.")
+                    },
+                    leadingContent = {
+                        Surface(
+                            modifier = Modifier.size(18.dp),
+                            shape = CircleShape,
+                            color = tickGreen
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Verified organisation",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
+                        }
+                    },
+                    trailingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "Verified, locked",
+                            tint = secondaryTextColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                )
+
+                HorizontalDivider(thickness = 1.dp, color = dividerColor)
+
+                // Role Row (Verified if org assigned a role, else free-text editable)
+                if (!org.role.isNullOrBlank()) {
+                    ProfileCardRow(
+                        label = "Role",
+                        value = org.role,
+                        onValueChange = {},
+                        readOnly = true,
+                        enabled = false,
+                        onFieldClick = {
+                            onShowToast("Verified by ${org.name}. It can be changed after the organisation removes the verification.")
+                        },
+                        leadingContent = {
+                            Surface(
+                                modifier = Modifier.size(18.dp),
+                                shape = CircleShape,
+                                color = tickGreen
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Verified role",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                }
+                            }
+                        },
+                        trailingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Verified, locked",
+                                tint = secondaryTextColor,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+                } else {
+                    ProfileCardRow(
+                        label = "Role",
+                        value = profileData.role,
+                        placeholderText = "Add your role",
+                        onValueChange = { viewModel.updateRole(it) },
+                        enabled = !isSaving,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Words,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
+                    )
+                }
+            }
         }
     }
 }
@@ -575,6 +686,7 @@ fun ProfileContactCard(
             ProfileCardRow(
                 label = "Phone",
                 value = profileData.phone,
+                placeholderText = "Phone number",
                 onValueChange = { viewModel.updatePhone(it) },
                 enabled = !isSaving,
                 leadingContent = {
@@ -584,7 +696,7 @@ fun ProfileContactCard(
                     )
                 },
                 keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Phone,
+                    keyboardType = KeyboardType.Number,
                     imeAction = ImeAction.Next
                 ),
                 keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
@@ -592,7 +704,7 @@ fun ProfileContactCard(
 
             HorizontalDivider(thickness = 1.dp, color = dividerColor)
 
-            // Country Row (under Phone, above Birthday)
+            // Country Row
             val countryDisplayName = remember(profileData.country) {
                 CountryData.getCountryDisplayName(profileData.country)
             }
@@ -619,6 +731,7 @@ fun ProfileContactCard(
             ProfileCardRow(
                 label = "Birthday",
                 value = profileData.birthday,
+                placeholderText = "Select date",
                 onValueChange = {},
                 readOnly = true,
                 enabled = !isSaving,
@@ -646,9 +759,11 @@ fun ProfileBioCard(
     cardBgColor: Color,
     primaryTextColor: Color,
     secondaryTextColor: Color,
-    tabInactiveColor: Color,
     tealAccent: Color
 ) {
+    val isDark = MaterialTheme.colorScheme.background.red < 0.5f
+    val dimColor = if (isDark) Color(0xFF6E757C) else Color(0xFF8A929A)
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -670,31 +785,34 @@ fun ProfileBioCard(
 
                 Spacer(modifier = Modifier.height(2.dp))
 
-                BasicTextField(
-                    value = profileData.bio,
-                    onValueChange = { viewModel.updateBio(it) },
-                    enabled = !isSaving,
-                    singleLine = false,
-                    maxLines = 3,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = primaryTextColor
-                    ),
-                    cursorBrush = SolidColor(tealAccent),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 16.dp)
-                )
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.TopStart
+                ) {
+                    if (profileData.bio.isEmpty()) {
+                        Text(
+                            text = "Write something about yourself",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = dimColor
+                        )
+                    }
+                    BasicTextField(
+                        value = profileData.bio,
+                        onValueChange = { viewModel.updateBio(it) },
+                        enabled = !isSaving,
+                        singleLine = false,
+                        maxLines = 3,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = primaryTextColor
+                        ),
+                        cursorBrush = SolidColor(tealAccent),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
-
-            Text(
-                text = "${profileData.bio.length} / 150",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Normal,
-                color = tabInactiveColor,
-                modifier = Modifier.align(Alignment.BottomEnd)
-            )
         }
     }
 }

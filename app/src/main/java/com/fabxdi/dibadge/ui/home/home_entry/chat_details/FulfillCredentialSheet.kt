@@ -23,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -38,6 +39,7 @@ import com.fabxdi.dibadge.viewmodel.GroupCredentialRequestItem
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.UUID
@@ -196,7 +198,7 @@ fun FulfillCredentialSheet(
                         }
                     } else {
                         val availableDocs = (selectedDocs + myDocsList).distinctBy { it.id }
-                        items(availableDocs) { doc ->
+                        items(availableDocs, key = { it.id }) { doc ->
                             val isSelected = selectedDocs.any { it.id == doc.id }
                             Surface(
                                 modifier = Modifier
@@ -210,7 +212,7 @@ fun FulfillCredentialSheet(
                                     },
                                 shape = RoundedCornerShape(10.dp),
                                 color = cardFillColor,
-                                border = if (isSelected) BorderStroke(1.5.dp, tealAccent) else BorderStroke(1.dp, outlineColor)
+                                border = if (isSelected) BorderStroke(1.5.dp, primaryTextColor) else BorderStroke(1.dp, outlineColor)
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -336,6 +338,7 @@ fun FulfillCredentialSheet(
                                         },
                                         singleLine = true,
                                         textStyle = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = primaryTextColor),
+                                        cursorBrush = SolidColor(primaryTextColor),
                                         modifier = Modifier.weight(1f)
                                     )
 
@@ -449,7 +452,7 @@ fun FulfillCredentialSheet(
                     onClick = {
                         val selMs = datePickerState.selectedDateMillis
                         if (selMs != null && targetIdx < certConfigs.size) {
-                            val newDate = Instant.ofEpochMilli(selMs).atZone(ZoneId.systemDefault()).toLocalDate()
+                            val newDate = Instant.ofEpochMilli(selMs).atZone(ZoneOffset.UTC).toLocalDate()
                             certConfigs[targetIdx] = certConfigs[targetIdx].copy(expiryDate = newDate)
                         }
                         showDatePickerDialog = false

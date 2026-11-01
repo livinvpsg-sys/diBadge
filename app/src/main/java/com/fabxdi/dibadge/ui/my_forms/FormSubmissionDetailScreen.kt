@@ -95,8 +95,10 @@ fun FormSubmissionDetailScreen(
         parseMapFromJson(currentSubmission.answersJson)
     }
 
-    val sigQuestions = remember(questions) {
-        questions.filter { it.type in listOf("signatures", "single_signature", "multiple_signatures") }
+    val visibleIds = remember(questions, answersMap) { FormAnswers.visibleIds(questions, answersMap) }
+
+    val sigQuestions = remember(questions, visibleIds) {
+        questions.filter { it.type in FormAnswers.signatureTypes && it.id in visibleIds }
     }
     val hasSignaturesQuestion = sigQuestions.isNotEmpty()
 
@@ -120,13 +122,16 @@ fun FormSubmissionDetailScreen(
 
     fun handleExportPdf() {
         isExportingPdf = true
+        // PDF gets only the questions that were shown, with readable answers
+        val pdfQuestions = questions.filter { it.id in visibleIds && it.type != "instruction" }
+        val pdfAnswers = pdfQuestions.associate { it.id to FormAnswers.displayText(it, answersMap[it.id] ?: "") }
         coroutineScope.launch {
             val file = PdfSharingUtils.exportFormSubmissionPdf(
                 context = context,
                 formTitle = formTitle,
                 sublineInfo = sublineInfo,
-                questions = questions,
-                answersMap = answersMap,
+                questions = pdfQuestions,
+                answersMap = pdfAnswers,
                 workers = workers
             )
             isExportingPdf = false
@@ -218,9 +223,21 @@ fun FormSubmissionDetailScreen(
             FormHeaderLogosStrip(logos = logosData)
 
             // Form Fields (Read-only, dim line style for text answers, photo thumbnails)
-            questions.filter { it.type !in listOf("signatures", "single_signature", "multiple_signatures") }.forEachIndexed { idx, q ->
+            var shownNumber = 0
+            questions.filter { it.type !in FormAnswers.signatureTypes && it.id in visibleIds }.forEach { q ->
+                if (q.type == "instruction") {
+                    Text(
+                        text = q.label,
+                        fontSize = 15.sp,
+                        color = primaryTextColor,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                    )
+                    return@forEach
+                }
+                shownNumber += 1
+                val idx = shownNumber - 1
                 val rawAnswer = answersMap[q.id] ?: ""
-                val answer = if (rawAnswer.isBlank()) "N/A" else rawAnswer
+                val answer = FormAnswers.displayText(q, rawAnswer).ifBlank { "N/A" }
 
                 Surface(
                     modifier = Modifier

@@ -1,5 +1,6 @@
 package com.fabxdi.dibadge.ui.home.home_entry.chat
 
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import android.content.Context
 import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -159,7 +160,7 @@ fun ChatAttachmentView(
                 )
         ) {
             Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                val isDark = MaterialTheme.colorScheme.onBackground.red > 0.5f
+                val isDark = DiBadgeTheme.colors.isDark
                 val audioColor = if (isDark) Color(0xFFE87DA3) else Color(0xFFB0446A)
                 val primaryTextColor = if (isDark) Color(0xFFF0F3F5) else Color(0xFF11161A)
                 val secondaryTextColor = if (isDark) Color(0xFF8A9199) else Color(0xFF65707A)
@@ -264,7 +265,7 @@ fun ChatAttachmentView(
         }
     } else {
         val ext = fileName.substringAfterLast('.', "").lowercase()
-        val isDark = MaterialTheme.colorScheme.onBackground.red > 0.5f
+        val isDark = DiBadgeTheme.colors.isDark
         val contentColor = MaterialTheme.colorScheme.onSurface
         
         Box(

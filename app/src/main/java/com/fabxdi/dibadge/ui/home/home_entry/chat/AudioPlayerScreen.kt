@@ -230,19 +230,6 @@ fun AudioPlayerScreen(
             horizontalArrangement = Arrangement.Center,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clickable {
-                         // -10s not perfectly supported by simple MediaPlayer interface but we mock the UI
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Text("-10s", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = primaryTextColor)
-            }
-
-            Spacer(modifier = Modifier.width(32.dp))
-
             Surface(
                 modifier = Modifier
                     .size(64.dp)
@@ -277,19 +264,6 @@ fun AudioPlayerScreen(
                         modifier = Modifier.size(32.dp)
                     )
                 }
-            }
-
-            Spacer(modifier = Modifier.width(32.dp))
-
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clickable {
-                         // +10s
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Text("+10s", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = primaryTextColor)
             }
         }
 

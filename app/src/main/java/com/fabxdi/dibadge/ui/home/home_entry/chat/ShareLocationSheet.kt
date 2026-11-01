@@ -24,11 +24,9 @@ import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShareLocationSheet(
-    placeName: String = "Jurong West, Singapore",
-    accuracyMeters: Int = 12,
     isDark: Boolean,
     onSendCurrentLocation: (lat: Double, lng: Double, place: String, accuracy: Int) -> Unit,
-    onSendLiveLocation: (lat: Double, lng: Double, place: String, durationMinutes: Int) -> Unit,
+    onSendLiveLocation: (lat: Double, lng: Double, place: String, durationMinutes: Int, accuracy: Int) -> Unit,
     onDismiss: () -> Unit
 ) {
     var showLiveDurationSheet by remember { mutableStateOf(false) }
@@ -42,8 +40,22 @@ fun ShareLocationSheet(
     val tealAccent = if (isDark) Color(0xFF58B5AC) else Color(0xFF1B6F69)
     val errorColor = if (isDark) Color(0xFFE8837A) else Color(0xFFC4433A)
 
-    val currentLat = 1.34042
-    val currentLng = 103.70901
+    val locationState = rememberLocationState()
+    val loc = locationState.location
+    val isReady = locationState.status == LocationStatus.Ready && loc != null
+    val statusLine = when (locationState.status) {
+        LocationStatus.Ready -> "${loc?.placeName.orEmpty()} · accurate to ${loc?.accuracyMeters ?: 0} m"
+        LocationStatus.Loading -> "Finding your location…"
+        LocationStatus.NeedsPermission -> "Allow location access to share where you are"
+        LocationStatus.Unavailable -> "Couldn't get your location. Turn on location and tap to try again"
+    }
+    val onRowTap: () -> Unit = {
+        when (locationState.status) {
+            LocationStatus.NeedsPermission -> locationState.requestPermission()
+            LocationStatus.Unavailable -> locationState.retry()
+            else -> Unit
+        }
+    }
 
     if (showLiveDurationSheet) {
         ModalBottomSheet(
@@ -117,10 +129,11 @@ fun ShareLocationSheet(
                         text = "Share",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = tealAccent,
+                        color = if (isReady) tealAccent else secondaryTextColor,
                         modifier = Modifier
-                            .clickable {
-                                onSendLiveLocation(currentLat, currentLng, placeName, selectedDurationMinutes)
+                            .clickable(enabled = isReady) {
+                                val l = loc ?: return@clickable
+                                onSendLiveLocation(l.lat, l.lng, l.placeName, selectedDurationMinutes, l.accuracyMeters)
                                 showLiveDurationSheet = false
                                 onDismiss()
                             }
@@ -177,13 +190,25 @@ fun ShareLocationSheet(
                 color = cardFillColor,
                 border = BorderStroke(1.dp, outlineColor)
             ) {
-                Box(contentAlignment = Alignment.Center) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
                     Icon(
                         imageVector = Icons.Default.Place,
                         contentDescription = "Map Pin",
                         tint = errorColor,
                         modifier = Modifier.size(40.dp)
                     )
+                    if (isReady && loc != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = String.format(java.util.Locale.US, "%.5f, %.5f", loc.lat, loc.lng),
+                            fontSize = 12.sp,
+                            color = secondaryTextColor
+                        )
+                    }
                 }
             }
 
@@ -195,8 +220,13 @@ fun ShareLocationSheet(
                     .fillMaxWidth()
                     .height(60.dp)
                     .clickable {
-                        onSendCurrentLocation(currentLat, currentLng, placeName, accuracyMeters)
-                        onDismiss()
+                        val l = loc
+                        if (isReady && l != null) {
+                            onSendCurrentLocation(l.lat, l.lng, l.placeName, l.accuracyMeters)
+                            onDismiss()
+                        } else {
+                            onRowTap()
+                        }
                     }
                     .padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -228,7 +258,7 @@ fun ShareLocationSheet(
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "$placeName · accurate to ${accuracyMeters} m",
+                        text = statusLine,
                         fontSize = 12.sp,
                         color = secondaryTextColor,
                         maxLines = 1,
@@ -242,7 +272,9 @@ fun ShareLocationSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(60.dp)
-                    .clickable { showLiveDurationSheet = true }
+                    .clickable {
+                        if (isReady) showLiveDurationSheet = true else onRowTap()
+                    }
                     .padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {

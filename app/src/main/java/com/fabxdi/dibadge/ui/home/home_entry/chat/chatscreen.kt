@@ -51,6 +51,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.ui.res.painterResource
 import com.fabxdi.dibadge.R
+import com.google.firebase.firestore.FirebaseFirestore
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.AudioFile
 import androidx.compose.material.icons.outlined.Description
@@ -94,6 +95,7 @@ import com.fabxdi.dibadge.util.AudioPlayer
 import com.fabxdi.dibadge.util.AudioRecorder
 import com.fabxdi.dibadge.util.FileBlocklistValidator
 import com.fabxdi.dibadge.util.FilePickerUtils
+import com.fabxdi.dibadge.util.MediaCompressor
 import com.fabxdi.dibadge.viewmodel.ChatViewModel
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
 import com.fabxdi.dibadge.viewmodel.GroupDetailsViewModel
@@ -612,6 +614,7 @@ fun ChatScreen(
     val currentEntry = homeEntries.find { it.id == entry.id } ?: entry
 
     LaunchedEffect(currentEntry.id) {
+        MediaCompressor.cleanCache(context)
         chatViewModel.listenToChatMessages(context, currentEntry.id.toString())
         detailsViewModel.loadGroupDetails(
             groupId = currentEntry.id.toString(),
@@ -670,6 +673,55 @@ fun ChatScreen(
     var seenThreadIds by remember { mutableStateOf(setOf<String>()) }
     var activePickerTabOverride by remember { mutableStateOf<MentionPickerMode?>(null) }
     var selectedFailedMessage by remember { mutableStateOf<ChatMessage?>(null) }
+
+    val isOneToOne = remember(currentEntry, members) {
+        val subLower = currentEntry.subtitle.trim().lowercase()
+        subLower in listOf("direct", "chat", "one-to-one") || (members.size <= 2 && !subLower.endsWith("member") && !subLower.endsWith("members") && subLower != "project group" && subLower != "group")
+    }
+
+    val otherMember = remember(members, currentUserId) {
+        members.find { !it.isYou && it.uid != currentUserId }
+    }
+    val otherUid = otherMember?.uid ?: ""
+
+    var otherUserNickname by remember { mutableStateOf("") }
+    var otherUserPhotoUrl by remember { mutableStateOf("") }
+    var otherUserName by remember { mutableStateOf("") }
+    var otherUserFirstName by remember { mutableStateOf("") }
+    var isBlockedByMe by remember { mutableStateOf(false) }
+
+    LaunchedEffect(otherUid, currentUserId, isOneToOne) {
+        if (otherUid.isNotBlank() && isOneToOne) {
+            val db = FirebaseFirestore.getInstance()
+            // 1. Other user's public profile
+            db.collection("users").document(otherUid).addSnapshotListener { snapshot, _ ->
+                if (snapshot != null && snapshot.exists()) {
+                    val photo = snapshot.getString("photoUrl") ?: snapshot.getString("avatarUrl") ?: ""
+                    val disp = snapshot.getString("displayName") ?: currentEntry.title
+                    val first = snapshot.getString("firstName") ?: disp.split(" ").firstOrNull().orEmpty()
+                    otherUserPhotoUrl = photo
+                    otherUserName = disp
+                    otherUserFirstName = first
+                }
+            }
+
+            if (currentUserId.isNotBlank()) {
+                // 2. Private nickname given by current user
+                db.collection("users").document(currentUserId)
+                    .collection("nicknames").document(otherUid)
+                    .addSnapshotListener { snap, _ ->
+                        otherUserNickname = if (snap != null && snap.exists()) snap.getString("nickname") ?: "" else ""
+                    }
+
+                // 3. Block status
+                db.collection("blockedUsers").document(currentUserId)
+                    .collection("blocked").document(otherUid)
+                    .addSnapshotListener { snap, _ ->
+                        isBlockedByMe = (snap != null && snap.exists())
+                    }
+            }
+        }
+    }
 
     val prefs = remember(context) { context.getSharedPreferences("chat_drafts", Context.MODE_PRIVATE) }
     val draftKey = remember(currentEntry.id) { "draft_${currentEntry.id}" }
@@ -757,7 +809,7 @@ fun ChatScreen(
 
     val colors = MaterialTheme.colorScheme
     val diBadgeColors = DiBadgeTheme.colors
-    val isDark = colors.onBackground.red > 0.5f
+    val isDark = DiBadgeTheme.colors.isDark
 
     val isCurrentUserMember = remember(members, currentUserId) {
         members.isEmpty() || members.any { it.uid == currentUserId }
@@ -1369,19 +1421,31 @@ fun ChatScreen(
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        val headerPhoto = if (isOneToOne) otherUserPhotoUrl else ""
+                        val headerTitle = if (isOneToOne && otherUserName.isNotBlank()) otherUserName else currentEntry.title
+
                         Surface(
                             modifier = Modifier.size(40.dp),
                             shape = CircleShape,
                             color = cardColor,
                             border = BorderStroke(1.dp, outlineColor)
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = currentEntry.title.take(1).uppercase(),
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = primaryTextColor
+                            if (headerPhoto.isNotBlank()) {
+                                AsyncImage(
+                                    model = headerPhoto,
+                                    contentDescription = "Avatar",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
                                 )
+                            } else {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = headerTitle.take(1).uppercase(),
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = primaryTextColor
+                                    )
+                                }
                             }
                         }
 
@@ -1392,39 +1456,52 @@ fun ChatScreen(
                             verticalArrangement = Arrangement.Center
                         ) {
                             Text(
-                                text = currentEntry.title,
+                                text = headerTitle,
                                 fontSize = 17.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = primaryTextColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            val rawSub = currentEntry.subtitle.trim()
-                            val subLower = rawSub.lowercase()
-                            val isMemberCount = subLower.endsWith("member") || subLower.endsWith("members")
-                            val isPlaceholder = subLower == "test" || subLower == "add group description"
-                            val descriptionText = if (isMemberCount || isPlaceholder) "" else rawSub
 
-                            if (descriptionText.isNotBlank()) {
-                                Text(
-                                    text = descriptionText,
-                                    fontSize = 13.sp,
-                                    color = secondaryTextColor,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                            if (isOneToOne) {
+                                if (otherUserNickname.isNotBlank()) {
+                                    Text(
+                                        text = otherUserNickname,
+                                        fontSize = 13.sp,
+                                        color = secondaryTextColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            } else {
+                                val rawSub = currentEntry.subtitle.trim()
+                                val subLower = rawSub.lowercase()
+                                val isMemberCount = subLower.endsWith("member") || subLower.endsWith("members")
+                                val isPlaceholder = subLower == "test" || subLower == "add group description"
+                                val descriptionText = if (isMemberCount || isPlaceholder) "" else rawSub
+
+                                if (descriptionText.isNotBlank()) {
+                                    Text(
+                                        text = descriptionText,
+                                        fontSize = 13.sp,
+                                        color = secondaryTextColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
                     }
 
-                    // Three-dot menu (22dp in 48dp touch target)
+                    // Search / Three-dot menu
                     IconButton(
                         onClick = { showGroupDetails = true },
                         modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "More options",
+                            imageVector = if (isOneToOne) Icons.Default.Search else Icons.Default.MoreVert,
+                            contentDescription = if (isOneToOne) "Search chat" else "More options",
                             tint = primaryTextColor,
                             modifier = Modifier.size(22.dp)
                         )
@@ -1434,7 +1511,51 @@ fun ChatScreen(
         }
     },
         bottomBar = {
-            if (selectedMessages.isNotEmpty()) {
+            if (isBlockedByMe) {
+                val fn = otherUserFirstName.ifBlank { (if (otherUserName.isNotBlank()) otherUserName else currentEntry.title).split(" ").firstOrNull().orEmpty() }
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(84.dp)
+                        .background(cardColor),
+                    color = cardColor,
+                    border = BorderStroke(1.dp, outlineColor)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "You blocked $fn",
+                            fontSize = 14.sp,
+                            color = secondaryTextColor
+                        )
+
+                        Text(
+                            text = "Unblock",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = tealAccent,
+                            modifier = Modifier
+                                .clickable {
+                                    val db = FirebaseFirestore.getInstance()
+                                    val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
+                                    if (uid.isNotBlank() && otherUid.isNotBlank()) {
+                                        db.collection("blockedUsers").document(uid)
+                                            .collection("blocked").document(otherUid)
+                                            .delete()
+                                        Toast.makeText(context, "$fn unblocked", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                                .padding(vertical = 12.dp, horizontal = 8.dp)
+                        )
+                    }
+                }
+            } else if (selectedMessages.isNotEmpty()) {
                 val selectedList = remember(selectedMessages, messages) {
                     messages.filter { selectedMessages.contains(it.id) }
                 }
@@ -2629,12 +2750,19 @@ fun ChatScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
-                    if (groupCreatedDateText != null) {
+                    if (messages.isNotEmpty() && groupCreatedDateText != null) {
                         item {
-                            GroupCreatedHeader(
-                                createdDateText = groupCreatedDateText,
-                                secondaryTextColor = secondaryTextColor
-                            )
+                            if (isOneToOne) {
+                                ChatStartedHeader(
+                                    createdDateText = groupCreatedDateText,
+                                    secondaryTextColor = secondaryTextColor
+                                )
+                            } else {
+                                GroupCreatedHeader(
+                                    createdDateText = groupCreatedDateText,
+                                    secondaryTextColor = secondaryTextColor
+                                )
+                            }
                         }
                     }
 
@@ -2697,6 +2825,7 @@ fun ChatScreen(
                                     isSelected = selectedMessages.contains(msgToRender.id),
                                     isAnySelected = selectedMessages.isNotEmpty(),
                                     isFirstInRun = isFirstInRun,
+                                    isOneToOne = isOneToOne,
                                     onLongClick = { uri ->
                                         if (selectedMessages.isEmpty()) {
                                             longPressedMessage = msgToRender
@@ -3189,8 +3318,6 @@ fun ChatScreen(
 
     if (showShareLocationSheet) {
         ShareLocationSheet(
-            placeName = "Jurong West, Singapore",
-            accuracyMeters = 12,
             isDark = isDark,
             onSendCurrentLocation = { lat, lng, place, accuracy ->
                 chatViewModel.sendLocationMessage(
@@ -3203,14 +3330,14 @@ fun ChatScreen(
                     isLive = false
                 )
             },
-            onSendLiveLocation = { lat, lng, place, durationMins ->
+            onSendLiveLocation = { lat, lng, place, durationMins, accuracy ->
                 chatViewModel.sendLocationMessage(
                     context = context,
                     groupId = currentEntry.id.toString(),
                     lat = lat,
                     lng = lng,
                     placeName = place,
-                    accuracy = 10,
+                    accuracy = accuracy,
                     isLive = true,
                     durationMins = durationMins
                 )
@@ -3239,9 +3366,11 @@ fun ChatScreen(
     if (selectedPollForVotes != null) {
         val targetPoll = selectedPollForVotes!!
         val optionGroups = targetPoll.pollOptions.map { opt ->
+            val iVoted = targetPoll.userVotedOptionIds.contains(opt.id)
             PollVoterOptionGroup(
                 optionText = opt.text,
-                voters = listOf(PollVoter(currentUserId, "You"))
+                voters = if (iVoted) listOf(PollVoter(currentUserId, "You")) else emptyList(),
+                otherVoterCount = (opt.voteCount - if (iVoted) 1 else 0).coerceAtLeast(0)
             )
         }
 

@@ -104,7 +104,7 @@ fun processNewUris(newUris: List<Uri>, currentFiles: List<Uri>, context: Context
         return currentFiles
     }
 
-    val currentCat = if (currentFiles.isNotEmpty()) getAttachmentCategory(context, currentFiles.first()) else null
+    var currentCat = if (currentFiles.isNotEmpty()) getAttachmentCategory(context, currentFiles.first()) else null
 
     val availableSlotCount = 10 - currentFiles.size
     val limitedUris = newUris.take(availableSlotCount)
@@ -115,8 +115,10 @@ fun processNewUris(newUris: List<Uri>, currentFiles: List<Uri>, context: Context
     val validUris = mutableListOf<Uri>()
     var sizeExceeded = false
     var isBlockedType = false
+    var mixedCategory = false
 
     for (uri in limitedUris) {
+        if (uri in currentFiles || uri in validUris) continue
         val fileName = FilePickerUtils.getFileName(context, uri)
         if (FileBlocklistValidator.isFileBlocked(fileName)) {
             isBlockedType = true
@@ -125,6 +127,7 @@ fun processNewUris(newUris: List<Uri>, currentFiles: List<Uri>, context: Context
 
         val cat = getAttachmentCategory(context, uri)
         if (currentCat != null && cat != currentCat) {
+            mixedCategory = true
             continue
         }
         val sizeBytes = FilePickerUtils.getFileSizeBytes(context, uri)
@@ -132,7 +135,12 @@ fun processNewUris(newUris: List<Uri>, currentFiles: List<Uri>, context: Context
             sizeExceeded = true
         } else {
             validUris.add(uri)
+            if (currentCat == null) currentCat = cat
         }
+    }
+
+    if (mixedCategory) {
+        Toast.makeText(context, "Send one kind of file at a time", Toast.LENGTH_SHORT).show()
     }
 
     if (isBlockedType) {

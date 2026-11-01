@@ -42,8 +42,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -66,60 +74,14 @@ fun EditNameDialog(
     onSave: () -> Unit
 ) {
     if (!show) return
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Color.White,
-        shape = RoundedCornerShape(24.dp),
-        title = null,
-        text = {
-            Column {
-                TextField(
-                    value = input,
-                    onValueChange = onInputChange,
-                    placeholder = {
-                        Text(
-                            text = "Name",
-                            fontSize = 14.sp,
-                            color = Color.Gray
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.Black),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
-                    )
-                )
-                HorizontalDivider(
-                    modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
-                    thickness = 1.dp,
-                    color = Color.LightGray.copy(alpha = 0.6f)
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onSave,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFE8ECEF),
-                    contentColor = Color.Black,
-                    disabledContainerColor = Color(0xFFF0F0F0),
-                    disabledContentColor = Color.Gray
-                ),
-                shape = CircleShape,
-                enabled = input.isNotBlank()
-            ) {
-                Text("Save", fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = Color.Black, fontWeight = FontWeight.Bold)
-            }
-        }
+    EditTextDialog(
+        placeholder = "Name",
+        input = input,
+        onInputChange = onInputChange,
+        singleLine = true,
+        saveEnabled = input.isNotBlank(),
+        onDismiss = onDismiss,
+        onSave = onSave
     )
 }
 
@@ -132,64 +94,86 @@ fun EditDescriptionDialog(
     onSave: () -> Unit
 ) {
     if (!show) return
+    EditTextDialog(
+        placeholder = "Details",
+        input = input,
+        onInputChange = onInputChange,
+        singleLine = false,
+        saveEnabled = true,
+        onDismiss = onDismiss,
+        onSave = onSave
+    )
+}
+
+/** One themed text dialog for name and details: follows light / dark, neutral cursor, text actions only. */
+@Composable
+private fun EditTextDialog(
+    placeholder: String,
+    input: String,
+    onInputChange: (String) -> Unit,
+    singleLine: Boolean,
+    saveEnabled: Boolean,
+    onDismiss: () -> Unit,
+    onSave: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val dimTextColor = if (diBadgeColors.isDark) Color(0xFF6E757C) else Color(0xFF8A929A)
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Color.White,
-        shape = RoundedCornerShape(24.dp),
+        containerColor = colors.surface,
+        shape = RoundedCornerShape(20.dp),
         title = null,
         text = {
             Column {
-                TextField(
-                    value = input,
-                    onValueChange = onInputChange,
-                    placeholder = {
-                        Text(
-                            text = "Details",
-                            fontSize = 14.sp,
-                            color = Color.Gray
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.Black),
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    if (input.isEmpty()) {
+                        Text(text = placeholder, fontSize = 16.sp, color = dimTextColor)
+                    }
+                    BasicTextField(
+                        value = input,
+                        onValueChange = onInputChange,
+                        singleLine = singleLine,
+                        maxLines = if (singleLine) 1 else 4,
+                        textStyle = TextStyle(fontSize = 16.sp, color = primaryTextColor),
+                        cursorBrush = SolidColor(primaryTextColor),
+                        modifier = Modifier.fillMaxWidth()
                     )
-                )
+                }
                 HorizontalDivider(
-                    modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
+                    modifier = Modifier.padding(top = 6.dp),
                     thickness = 1.dp,
-                    color = Color.LightGray.copy(alpha = 0.6f)
+                    color = colors.outline
                 )
             }
         },
         confirmButton = {
-            Button(
-                onClick = onSave,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFE8ECEF),
-                    contentColor = Color.Black,
-                    disabledContainerColor = Color(0xFFF0F0F0),
-                    disabledContentColor = Color.Gray
-                ),
-                shape = CircleShape
-            ) {
-                Text("Save", fontWeight = FontWeight.Bold)
+            TextButton(onClick = onSave, enabled = saveEnabled) {
+                Text(
+                    text = "Save",
+                    fontWeight = FontWeight.Bold,
+                    color = if (saveEnabled) diBadgeColors.accent else dimTextColor
+                )
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel", color = Color.Black, fontWeight = FontWeight.Bold)
+                Text("Cancel", color = secondaryTextColor)
             }
         }
     )
 }
 
 fun maskGroupCode(code: String): String {
-    val clean = code.ifBlank { "7N4K-!HVE" }
+    val clean = code
     if (clean.length < 4) return clean
     val chars = clean.toCharArray()
     chars[2] = '*'
@@ -204,7 +188,8 @@ fun GroupCodeSheet(
     onCopy: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val fullCode = groupCode.ifBlank { "7N4K-!HVE" }
+    val fullCode = groupCode
+    val hasCode = fullCode.isNotBlank()
     val maskedCode = maskGroupCode(fullCode)
 
     val colors = MaterialTheme.colorScheme
@@ -261,12 +246,12 @@ fun GroupCodeSheet(
             )
 
             Text(
-                text = maskedCode,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                letterSpacing = 1.sp,
-                color = primaryTextColor,
+                text = if (hasCode) maskedCode else "Your group code is being set up",
+                fontSize = if (hasCode) 16.sp else 14.sp,
+                fontWeight = if (hasCode) FontWeight.Bold else FontWeight.Normal,
+                fontFamily = if (hasCode) FontFamily.Monospace else FontFamily.Default,
+                letterSpacing = if (hasCode) 1.sp else 0.sp,
+                color = if (hasCode) primaryTextColor else secondaryTextColor,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -292,82 +277,25 @@ fun GroupCodeSheet(
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 )
 
-                Spacer(modifier = Modifier.width(28.dp))
+                if (hasCode) {
+                    Spacer(modifier = Modifier.width(28.dp))
 
-                Text(
-                    text = "Copy",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = tealAccent,
-                    modifier = Modifier
-                        .clickable {
-                            onDismiss()
-                            onCopy(fullCode)
-                        }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                )
+                    Text(
+                        text = "Copy",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = tealAccent,
+                        modifier = Modifier
+                            .clickable {
+                                onDismiss()
+                                onCopy(fullCode)
+                            }
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
             }
         }
     }
-}
-
-@Composable
-fun AddMemberDialog(
-    show: Boolean,
-    isAdmin: Boolean,
-    searchQuery: String,
-    onQueryChange: (String) -> Unit,
-    candidates: List<GroupMember>,
-    onAddCandidate: (GroupMember) -> Unit,
-    onDismiss: () -> Unit
-) {
-    if (!show) return
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add Member") },
-        text = {
-            Column {
-                Text(
-                    text = if (isAdmin) "Search by phone number or email:" else "Search your personal connections:",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = onQueryChange,
-                    placeholder = { Text("Phone or email") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                candidates.forEach { candidate ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onAddCandidate(candidate) }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = candidate.displayName,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Icon(Icons.Default.Add, contentDescription = "Add", tint = MaterialTheme.colorScheme.primary)
-                    }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Close")
-            }
-        }
-    )
 }
 
 @Composable
@@ -378,59 +306,36 @@ fun DeleteMediaDialog(
     onDeleteForAll: () -> Unit
 ) {
     if (!show) return
+    val colors = MaterialTheme.colorScheme
+
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(20.dp),
-            color = Color.White,
-            shadowElevation = 8.dp,
-            modifier = Modifier
-                .size(220.dp)
-                .padding(8.dp)
+            color = colors.surface,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Button(
-                        onClick = onDeleteForMe,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFE8ECEF),
-                            contentColor = Color.Black
-                        ),
-                        shape = CircleShape,
-                        modifier = Modifier.fillMaxWidth().height(42.dp)
-                    ) {
-                        Text("Delete for me", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
-
-                    Button(
-                        onClick = onDeleteForAll,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFE8ECEF),
-                            contentColor = Color.Black
-                        ),
-                        shape = CircleShape,
-                        modifier = Modifier.fillMaxWidth().height(42.dp)
-                    ) {
-                        Text("Delete for all", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
-
-                    Spacer(modifier = Modifier.height(2.dp))
-
-                    TextButton(onClick = onDismiss) {
-                        Text("Cancel", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    }
-                }
+            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                DeleteChoiceRow(text = "Delete for me", color = colors.onBackground, onClick = onDeleteForMe)
+                HorizontalDivider(thickness = 1.dp, color = colors.outline)
+                DeleteChoiceRow(text = "Delete for all", color = colors.error, onClick = onDeleteForAll)
+                HorizontalDivider(thickness = 1.dp, color = colors.outline)
+                DeleteChoiceRow(text = "Cancel", color = colors.onSurfaceVariant, onClick = onDismiss)
             }
         }
+    }
+}
+
+@Composable
+private fun DeleteChoiceRow(text: String, color: Color, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Text(text = text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = color)
     }
 }
 
@@ -783,10 +688,13 @@ fun MuteChoiceSheet(
     onDismiss: () -> Unit
 ) {
     val options = listOf("8 hours", "1 week", "Always")
+    val colors = MaterialTheme.colorScheme
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        containerColor = colors.surface,
+        scrimColor = Color.Black.copy(alpha = 0.45f),
         tonalElevation = 0.dp
     ) {
         Column(
@@ -800,6 +708,7 @@ fun MuteChoiceSheet(
                 text = "Mute notifications for...",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
+                color = colors.onBackground,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
 
@@ -816,9 +725,179 @@ fun MuteChoiceSheet(
                 ) {
                     Text(
                         text = option,
-                        fontSize = 16.sp
+                        fontSize = 16.sp,
+                        color = colors.onBackground
                     )
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun NicknameSheet(
+    fullName: String,
+    currentNickname: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember(currentNickname) { mutableStateOf(currentNickname) }
+    val focusRequester = remember { FocusRequester() }
+
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val cardBgColor = colors.surface
+    val tealAccent = diBadgeColors.accent
+
+    val isChanged = text.trim() != currentNickname.trim()
+
+    LaunchedEffect(Unit) {
+        delay(100)
+        focusRequester.requestFocus()
+    }
+
+    val isImeVisible = WindowInsets.isImeVisible
+    var wasImeVisible by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isImeVisible) {
+        if (isImeVisible) {
+            wasImeVisible = true
+        } else if (wasImeVisible) {
+            onDismiss()
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        containerColor = cardBgColor,
+        scrimColor = Color.Black.copy(alpha = 0.45f),
+        tonalElevation = 0.dp,
+        contentWindowInsets = { WindowInsets.ime },
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp, bottom = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    modifier = Modifier.size(width = 32.dp, height = 4.dp),
+                    shape = RoundedCornerShape(2.dp),
+                    color = secondaryTextColor.copy(alpha = 0.40f)
+                ) {}
+            }
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 20.dp)
+        ) {
+            Text(
+                text = "Nickname for $fullName",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = primaryTextColor
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = "Only you can see this nickname",
+                fontSize = 13.sp,
+                color = secondaryTextColor
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            val isDark = diBadgeColors.isDark
+            val dimTextColor = if (isDark) Color(0xFF6E757C) else Color(0xFF8A929A)
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    if (text.isEmpty()) {
+                        Text(
+                            text = "Nickname",
+                            fontSize = 17.sp,
+                            color = dimTextColor
+                        )
+                    }
+                    BasicTextField(
+                        value = text,
+                        onValueChange = { newValue ->
+                            if (newValue.length <= 30) {
+                                text = newValue
+                            }
+                        },
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 17.sp,
+                            color = primaryTextColor
+                        ),
+                        cursorBrush = SolidColor(primaryTextColor),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester)
+                    )
+                }
+
+                HorizontalDivider(
+                    thickness = 1.dp,
+                    color = dimTextColor
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Cancel",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = secondaryTextColor,
+                    modifier = Modifier
+                        .clickable { onDismiss() }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Text(
+                    text = "Save",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isChanged) tealAccent else secondaryTextColor.copy(alpha = 0.40f),
+                    modifier = Modifier
+                        .clickable(enabled = isChanged) {
+                            if (isChanged) {
+                                onSave(text.trim())
+                                onDismiss()
+                            }
+                        }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
             }
         }
     }

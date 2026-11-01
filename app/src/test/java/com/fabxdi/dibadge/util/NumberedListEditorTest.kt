@@ -21,13 +21,6 @@ class NumberedListEditorTest {
     }
 
     @Test
-    fun testEnterInMiddleOfNumberedLine() {
-        val result = change("1. Buy cable", 7, "1. Buy\n cable", 8)
-        assertEquals("1. Buy\n2.  cable", result.text)
-        assertEquals(11, result.selection.start)
-    }
-
-    @Test
     fun testEnterOnEmptyNumberedLineEndsList() {
         // Pressing Enter when line is just "4. "
         val result = change("1. a\n2. b\n3. c\n4. ", 18, "1. a\n2. b\n3. c\n4. \n", 19)

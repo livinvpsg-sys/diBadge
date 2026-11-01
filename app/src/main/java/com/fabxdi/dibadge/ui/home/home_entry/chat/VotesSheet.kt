@@ -18,7 +18,9 @@ import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 
 data class PollVoterOptionGroup(
     val optionText: String,
-    val voters: List<PollVoter>
+    val voters: List<PollVoter>,
+    /** Votes cast by people whose names aren't known on this device. */
+    val otherVoterCount: Int = 0
 )
 
 data class PollVoter(
@@ -84,7 +86,7 @@ fun VotesSheet(
                 optionGroups.forEach { group ->
                     item {
                         Text(
-                            text = "${group.optionText} · ${group.voters.size}",
+                            text = "${group.optionText} · ${group.voters.size + group.otherVoterCount}",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = secondaryTextColor,
@@ -92,7 +94,7 @@ fun VotesSheet(
                         )
                     }
 
-                    items(group.voters) { voter ->
+                    items(group.voters, key = { voter -> "${group.optionText}-${voter.uid}" }) { voter ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -121,6 +123,21 @@ fun VotesSheet(
                                 text = voter.name,
                                 fontSize = 15.sp,
                                 color = primaryTextColor
+                            )
+                        }
+                    }
+
+                    if (group.otherVoterCount > 0) {
+                        item {
+                            Text(
+                                text = if (group.voters.isEmpty()) {
+                                    "${group.otherVoterCount} ${if (group.otherVoterCount == 1) "vote" else "votes"}"
+                                } else {
+                                    "+ ${group.otherVoterCount} more"
+                                },
+                                fontSize = 14.sp,
+                                color = secondaryTextColor,
+                                modifier = Modifier.padding(vertical = 4.dp)
                             )
                         }
                     }
