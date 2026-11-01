@@ -92,6 +92,8 @@ import com.fabxdi.dibadge.R
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import com.fabxdi.dibadge.data.HomeEntryEntity
+import com.fabxdi.dibadge.ui.home.AvatarPhotoCache
+import com.fabxdi.dibadge.ui.home.ChatAvatar
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatMessage
 import com.fabxdi.dibadge.ui.my_forms.GroupFormsScreen
 import com.fabxdi.dibadge.ui.theme.AppThemeMode
@@ -524,14 +526,28 @@ fun ChatDetailsScreen(
                         .padding(top = 0.dp, bottom = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // 88dp Round Avatar
-                    val raisedFill = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
+                    // 88dp Round Avatar (same look as the home list and the chat header)
+                    val entryKey = entry.id.toString()
                     val avatarPhoto = if (isOneToOne) otherUserPhotoUrl else groupPhotoUrl
-                    val avatarInitial = (if (isOneToOne) (otherUserName.ifBlank { entry.title }) else groupName).take(1).uppercase()
+                    val avatarTitle = entry.title
 
-                    Surface(
+                    // Share the photo with the home list and chat header. A blank photo is only
+                    // removed after a short wait, so the first load doesn't wipe it.
+                    LaunchedEffect(avatarPhoto, entryKey) {
+                        if (avatarPhoto.isNotBlank()) {
+                            AvatarPhotoCache.put(context, entryKey, avatarPhoto)
+                        } else {
+                            delay(1500)
+                            AvatarPhotoCache.put(context, entryKey, "")
+                        }
+                    }
+
+                    ChatAvatar(
+                        title = avatarTitle,
+                        idForColor = entryKey,
+                        size = 88.dp,
+                        photoUrl = avatarPhoto,
                         modifier = Modifier
-                            .size(88.dp)
                             .clip(CircleShape)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
@@ -542,29 +558,8 @@ fun ChatDetailsScreen(
                                 } else if (!isOneToOne) {
                                     avatarPickerLauncher.launch("image/*")
                                 }
-                            },
-                        shape = CircleShape,
-                        color = raisedFill,
-                        border = BorderStroke(1.dp, outlineColor)
-                    ) {
-                        if (avatarPhoto.isNotBlank()) {
-                            AsyncImage(
-                                model = avatarPhoto,
-                                contentDescription = "Photo",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = avatarInitial,
-                                    fontSize = 36.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = primaryTextColor
-                                )
                             }
-                        }
-                    }
+                    )
 
                     Spacer(modifier = Modifier.height(12.dp))
 

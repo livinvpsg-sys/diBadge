@@ -65,28 +65,28 @@ import java.util.Locale
 
 private fun isEmoji(codePoint: Int): Boolean {
     return (codePoint in 0x1F600..0x1F64F) ||
-           (codePoint in 0x1F300..0x1F5FF) ||
-           (codePoint in 0x1F680..0x1F6FF) ||
-           (codePoint in 0x2600..0x26FF)   ||
-           (codePoint in 0x2700..0x27BF)   ||
-           (codePoint in 0xFE00..0xFE0F)   ||
-           (codePoint in 0x1F900..0x1F9FF) ||
-           (codePoint in 0x1F1E6..0x1F1FF) ||
-           (codePoint in 0x1F004..0x1F0CF) ||
-           (codePoint in 0x1F01C..0x1F02B) ||
-           (codePoint in 0x231A..0x231B)   ||
-           (codePoint in 0x23E9..0x23F3)   ||
-           (codePoint in 0x23F8..0x23FA)   ||
-           (codePoint in 0x25AA..0x25AB)   ||
-           (codePoint in 0x25FB..0x25FE)   ||
-           (codePoint in 0x2B05..0x2B07)   ||
-           (codePoint in 0x2B1B..0x2B1C)   ||
-           (codePoint == 0x2B50)           ||
-           (codePoint == 0x2B55)           ||
-           (codePoint == 0x3030)           ||
-           (codePoint == 0x303D)           ||
-           (codePoint == 0x3297)           ||
-           (codePoint == 0x3299)
+            (codePoint in 0x1F300..0x1F5FF) ||
+            (codePoint in 0x1F680..0x1F6FF) ||
+            (codePoint in 0x2600..0x26FF)   ||
+            (codePoint in 0x2700..0x27BF)   ||
+            (codePoint in 0xFE00..0xFE0F)   ||
+            (codePoint in 0x1F900..0x1F9FF) ||
+            (codePoint in 0x1F1E6..0x1F1FF) ||
+            (codePoint in 0x1F004..0x1F0CF) ||
+            (codePoint in 0x1F01C..0x1F02B) ||
+            (codePoint in 0x231A..0x231B)   ||
+            (codePoint in 0x23E9..0x23F3)   ||
+            (codePoint in 0x23F8..0x23FA)   ||
+            (codePoint in 0x25AA..0x25AB)   ||
+            (codePoint in 0x25FB..0x25FE)   ||
+            (codePoint in 0x2B05..0x2B07)   ||
+            (codePoint in 0x2B1B..0x2B1C)   ||
+            (codePoint == 0x2B50)           ||
+            (codePoint == 0x2B55)           ||
+            (codePoint == 0x3030)           ||
+            (codePoint == 0x303D)           ||
+            (codePoint == 0x3297)           ||
+            (codePoint == 0x3299)
 }
 
 private fun isOnlyEmojis(text: String): Boolean {
@@ -291,201 +291,202 @@ fun MessageBubble(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = alignment
             ) {
-            // Label above bubble
-            if (message.isGroupMention && !message.isSentByMe) {
-                // Incoming Cross-Posted Group-Mention Bubble: Group name in identity name color + 13dp link icon
-                val groupDisplayName = message.sendingGroupName ?: message.senderName
-                val groupTitleColor = remember(groupDisplayName, isDark) {
-                    UserColorUtils.getIdentityColor(groupDisplayName, isDark)
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(start = 36.dp, bottom = 2.dp)
-                ) {
-                    Text(
-                        text = groupDisplayName,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = groupTitleColor
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        imageVector = Icons.Default.Link,
-                        contentDescription = "Cross-posted link",
-                        tint = secondaryTextColor,
-                        modifier = Modifier.size(13.dp)
-                    )
-                }
-            } else if (!isOneToOne && !message.isSentByMe && isFirstInRun) {
-                // Normal Incoming Sender Name (using per-identity color palette, never teal)
-                val senderColor = remember(message.senderName, isDark) {
-                    UserColorUtils.getColorForName(message.senderName, isDark)
-                }
-                Text(
-                    text = message.senderName,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = senderColor,
-                    modifier = Modifier.padding(start = 36.dp, bottom = 2.dp)
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = if (message.isSentByMe) Arrangement.End else Arrangement.Start,
-                verticalAlignment = Alignment.Bottom
-            ) {
-                if (!isOneToOne && !message.isSentByMe) {
-                    if (isFirstInRun || message.isGroupMention) {
-                        val avatarShape = if (message.isGroupMention) RoundedCornerShape(10.dp) else CircleShape
-                        val avatarText = (message.sendingGroupName ?: message.senderName).take(1).uppercase()
-
-                        Surface(
-                            modifier = Modifier.size(28.dp),
-                            shape = avatarShape,
-                            color = cardFillColor,
-                            border = BorderStroke(1.dp, outlineColor)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = avatarText,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = primaryTextColor
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                    } else {
-                        Spacer(modifier = Modifier.width(36.dp))
+                // Label above bubble
+                if (message.isGroupMention && !message.isSentByMe) {
+                    // Incoming Cross-Posted Group-Mention Bubble: Group name in identity name color + 13dp link icon
+                    val groupDisplayName = message.sendingGroupName ?: message.senderName
+                    val groupTitleColor = remember(groupDisplayName, isDark) {
+                        UserColorUtils.getIdentityColor(groupDisplayName, isDark)
                     }
-                }
-
-                if (message.isDeleted) {
-                    DeletedMessagePlaceholderBubble(
-                        message = message,
-                        primaryTextColor = primaryTextColor,
-                        secondaryTextColor = secondaryTextColor,
-                        outlineColor = outlineColor,
-                        timeFormatter = timeFormatter
-                    )
-                } else if (isEmojiOnly) {
-                    EmojiMessage(message.text, message.timestamp.format(timeFormatter).lowercase(), alignment, secondaryTextColor, primaryTextColor)
-                } else if (message.attachments.isNotEmpty()) {
-                    if (message.replyingTo != null) {
-                        ReplyPreviewAboveBubble(
-                            message = message,
-                            onReplyClick = onReplyClick,
-                            alignment = alignment,
-                            primaryTextColor = primaryTextColor,
-                            secondaryTextColor = secondaryTextColor,
-                            isDark = isDark
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(start = 36.dp, bottom = 2.dp)
+                    ) {
+                        Text(
+                            text = groupDisplayName,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = groupTitleColor
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.Link,
+                            contentDescription = "Cross-posted link",
+                            tint = secondaryTextColor,
+                            modifier = Modifier.size(13.dp)
                         )
                     }
-
-                    val context = LocalContext.current
-                    val isMediaGrid = remember(message.attachments) {
-                        message.attachments.all { uriStr ->
-                            val cat = getAttachmentCategory(context, Uri.parse(uriStr))
-                            cat == AttachmentCategory.IMAGE || cat == AttachmentCategory.VIDEO
-                        }
+                } else if (!isOneToOne && !message.isSentByMe && isFirstInRun) {
+                    // Normal Incoming Sender Name (using per-identity color palette, never teal)
+                    val senderColor = remember(message.senderName, isDark) {
+                        UserColorUtils.getColorForName(message.senderName, isDark)
                     }
+                    Text(
+                        text = message.senderName,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = senderColor,
+                        modifier = Modifier.padding(start = 36.dp, bottom = 2.dp)
+                    )
+                }
 
-                    val rawTimeStr = remember(message.timestamp) { message.timestamp.format(timeFormatter).lowercase() }
-                    val formattedTimeStr = remember(rawTimeStr, message.isEdited) {
-                        if (message.isEdited) "Edited $rawTimeStr" else rawTimeStr
-                    }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = if (message.isSentByMe) Arrangement.End else Arrangement.Start,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    if (!isOneToOne && !message.isSentByMe) {
+                        if (isFirstInRun || message.isGroupMention) {
+                            val avatarShape = if (message.isGroupMention) RoundedCornerShape(10.dp) else CircleShape
+                            val avatarText = (message.sendingGroupName ?: message.senderName).take(1).uppercase()
 
-                    Column(
-                        horizontalAlignment = alignment,
-                        modifier = Modifier.padding(bottom = 2.dp)
-                    ) {
-                        if (isMediaGrid) {
-                            MediaGridNoBubble(
-                                message = message,
-                                formattedTime = formattedTimeStr,
-                                onMediaClick = onMediaClick,
-                                primaryTextColor = primaryTextColor,
-                                secondaryTextColor = secondaryTextColor,
-                                tealAccent = tealAccent,
-                                isDark = isDark
-                            )
-                        } else {
-                            DocumentRowsNoBubble(
-                                message = message,
-                                formattedTime = formattedTimeStr,
-                                primaryTextColor = primaryTextColor,
-                                secondaryTextColor = secondaryTextColor,
-                                cardFillColor = cardFillColor,
-                                tealAccent = tealAccent,
-                                isDark = isDark
-                            )
-                        }
-
-                        if (message.text.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(4.dp))
                             Surface(
-                                color = bubbleColor,
-                                shape = bubbleShape,
-                                shadowElevation = if (!isDark) 1.5.dp else 1.dp,
-                                modifier = Modifier.widthIn(min = 40.dp, max = 272.dp)
+                                modifier = Modifier.size(28.dp),
+                                shape = avatarShape,
+                                color = cardFillColor,
+                                border = BorderStroke(1.dp, outlineColor)
                             ) {
-                                Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 6.dp)) {
+                                Box(contentAlignment = Alignment.Center) {
                                     Text(
-                                        text = buildMentionAnnotatedString(message.text, primaryTextColor, tealAccent, message.mentionedGroupNames),
-                                        fontSize = 15.sp,
-                                        lineHeight = 21.sp,
+                                        text = avatarText,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
                                         color = primaryTextColor
                                     )
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 4.dp),
-                                        horizontalArrangement = Arrangement.End,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                        } else {
+                            Spacer(modifier = Modifier.width(36.dp))
+                        }
+                    }
+
+                    if (message.isDeleted) {
+                        DeletedMessagePlaceholderBubble(
+                            message = message,
+                            primaryTextColor = primaryTextColor,
+                            secondaryTextColor = secondaryTextColor,
+                            outlineColor = outlineColor,
+                            timeFormatter = timeFormatter
+                        )
+                    } else if (isEmojiOnly) {
+                        EmojiMessage(message.text, message.timestamp.format(timeFormatter).lowercase(), alignment, secondaryTextColor, primaryTextColor)
+                    } else if (message.attachments.isNotEmpty()) {
+                        if (message.replyingTo != null) {
+                            ReplyPreviewAboveBubble(
+                                message = message,
+                                onReplyClick = onReplyClick,
+                                alignment = alignment,
+                                primaryTextColor = primaryTextColor,
+                                secondaryTextColor = secondaryTextColor,
+                                isDark = isDark
+                            )
+                        }
+
+                        val context = LocalContext.current
+                        val isMediaGrid = remember(message.attachments) {
+                            message.attachments.all { uriStr ->
+                                val cat = getAttachmentCategory(context, Uri.parse(uriStr))
+                                cat == AttachmentCategory.IMAGE || cat == AttachmentCategory.VIDEO
+                            }
+                        }
+
+                        val rawTimeStr = remember(message.timestamp) { message.timestamp.format(timeFormatter).lowercase() }
+                        val formattedTimeStr = remember(rawTimeStr, message.isEdited) {
+                            if (message.isEdited) "Edited $rawTimeStr" else rawTimeStr
+                        }
+
+                        Column(
+                            horizontalAlignment = alignment,
+                            modifier = Modifier.padding(bottom = 2.dp)
+                        ) {
+                            if (isMediaGrid) {
+                                MediaGridNoBubble(
+                                    message = message,
+                                    formattedTime = formattedTimeStr,
+                                    onMediaClick = onMediaClick,
+                                    primaryTextColor = primaryTextColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    tealAccent = tealAccent,
+                                    isDark = isDark
+                                )
+                            } else {
+                                DocumentRowsNoBubble(
+                                    message = message,
+                                    formattedTime = formattedTimeStr,
+                                    primaryTextColor = primaryTextColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    cardFillColor = cardFillColor,
+                                    tealAccent = tealAccent,
+                                    isDark = isDark
+                                )
+                            }
+
+                            if (message.text.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Surface(
+                                    color = bubbleColor,
+                                    shape = bubbleShape,
+                                    shadowElevation = if (!isDark) 1.5.dp else 1.dp,
+                                    modifier = Modifier.widthIn(min = 40.dp, max = 272.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 6.dp)) {
                                         Text(
-                                            text = formattedTimeStr,
-                                            fontSize = 11.sp,
-                                            color = secondaryTextColor
+                                            text = buildMentionAnnotatedString(message.text, primaryTextColor, tealAccent, message.mentionedGroupNames),
+                                            fontSize = 15.sp,
+                                            lineHeight = 21.sp,
+                                            color = primaryTextColor
                                         )
-                                        if (message.isSentByMe) {
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            when (message.sendStatus) {
-                                                "SENDING" -> {
-                                                    Icon(
-                                                        imageVector = Icons.Outlined.Schedule,
-                                                        contentDescription = "Sending",
-                                                        tint = secondaryTextColor,
-                                                        modifier = Modifier.size(13.dp)
-                                                    )
-                                                }
-                                                "FAILED" -> {
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        modifier = Modifier.clickable { onRetryFailedMessage(message) }
-                                                    ) {
-                                                        Text(
-                                                            text = "Not sent",
-                                                            fontSize = 11.sp,
-                                                            color = errorColor
-                                                        )
-                                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 4.dp),
+                                            horizontalArrangement = Arrangement.End,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = formattedTimeStr,
+                                                fontSize = 11.sp,
+                                                color = secondaryTextColor
+                                            )
+                                            if (message.isSentByMe) {
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                when (message.sendStatus) {
+                                                    "SENDING" -> {
                                                         Icon(
-                                                            imageVector = Icons.Default.ErrorOutline,
-                                                            contentDescription = "Failed",
-                                                            tint = errorColor,
+                                                            imageVector = Icons.Outlined.Schedule,
+                                                            contentDescription = "Sending",
+                                                            tint = secondaryTextColor,
                                                             modifier = Modifier.size(13.dp)
                                                         )
                                                     }
-                                                }
-                                                else -> {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Check,
-                                                        contentDescription = "Sent",
-                                                        tint = secondaryTextColor,
-                                                        modifier = Modifier.size(13.dp)
-                                                    )
+                                                    "FAILED" -> {
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            modifier = Modifier.clickable { onRetryFailedMessage(message) }
+                                                        ) {
+                                                            Text(
+                                                                text = "Not sent",
+                                                                fontSize = 11.sp,
+                                                                color = errorColor
+                                                            )
+                                                            Spacer(modifier = Modifier.width(3.dp))
+                                                            Icon(
+                                                                imageVector = Icons.Default.ErrorOutline,
+                                                                contentDescription = "Failed",
+                                                                tint = errorColor,
+                                                                modifier = Modifier.size(13.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                    else -> {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Check,
+                                                            contentDescription = "Sent",
+                                                            tint = secondaryTextColor,
+                                                            modifier = Modifier.size(13.dp)
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -493,58 +494,58 @@ fun MessageBubble(
                                 }
                             }
                         }
-                    }
-                } else {
-                    if (message.replyingTo != null) {
-                        ReplyPreviewAboveBubble(
-                            message = message,
-                            onReplyClick = onReplyClick,
-                            alignment = alignment,
-                            primaryTextColor = primaryTextColor,
-                            secondaryTextColor = secondaryTextColor,
-                            isDark = isDark
-                        )
-                    }
-
-                    val topOverlapModifier = if (message.replyingTo != null) Modifier.offset(y = (-8).dp) else Modifier
-
-                    Surface(
-                        color = bubbleColor,
-                        shape = bubbleShape,
-                        shadowElevation = if (!isDark) 1.5.dp else 1.dp,
-                        tonalElevation = 0.dp,
-                        modifier = topOverlapModifier.widthIn(min = if (message.isGroupMention) 180.dp else 40.dp, max = 272.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 6.dp)
-                        ) {
-                            AttachmentAndTextSection(
+                    } else {
+                        if (message.replyingTo != null) {
+                            ReplyPreviewAboveBubble(
                                 message = message,
-                                player = player,
-                                isAnySelected = isAnySelected,
-                                onLongClick = onLongClick,
-                                onMediaClick = onMediaClick,
-                                onCommentsClick = onCommentsClick,
-                                onSentToClick = onSentToClick,
-                                onLocationClick = onLocationClick,
-                                onStopLiveLocation = onStopLiveLocation,
-                                onVoteOption = onVoteOption,
-                                onViewVotesClick = onViewVotesClick,
-                                timeFormatter = timeFormatter,
+                                onReplyClick = onReplyClick,
+                                alignment = alignment,
                                 primaryTextColor = primaryTextColor,
                                 secondaryTextColor = secondaryTextColor,
-                                outlineColor = outlineColor,
-                                tealAccent = tealAccent,
-                                errorColor = errorColor,
                                 isDark = isDark
                             )
+                        }
+
+                        val topOverlapModifier = if (message.replyingTo != null) Modifier.offset(y = (-8).dp) else Modifier
+
+                        Surface(
+                            color = bubbleColor,
+                            shape = bubbleShape,
+                            shadowElevation = if (!isDark) 1.5.dp else 1.dp,
+                            tonalElevation = 0.dp,
+                            modifier = topOverlapModifier.widthIn(min = if (message.isGroupMention) 180.dp else 40.dp, max = 272.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 6.dp)
+                            ) {
+                                AttachmentAndTextSection(
+                                    message = message,
+                                    player = player,
+                                    isAnySelected = isAnySelected,
+                                    onLongClick = onLongClick,
+                                    onMediaClick = onMediaClick,
+                                    onCommentsClick = onCommentsClick,
+                                    onSentToClick = onSentToClick,
+                                    onLocationClick = onLocationClick,
+                                    onStopLiveLocation = onStopLiveLocation,
+                                    onVoteOption = onVoteOption,
+                                    onViewVotesClick = onViewVotesClick,
+                                    timeFormatter = timeFormatter,
+                                    primaryTextColor = primaryTextColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    outlineColor = outlineColor,
+                                    tealAccent = tealAccent,
+                                    errorColor = errorColor,
+                                    isDark = isDark,
+                                    onRetryFailedMessage = onRetryFailedMessage
+                                )
+                            }
                         }
                     }
                 }
             }
         }
     }
-}
 }
 
 @Composable
@@ -749,7 +750,8 @@ private fun AttachmentAndTextSection(
     outlineColor: Color,
     tealAccent: Color,
     errorColor: Color,
-    isDark: Boolean
+    isDark: Boolean,
+    onRetryFailedMessage: (ChatMessage) -> Unit = {}
 ) {
     val context = LocalContext.current
     val formattedTime = remember(message.timestamp) { message.timestamp.format(timeFormatter).lowercase() }
@@ -2323,5 +2325,3 @@ private fun DocumentRowsNoBubble(
         }
     }
 }
-
-

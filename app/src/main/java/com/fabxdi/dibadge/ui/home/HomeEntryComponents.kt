@@ -87,9 +87,6 @@ fun HomeSearchRow(
     val outlineColor = colors.outline
     val amberHighlightColor = if (isDark) Color(0xFFFFB300).copy(alpha = 0.35f) else Color(0xFFFFF59D)
 
-    val avatarShape = if (isGroup) RoundedCornerShape(12.dp) else CircleShape
-    val avatarColor = remember(idForColor) { UserColorUtils.getColorForName(idForColor) }
-
     val annotatedTitle = remember(title, query, primaryTextColor, amberHighlightColor) {
         buildSearchAnnotatedString(title, query, primaryTextColor, amberHighlightColor)
     }
@@ -105,31 +102,13 @@ fun HomeSearchRow(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Avatar (44dp)
-        Surface(
-            modifier = Modifier.size(44.dp),
-            shape = avatarShape,
-            color = avatarColor,
-            border = BorderStroke(1.dp, outlineColor)
-        ) {
-            if (photoUrl.isNotBlank()) {
-                AsyncImage(
-                    model = photoUrl,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = title.take(1).uppercase(),
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
-            }
-        }
+        // Avatar (44dp), same look as the chat list, chat header and details screen
+        ChatAvatar(
+            title = title,
+            idForColor = idForColor,
+            size = 44.dp,
+            photoUrl = photoUrl
+        )
 
         Spacer(modifier = Modifier.width(12.dp))
 
@@ -165,7 +144,8 @@ fun HomeEntryCard(
     entry: HomeEntryEntity,
     isSelected: Boolean,
     onClick: () -> Unit,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit,
+    photoUrl: String = ""
 ) {
     val colors = MaterialTheme.colorScheme
     val primaryTextColor = colors.onBackground
@@ -173,10 +153,9 @@ fun HomeEntryCard(
 
     val timeFormatter = remember { DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()) }
     
-    // Stable color hash for group ID
-    val avatarColor = remember(entry.id) {
-        UserColorUtils.getColorForName(entry.id.toString())
-    }
+    // Photo passed in by the caller (a connection's photo) or remembered from the chat screens
+    val cachedPhoto = AvatarPhotoCache.photoFor(entry.id.toString())
+    val avatarPhoto = photoUrl.ifBlank { cachedPhoto }
 
     Surface(
         modifier = Modifier
@@ -195,20 +174,12 @@ fun HomeEntryCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Left: 44dp Avatar Circle
-            Surface(
-                modifier = Modifier.size(44.dp),
-                shape = CircleShape,
-                color = avatarColor
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = entry.title.take(1).uppercase(),
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
-            }
+            ChatAvatar(
+                title = entry.title,
+                idForColor = entry.id.toString(),
+                size = 44.dp,
+                photoUrl = avatarPhoto
+            )
 
             Spacer(modifier = Modifier.width(14.dp))
 

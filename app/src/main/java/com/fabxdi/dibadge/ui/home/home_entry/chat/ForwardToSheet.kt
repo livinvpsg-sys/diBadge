@@ -32,6 +32,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.data.HomeEntryEntity
+import com.fabxdi.dibadge.ui.home.AvatarPhotoCache
+import com.fabxdi.dibadge.ui.home.ChatAvatar
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -306,22 +308,12 @@ private fun ForwardTargetRow(
             .padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val avatarShape = if (isGroup) RoundedCornerShape(10.dp) else CircleShape
-        Surface(
-            modifier = Modifier.size(36.dp),
-            shape = avatarShape,
-            color = cardFillColor,
-            border = BorderStroke(1.dp, outlineColor)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    text = entry.title.take(1).uppercase(),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = primaryTextColor
-                )
-            }
-        }
+        ChatAvatar(
+            title = entry.title,
+            idForColor = entry.id.toString(),
+            size = 36.dp,
+            photoUrl = AvatarPhotoCache.photoFor(entry.id.toString())
+        )
 
         Spacer(modifier = Modifier.width(12.dp))
 

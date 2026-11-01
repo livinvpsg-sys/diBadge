@@ -89,6 +89,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.fabxdi.dibadge.data.HomeEntryEntity
 import com.fabxdi.dibadge.ui.components.AttachmentList
+import com.fabxdi.dibadge.ui.home.AvatarPhotoCache
+import com.fabxdi.dibadge.ui.home.ChatAvatar
 import com.fabxdi.dibadge.ui.home.home_entry.chat_details.ChatDetailsScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.AudioPlayer
@@ -1421,33 +1423,24 @@ fun ChatScreen(
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val headerPhoto = if (isOneToOne) otherUserPhotoUrl else ""
+                        val entryKey = currentEntry.id.toString()
+                        val cachedPhoto = AvatarPhotoCache.photoFor(entryKey)
+                        val headerPhoto = if (isOneToOne) otherUserPhotoUrl.ifBlank { cachedPhoto } else cachedPhoto
+                        // Same name the home list shows, so the letter matches on every screen
                         val headerTitle = if (isOneToOne && otherUserName.isNotBlank()) otherUserName else currentEntry.title
 
-                        Surface(
-                            modifier = Modifier.size(40.dp),
-                            shape = CircleShape,
-                            color = cardColor,
-                            border = BorderStroke(1.dp, outlineColor)
-                        ) {
-                            if (headerPhoto.isNotBlank()) {
-                                AsyncImage(
-                                    model = headerPhoto,
-                                    contentDescription = "Avatar",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
-                            } else {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = headerTitle.take(1).uppercase(),
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = primaryTextColor
-                                    )
-                                }
+                        LaunchedEffect(otherUserPhotoUrl, isOneToOne) {
+                            if (isOneToOne && otherUserPhotoUrl.isNotBlank()) {
+                                AvatarPhotoCache.put(context, entryKey, otherUserPhotoUrl)
                             }
                         }
+
+                        ChatAvatar(
+                            title = currentEntry.title,
+                            idForColor = entryKey,
+                            size = 40.dp,
+                            photoUrl = headerPhoto
+                        )
 
                         Spacer(modifier = Modifier.width(12.dp))
 
