@@ -52,16 +52,16 @@ object NumberedListEditor {
 
         // 2. Enter replacing a selection
         val selectionReplacedByEnter = !oldValue.selection.collapsed &&
-                newValue.selection.collapsed &&
-                newValue.text == oldValue.text.replaceRange(oldValue.selection.min, oldValue.selection.max, "\n") &&
-                newValue.selection.start == oldValue.selection.min + 1
+            newValue.selection.collapsed &&
+            newValue.text == oldValue.text.replaceRange(oldValue.selection.min, oldValue.selection.max, "\n") &&
+            newValue.selection.start == oldValue.selection.min + 1
 
         // 3. A single typed Enter
         val singleEnter = lengthDiff == 1 &&
-                oldValue.selection.collapsed &&
-                newValue.selection.collapsed &&
-                newValue.selection.start == oldValue.selection.start + 1 &&
-                newValue.text[newValue.selection.start - 1] == '\n'
+            oldValue.selection.collapsed &&
+            newValue.selection.collapsed &&
+            newValue.selection.start == oldValue.selection.start + 1 &&
+            newValue.text[newValue.selection.start - 1] == '\n'
 
         return if (singleEnter || selectionReplacedByEnter) {
             handleEnter(newValue, maxLength)
