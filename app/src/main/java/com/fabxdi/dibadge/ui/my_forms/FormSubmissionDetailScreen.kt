@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.fabxdi.dibadge.data.FormLogosData
+import com.fabxdi.dibadge.data.FormQuestionData
 import com.fabxdi.dibadge.data.FormSigner
 import com.fabxdi.dibadge.data.FormSubmissionEntity
 import com.fabxdi.dibadge.data.GroupFormEntity
@@ -37,6 +38,7 @@ import com.fabxdi.dibadge.util.PdfSharingUtils
 import com.fabxdi.dibadge.util.UserColorUtils
 import com.fabxdi.dibadge.viewmodel.FormViewModel
 import com.fabxdi.dibadge.viewmodel.GroupDetailsViewModel
+import com.fabxdi.dibadge.viewmodel.encodeMapToJson
 import com.fabxdi.dibadge.viewmodel.encodeSignersToJson
 import com.fabxdi.dibadge.viewmodel.parseLogosFromJson
 import com.fabxdi.dibadge.viewmodel.parseMapFromJson
@@ -106,6 +108,16 @@ fun FormSubmissionDetailScreen(
         parseSignersFromJson(currentSubmission.workersJson)
     }
 
+    // Members-fill blocks: those questions are shown per member, not in the main list
+    val memberFilledIds = remember(questions) { FormAnswers.blockOf(questions).keys }
+
+    /** Signers of one signature block. Members-fill blocks remember who was chosen; others share the full list. */
+    fun workersFor(q: FormQuestionData): List<FormSigner> {
+        if (!FormAnswers.isMembersFill(q)) return workers
+        val chosen = FormAnswers.signerUids(answersMap, q.id)
+        return if (chosen.isEmpty()) workers else workers.filter { it.uid in chosen }
+    }
+
     val isCompleted = currentSubmission.status == "completed" || currentSubmission.status == "submitted" ||
             (workers.isNotEmpty() && workers.all { it.stamp != null && !it.isRejected })
 
@@ -123,8 +135,26 @@ fun FormSubmissionDetailScreen(
     fun handleExportPdf() {
         isExportingPdf = true
         // PDF gets only the questions that were shown, with readable answers
-        val pdfQuestions = questions.filter { it.id in visibleIds && it.type != "instruction" }
-        val pdfAnswers = pdfQuestions.associate { it.id to FormAnswers.displayText(it, answersMap[it.id] ?: "") }
+        val pdfQuestions = mutableListOf<FormQuestionData>()
+        val pdfAnswers = mutableMapOf<String, String>()
+        questions.filter { it.id in visibleIds && it.type != "instruction" && it.id !in memberFilledIds }.forEach {
+            pdfQuestions.add(it)
+            pdfAnswers[it.id] = FormAnswers.displayText(it, answersMap[it.id] ?: "")
+        }
+        // each member's own answers follow, labelled with their name
+        sigQuestions.filter { FormAnswers.isMembersFill(it) }.forEach { sig ->
+            val blockQs = FormAnswers.blockQuestions(questions, sig.id)
+            val blockIdSet = blockQs.map { it.id }.toSet()
+            workersFor(sig).forEach { member ->
+                val view = FormAnswers.memberView(answersMap, member.uid, blockIdSet)
+                val visibleForMember = FormAnswers.visibleIds(questions, view)
+                blockQs.filter { it.type != "instruction" && it.id in visibleForMember }.forEach { bq ->
+                    val key = FormAnswers.memberKey(member.uid, bq.id)
+                    pdfQuestions.add(bq.copy(id = key, label = "${bq.label.ifBlank { bq.type }} (${member.name})", showIf = null))
+                    pdfAnswers[key] = FormAnswers.displayText(bq, view[bq.id] ?: "")
+                }
+            }
+        }
         coroutineScope.launch {
             val file = PdfSharingUtils.exportFormSubmissionPdf(
                 context = context,
@@ -224,7 +254,7 @@ fun FormSubmissionDetailScreen(
 
             // Form Fields (Read-only, dim line style for text answers, photo thumbnails)
             var shownNumber = 0
-            questions.filter { it.type !in FormAnswers.signatureTypes && it.id in visibleIds }.forEach { q ->
+            questions.filter { it.type !in FormAnswers.signatureTypes && it.id in visibleIds && it.id !in memberFilledIds }.forEach { q ->
                 if (q.type == "instruction") {
                     Text(
                         text = q.label,
@@ -293,6 +323,18 @@ fun FormSubmissionDetailScreen(
             // - Other group members see stamps once Completed; never waiting or rejected entries.
             if (isFiller) {
                 sigQuestions.forEach { q ->
+                    val cardWorkers = workersFor(q)
+
+                    if (FormAnswers.isMembersFill(q)) {
+                        MemberAnswersSection(
+                            questions = questions,
+                            sigQuestion = q,
+                            answersMap = answersMap,
+                            members = cardWorkers,
+                            showWaiting = true
+                        )
+                    }
+
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -311,7 +353,7 @@ fun FormSubmissionDetailScreen(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            if (workers.isEmpty()) {
+                            if (cardWorkers.isEmpty()) {
                                 Text(
                                     text = "No members chosen yet",
                                     fontSize = 14.sp,
@@ -333,7 +375,7 @@ fun FormSubmissionDetailScreen(
                                 )
                             } else {
                                 Column {
-                                    workers.forEach { signer ->
+                                    cardWorkers.forEach { signer ->
                                         val isSigned = signer.stamp != null
                                         val isRejected = signer.isRejected
 
@@ -417,6 +459,17 @@ fun FormSubmissionDetailScreen(
                     }
                 }
             } else if (isCompleted && workers.isNotEmpty()) {
+                // Answers of each member who signed (members-fill blocks)
+                sigQuestions.filter { FormAnswers.isMembersFill(it) }.forEach { sig ->
+                    MemberAnswersSection(
+                        questions = questions,
+                        sigQuestion = sig,
+                        answersMap = answersMap,
+                        members = workersFor(sig),
+                        showWaiting = false
+                    )
+                }
+
                 // Other group members see stamps once Completed; never waiting or rejected entries
                 Surface(
                     modifier = Modifier
@@ -460,14 +513,29 @@ fun FormSubmissionDetailScreen(
 
     if (showSelectSignersSheet && activeSignatureQuestionId != null) {
         val qId = activeSignatureQuestionId!!
+        val activeQ = questions.firstOrNull { it.id == qId }
+        val isMembersBlock = activeQ != null && FormAnswers.isMembersFill(activeQ)
+        val blockWorkers = if (activeQ != null) workersFor(activeQ) else workers
         SelectSignersSheet(
             isMultiple = activeIsMultiple,
             members = groupMembers,
-            initialSelected = workers,
+            initialSelected = blockWorkers,
             onDone = { updatedSigners ->
-                val updatedSub = currentSubmission.copy(
-                    workersJson = encodeSignersToJson(updatedSigners)
-                )
+                val updatedSub = if (isMembersBlock) {
+                    // only this block changes; its chosen members are remembered, and anyone newly
+                    // added gets the request to answer and sign
+                    val keepUids = blockWorkers.map { it.uid }.toSet()
+                    val merged = workers.filter { it.uid !in keepUids } + updatedSigners
+                    val allSigned = merged.isNotEmpty() && merged.all { it.stamp != null && !it.isRejected }
+                    val newAnswers = answersMap + (FormAnswers.signerKey(qId) to updatedSigners.joinToString(",") { it.uid })
+                    currentSubmission.copy(
+                        answersJson = encodeMapToJson(newAnswers),
+                        workersJson = encodeSignersToJson(merged),
+                        status = if (allSigned) "submitted" else "awaitingSignatures"
+                    )
+                } else {
+                    currentSubmission.copy(workersJson = encodeSignersToJson(updatedSigners))
+                }
                 currentSubmission = updatedSub
                 formViewModel.updateSubmission(updatedSub)
                 showSelectSignersSheet = false

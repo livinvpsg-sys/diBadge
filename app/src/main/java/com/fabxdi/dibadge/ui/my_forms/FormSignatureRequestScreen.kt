@@ -35,6 +35,7 @@ import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.UserColorUtils
 import com.fabxdi.dibadge.viewmodel.FormViewModel
 import com.fabxdi.dibadge.viewmodel.ProfileViewModel
+import com.fabxdi.dibadge.viewmodel.encodeMapToJson
 import com.fabxdi.dibadge.viewmodel.encodeSignersToJson
 import com.fabxdi.dibadge.viewmodel.encodeSingleSignerToJson
 import com.fabxdi.dibadge.viewmodel.parseLogosFromJson
@@ -93,13 +94,30 @@ fun FormSignatureRequestScreen(
 
     val isApplicant = currentSubmission.submitterUid == currentUserId
 
+    // Members-fill blocks this person was chosen for: they answer those questions here, then sign
+    val memberFilledIds = remember(questions) { FormAnswers.blockOf(questions).keys }
+    val mySigBlocks = remember(questions, answersMap, currentUserId) {
+        questions.filter {
+            FormAnswers.isMembersFill(it) && currentUserId in FormAnswers.signerUids(answersMap, it.id)
+        }
+    }
+    val myBlockIds = remember(mySigBlocks, questions) {
+        mySigBlocks.flatMap { FormAnswers.blockQuestions(questions, it.id) }.map { it.id }.toSet()
+    }
+    var memberAnswers by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var memberErrors by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    // shared answers + what this member has stored before + what they are typing now
+    val memberView = remember(answersMap, memberAnswers, myBlockIds) {
+        FormAnswers.memberView(answersMap, currentUserId, myBlockIds) + memberAnswers
+    }
+
     val firstSigIndex = remember(questions) {
         questions.indexOfFirst { it.type in listOf("signatures", "single_signature", "multiple_signatures") }
     }
     val visibleIds = remember(questions, answersMap) { FormAnswers.visibleIds(questions, answersMap) }
-    val visibleQuestions = remember(questions, isApplicant, firstSigIndex, visibleIds) {
+    val visibleQuestions = remember(questions, isApplicant, firstSigIndex, visibleIds, memberFilledIds) {
         (if (isApplicant || firstSigIndex == -1) questions else questions.take(firstSigIndex))
-            .filter { it.id in visibleIds }
+            .filter { it.id in visibleIds && it.id !in memberFilledIds }
     }
 
     val workers = remember(currentSubmission.workersJson) {
@@ -114,6 +132,20 @@ fun FormSignatureRequestScreen(
     val isUserSupervisor = supervisor?.uid == currentUserId
 
     fun handleSignerSign() {
+        // answers to this member's own block come first
+        val ownVisible = FormAnswers.visibleIds(questions, memberView)
+        if (myBlockIds.isNotEmpty()) {
+            val problems = questions
+                .filter { it.id in myBlockIds && it.id in ownVisible }
+                .mapNotNull { bq -> FormAnswers.problem(bq, memberView[bq.id] ?: "")?.let { bq.id to it } }
+                .toMap()
+            if (problems.isNotEmpty()) {
+                memberErrors = problems
+                coroutineScope.launch { snackbarHostState.showSnackbar("Answer your questions first") }
+                return
+            }
+        }
+
         if (profileData.signatureUrl.isBlank()) {
             showNoSignatureDialog = true
             return
@@ -148,13 +180,22 @@ fun FormSignatureRequestScreen(
         val checkSupervisorSigned = updatedSupervisor == null || (updatedSupervisor.stamp != null && !updatedSupervisor.isRejected)
         val newStatus = if (checkWorkersSigned && checkSupervisorSigned) "submitted" else "awaitingSignatures"
 
+        // this member's answers are saved under their own key; answers of hidden questions are dropped
+        val savedAnswers = answersMap.toMutableMap()
+        for (id in myBlockIds) {
+            val key = FormAnswers.memberKey(currentUserId, id)
+            if (id in ownVisible) savedAnswers[key] = memberView[id] ?: "" else savedAnswers.remove(key)
+        }
+
         val updatedSubmission = currentSubmission.copy(
+            answersJson = if (myBlockIds.isNotEmpty()) encodeMapToJson(savedAnswers) else currentSubmission.answersJson,
             workersJson = encodeSignersToJson(updatedWorkers),
             supervisorJson = encodeSingleSignerToJson(updatedSupervisor),
             status = newStatus,
             submittedAtMs = if (newStatus == "submitted") System.currentTimeMillis() else currentSubmission.submittedAtMs
         )
         currentSubmission = updatedSubmission
+        formViewModel.updateSubmission(updatedSubmission)
 
         coroutineScope.launch {
             val msg = if (newStatus == "submitted") "Form submitted" else "Signed"
@@ -173,6 +214,7 @@ fun FormSignatureRequestScreen(
             val updatedSupervisor = supervisor?.copy(isRejected = true, rejectionReason = reason, handledAtMs = System.currentTimeMillis())
             currentSubmission = currentSubmission.copy(supervisorJson = encodeSingleSignerToJson(updatedSupervisor))
         }
+        formViewModel.updateSubmission(currentSubmission)
 
         coroutineScope.launch {
             snackbarHostState.showSnackbar("Request rejected")
@@ -295,9 +337,44 @@ fun FormSignatureRequestScreen(
                 }
             }
 
+            // Members chosen for a "Members fill the form" block answer their own questions here
+            if (!isApplicant && mySigBlocks.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Your answers",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = primaryTextColor,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+                MemberQuestionCards(
+                    allQuestions = questions,
+                    blockIds = myBlockIds,
+                    answers = memberView,
+                    errors = memberErrors,
+                    onAnswerChange = { qId, value ->
+                        memberAnswers = memberAnswers + (qId to value)
+                        if (value.isNotBlank()) memberErrors = memberErrors - qId
+                    }
+                )
+            }
+
             // Signer states rendered ONLY for Applicant
             if (isApplicant) {
                 Spacer(modifier = Modifier.height(16.dp))
+
+                // what each chosen member answered so far (members-fill blocks)
+                questions.filter { FormAnswers.isMembersFill(it) && it.id in visibleIds }.forEach { sig ->
+                    val chosen = FormAnswers.signerUids(answersMap, sig.id)
+                    val sigMembers = if (chosen.isEmpty()) workers else workers.filter { it.uid in chosen }
+                    MemberAnswersSection(
+                        questions = questions,
+                        sigQuestion = sig,
+                        answersMap = answersMap,
+                        members = sigMembers,
+                        showWaiting = true
+                    )
+                }
 
                 Text("Workers", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = primaryTextColor)
                 Spacer(modifier = Modifier.height(8.dp))

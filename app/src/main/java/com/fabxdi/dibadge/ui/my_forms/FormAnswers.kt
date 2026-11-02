@@ -26,6 +26,58 @@ object FormAnswers {
 
     val signatureTypes = listOf("signatures", "single_signature", "multiple_signatures")
 
+    // ---------------- members fill the form ----------------
+    //
+    // A "Multiple signatures" question with membersFill = true covers every question between it and the
+    // previous signature question. Each selected member answers those questions separately, then signs.
+    //
+    // Extra keys stored inside answersJson (it stays a Map<String, String>):
+    //  - "m:<uid>:<questionId>"  one member's answer to one block question
+    //  - "s:<signatureQuestionId>" comma separated uids of the members chosen for that block
+
+    fun isMembersFill(q: FormQuestionData): Boolean = q.type == "multiple_signatures" && q.membersFill
+
+    fun memberKey(uid: String, questionId: String): String = "m:$uid:$questionId"
+
+    fun signerKey(signatureQuestionId: String): String = "s:$signatureQuestionId"
+
+    fun signerUids(answers: Map<String, String>, signatureQuestionId: String): List<String> =
+        (answers[signerKey(signatureQuestionId)] ?: "").split(",").filter { it.isNotBlank() }
+
+    /** The questions a members-fill signature block collects (instruction text included, in form order). */
+    fun blockQuestions(questions: List<FormQuestionData>, signatureQuestionId: String): List<FormQuestionData> {
+        val idx = questions.indexOfFirst { it.id == signatureQuestionId }
+        if (idx <= 0) return emptyList()
+        var start = idx
+        while (start > 0 && questions[start - 1].type !in signatureTypes) start--
+        return questions.subList(start, idx).toList()
+    }
+
+    /** questionId -> id of the members-fill signature question that collects it. */
+    fun blockOf(questions: List<FormQuestionData>): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        questions.filter { isMembersFill(it) }.forEach { sig ->
+            blockQuestions(questions, sig.id).forEach { out[it.id] = sig.id }
+        }
+        return out
+    }
+
+    /**
+     * The answers as one member sees them: shared answers under their plain question id, plus this
+     * member's own block answers moved to the plain ids of [blockIds]. Other members' answers are left out.
+     */
+    fun memberView(answers: Map<String, String>, uid: String, blockIds: Set<String>): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        answers.forEach { (k, v) ->
+            if (!k.startsWith("m:") && !k.startsWith("s:")) out[k] = v
+        }
+        for (id in blockIds) {
+            val own = answers[memberKey(uid, id)]
+            if (own != null) out[id] = own else out.remove(id)
+        }
+        return out
+    }
+
     // ---------------- show-if ----------------
 
     /** Ids of questions that should be shown, given the current answers. A question whose source is hidden is hidden too. */

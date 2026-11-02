@@ -96,6 +96,7 @@ data class FormQuestionData(
     val options: List<String> = emptyList(),
     val hasWorkerBlock: Boolean = true,
     val hasSupervisorBlock: Boolean = true,
+    val membersFill: Boolean = false, // Multiple signatures: each chosen member answers the questions above, then signs
 
     // New Fields
     val allowNa: Boolean = true,

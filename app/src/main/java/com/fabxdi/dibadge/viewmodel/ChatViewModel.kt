@@ -130,6 +130,11 @@ class ChatViewModel : ViewModel() {
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
 
+    // False until the first read of the local database finishes, so the empty-chat
+    // placeholder is not drawn for a moment while saved messages are still loading
+    private val _messagesLoaded = MutableStateFlow(false)
+    val messagesLoaded: StateFlow<Boolean> = _messagesLoaded.asStateFlow()
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -154,6 +159,7 @@ class ChatViewModel : ViewModel() {
         if (groupId.isBlank()) return
         if (groupId == activeGroupId && messagesListener != null) return
         activeGroupId = groupId
+        _messagesLoaded.value = false
 
         messagesListener?.remove()
         roomObserveJob?.cancel()
@@ -163,8 +169,10 @@ class ChatViewModel : ViewModel() {
         // 1. Observe local Room DB for instant persistent messages across app restarts
         roomObserveJob = viewModelScope.launch(Dispatchers.IO) {
             dao.getChatMessagesForGroup(groupId).collect { entities ->
-                val domainMsgs = entities.map { it.toDomain() }
+                // Messages the user removed with "Delete for me" are not shown
+                val domainMsgs = entities.filter { !it.isHiddenForMe }.map { it.toDomain() }
                 _messages.value = domainMsgs
+                _messagesLoaded.value = true
             }
         }
 
@@ -479,8 +487,26 @@ class ChatViewModel : ViewModel() {
 
         viewModelScope.launch {
             val dao = AppDatabase.getDatabase(context).reminderDao()
+            var failed = false
+            var failReason = ""
 
             for (msgId in selectedMessageIds) {
+                // 1. Update this phone straight away so the change shows at once
+                val original = withContext(Dispatchers.IO) { dao.getChatMessageById(msgId) }
+                if (original != null) {
+                    withContext(Dispatchers.IO) {
+                        dao.insertChatMessage(
+                            original.copy(
+                                isDeleted = true,
+                                deletedByRole = deletedByRole,
+                                text = "",
+                                attachmentsJson = ""
+                            )
+                        )
+                    }
+                }
+
+                // 2. Update the cloud copy for everyone else
                 try {
                     val updates = mapOf<String, Any?>(
                         "deleted" to true,
@@ -497,20 +523,19 @@ class ChatViewModel : ViewModel() {
                         .collection("messages").document(msgId)
                         .update(updates)
                         .await()
-
-                    dao.getChatMessageById(msgId)?.let { entity ->
-                        dao.insertChatMessage(
-                            entity.copy(
-                                isDeleted = true,
-                                deletedByRole = deletedByRole,
-                                text = "",
-                                attachmentsJson = ""
-                            )
-                        )
-                    }
                 } catch (e: Exception) {
                     e.printStackTrace()
+                    failed = true
+                    failReason = (e as? com.google.firebase.firestore.FirebaseFirestoreException)?.code?.name ?: (e.message ?: "unknown")
+                    // Put the message back on this phone so it matches the cloud
+                    if (original != null) {
+                        withContext(Dispatchers.IO) { dao.insertChatMessage(original) }
+                    }
                 }
+            }
+
+            if (failed) {
+                Toast.makeText(context, "Could not delete for everyone ($failReason). Please try again.", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -527,19 +552,23 @@ class ChatViewModel : ViewModel() {
             val dao = AppDatabase.getDatabase(context).reminderDao()
 
             for (msgId in selectedMessageIds) {
-                try {
-                    if (currentUid.isNotBlank()) {
+                // 1. Hide it on this phone straight away
+                withContext(Dispatchers.IO) {
+                    dao.getChatMessageById(msgId)?.let { entity ->
+                        dao.insertChatMessage(entity.copy(isHiddenForMe = true))
+                    }
+                }
+
+                // 2. Remember it in the cloud so it stays hidden after reinstall or on other devices
+                if (currentUid.isNotBlank()) {
+                    try {
                         db.collection("personalGroups").document(groupId)
                             .collection("messages").document(msgId)
                             .update("hiddenUsers", FieldValue.arrayUnion(currentUid))
                             .await()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
-
-                    dao.getChatMessageById(msgId)?.let { entity ->
-                        dao.insertChatMessage(entity.copy(isHiddenForMe = true))
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
                 }
             }
         }

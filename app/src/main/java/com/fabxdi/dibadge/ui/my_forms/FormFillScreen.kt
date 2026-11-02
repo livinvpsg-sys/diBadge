@@ -72,6 +72,9 @@ fun FormFillScreen(
         parseQuestionsFromJson(groupForm.questionsJson)
     }
 
+    // Members-fill blocks: question id -> id of the Multiple signatures question that collects it
+    val blockOf = remember(questions) { FormAnswers.blockOf(questions) }
+
     val groupMembers by detailsViewModel.members.collectAsState(initial = emptyList())
     val profileData by profileViewModel.profileData.collectAsState()
 
@@ -162,6 +165,18 @@ fun FormFillScreen(
         signatureSelectionsMap.values.flatten().any { it.uid == submitterUid && it.stamp != null }
     }
 
+    // The sender only has to sign when some signature block is not "members fill".
+    val needsFillerSign = sigQuestions.any { !FormAnswers.isMembersFill(it) }
+
+    fun senderIsInBlock(sigId: String): Boolean =
+        (signatureSelectionsMap[sigId] ?: emptyList()).any { it.uid == submitterUid }
+
+    /** False for questions that other members answer (the sender is not one of them). */
+    fun sendersTurn(q: FormQuestionData): Boolean {
+        val sigId = blockOf[q.id] ?: return true
+        return senderIsInBlock(sigId)
+    }
+
     val hasFilledEntries = remember(answersMap, signatureSelectionsMap) {
         answersMap.values.any { it.isNotBlank() } || signatureSelectionsMap.values.any { it.isNotEmpty() }
     }
@@ -172,15 +187,43 @@ fun FormFillScreen(
 
     BackHandler { handleClose() }
 
+    fun buildSubmitAnswers(): Map<String, String> {
+        val out = LinkedHashMap<String, String>()
+        answersMap.forEach { (id, value) ->
+            if (id !in visibleIds) return@forEach
+            val sigId = blockOf[id]
+            if (sigId == null) {
+                out[id] = value
+            } else if (senderIsInBlock(sigId)) {
+                out[FormAnswers.memberKey(submitterUid, id)] = value
+            }
+        }
+        sigQuestions.filter { FormAnswers.isMembersFill(it) }.forEach { sig ->
+            out[FormAnswers.signerKey(sig.id)] =
+                (signatureSelectionsMap[sig.id] ?: emptyList()).joinToString(",") { it.uid }
+        }
+        return out
+    }
+
     fun handleSubmit() {
-        if (hasSignaturesQuestion && !hasFillerSigned) {
+        if (needsFillerSign && !hasFillerSigned) {
             coroutineScope.launch { snackbarHostState.showSnackbar("Sign first to submit") }
+            return
+        }
+
+        val emptyMembersBlock = sigQuestions.firstOrNull {
+            FormAnswers.isMembersFill(it) && (signatureSelectionsMap[it.id] ?: emptyList()).isEmpty()
+        }
+        if (emptyMembersBlock != null) {
+            val blockName = emptyMembersBlock.label.ifBlank { "the signatures" }
+            coroutineScope.launch { snackbarHostState.showSnackbar("Select members for $blockName") }
             return
         }
 
         val errors = mutableMapOf<String, String>()
         for (q in questions) {
             if (q.id !in visibleIds) continue
+            if (!sendersTurn(q)) continue
             val message = FormAnswers.problem(q, answersMap[q.id] ?: "")
             if (message != null) errors[q.id] = message
         }
@@ -207,8 +250,10 @@ fun FormFillScreen(
             version = groupForm.version,
             submitterUid = submitterUid,
             submitterName = submitterName,
-            // answers of questions hidden by a show-if rule are not saved
-            answersMap = answersMap.filterKeys { it in visibleIds },
+            // answers of questions hidden by a show-if rule are not saved;
+            // the sender's own members-fill answers are stored under their member key,
+            // and each members-fill block remembers which members were chosen
+            answersMap = buildSubmitAnswers(),
             status = submissionStatus,
             workersJson = encodeSignersToJson(allSigners),
             supervisorJson = "{}",
@@ -264,6 +309,16 @@ fun FormFillScreen(
             questions.forEach { q ->
                 if (q.id !in visibleIds) return@forEach
 
+                // Questions other members answer are replaced by one note, shown at the start of the block
+                val blockSigId = blockOf[q.id]
+                if (blockSigId != null && !senderIsInBlock(blockSigId)) {
+                    val blockList = FormAnswers.blockQuestions(questions, blockSigId)
+                    if (blockList.firstOrNull()?.id == q.id) {
+                        MembersFillPlaceholder(questionCount = blockList.count { it.type != "instruction" })
+                    }
+                    return@forEach
+                }
+
                 key(q.id) {
                     val errorMessage = validationErrors[q.id]
                     val hasError = errorMessage != null
@@ -291,8 +346,9 @@ fun FormFillScreen(
                             val prevSigners = signatureSelectionsMap[prevQ.id] ?: emptyList()
                             prevSigners.isNotEmpty() && prevSigners.all { it.stamp != null }
                         })
-                        val isDim = !isEnabled && !isCompleted
-                        val isTappable = isEnabled || (isDim && hasFillerSigned)
+                        val isMembersFillBlock = FormAnswers.isMembersFill(q)
+                        val isDim = !isEnabled && !isCompleted && !isMembersFillBlock
+                        val isTappable = isEnabled || isMembersFillBlock || (isDim && hasFillerSigned)
 
                         Surface(
                             modifier = Modifier
@@ -310,6 +366,15 @@ fun FormFillScreen(
                                     fontWeight = FontWeight.Bold,
                                     color = if (isDim) secondaryTextColor else primaryTextColor
                                 )
+
+                                if (isMembersFillBlock) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "Each member answers the questions above, then signs",
+                                        fontSize = 12.sp,
+                                        color = secondaryTextColor
+                                    )
+                                }
 
                                 Spacer(modifier = Modifier.height(10.dp))
 
@@ -388,7 +453,7 @@ fun FormFillScreen(
                                                         tint = tealAccent,
                                                         modifier = Modifier.size(18.dp)
                                                     )
-                                                } else if (isApplicantSigner && isEnabled) {
+                                                } else if (isApplicantSigner && (isEnabled || isMembersFillBlock)) {
                                                     Text(
                                                         text = "Sign",
                                                         fontSize = 14.sp,
@@ -397,7 +462,19 @@ fun FormFillScreen(
                                                         modifier = Modifier
                                                             .clickable {
                                                                 activeSignatureFieldLabel = q.label.ifBlank { "Signature" }
-                                                                if (profileData.signatureUrl.isBlank()) {
+                                                                // the sender's own members-fill answers must be complete before signing
+                                                                val ownProblems = if (isMembersFillBlock) {
+                                                                    FormAnswers.blockQuestions(questions, q.id)
+                                                                        .filter { it.id in visibleIds }
+                                                                        .mapNotNull { bq ->
+                                                                            FormAnswers.problem(bq, answersMap[bq.id] ?: "")?.let { bq.id to it }
+                                                                        }
+                                                                        .toMap()
+                                                                } else emptyMap()
+                                                                if (ownProblems.isNotEmpty()) {
+                                                                    validationErrors = validationErrors + ownProblems
+                                                                    coroutineScope.launch { snackbarHostState.showSnackbar("Answer your questions first") }
+                                                                } else if (profileData.signatureUrl.isBlank()) {
                                                                     showNoSignatureDialog = true
                                                                 } else {
                                                                     showApplicantYourSignatureSheet = true
@@ -760,7 +837,7 @@ fun FormFillScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            val isSubmitEnabled = !hasSignaturesQuestion || hasFillerSigned
+            val isSubmitEnabled = !needsFillerSign || hasFillerSigned
 
             Box(
                 modifier = Modifier.fillMaxWidth(),
@@ -913,7 +990,7 @@ fun FormFillScreen(
 
 /** Rounded choice chip. Selected = bold text and a text-coloured border (never teal). */
 @Composable
-private fun ChoicePill(
+internal fun ChoicePill(
     text: String,
     selected: Boolean,
     modifier: Modifier = Modifier,
@@ -945,7 +1022,7 @@ private fun ChoicePill(
 }
 
 @Composable
-private fun PhotoStrip(uris: List<String>, onRemove: (Int) -> Unit) {
+internal fun PhotoStrip(uris: List<String>, onRemove: (Int) -> Unit) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier

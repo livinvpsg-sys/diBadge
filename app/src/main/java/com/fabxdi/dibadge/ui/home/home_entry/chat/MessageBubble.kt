@@ -37,6 +37,7 @@ import com.fabxdi.dibadge.ui.components.DocumentTypeTile
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -766,7 +767,7 @@ private fun AttachmentAndTextSection(
                     imageVector = Icons.AutoMirrored.Filled.Reply,
                     contentDescription = "Forwarded",
                     tint = secondaryTextColor,
-                    modifier = Modifier.size(13.dp)
+                    modifier = Modifier.size(13.dp).graphicsLayer(scaleX = -1f)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
@@ -2325,3 +2326,5 @@ private fun DocumentRowsNoBubble(
         }
     }
 }
+
+

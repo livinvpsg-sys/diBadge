@@ -543,6 +543,8 @@ fun QuestionCardItem(
                             val typeLabel = if (question.type == "checklist") {
                                 val n = question.items.size
                                 "$baseLabel · $n ${if (n == 1) "item" else "items"}"
+                            } else if (question.type == "multiple_signatures" && question.membersFill) {
+                                "$baseLabel · Members fill"
                             } else baseLabel
                             val reqSuffix = if (question.isRequired && !isInstruction) " · Required" else ""
                             Text(
@@ -659,18 +661,6 @@ fun QuestionCardItem(
                                             },
                                             placeholder = "Item name"
                                         )
-                                        DimLineField(
-                                            value = item.note,
-                                            onValueChange = { v ->
-                                                onUpdateQuestion(
-                                                    question.copy(
-                                                        items = question.items.map { if (it.id == item.id) it.copy(note = v) else it }
-                                                    )
-                                                )
-                                            },
-                                            placeholder = "Note, for example Qty 3 (optional)",
-                                            fontSize = 13
-                                        )
                                     }
                                     IconButton(
                                         enabled = question.items.size > 1,
@@ -702,12 +692,6 @@ fun QuestionCardItem(
                                 checked = question.requireRemarkOnNotOk,
                                 onChange = { onUpdateQuestion(question.copy(requireRemarkOnNotOk = it)) }
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Each item gets OK, Not OK or N/A when filled",
-                                fontSize = 12.sp,
-                                color = secondaryTextColor
-                            )
                         }
 
                         "yesno" -> {
@@ -728,6 +712,25 @@ fun QuestionCardItem(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text("Tick box shown when filling", fontSize = 13.sp, color = secondaryTextColor)
                             }
+                        }
+
+                        // ---- multiple signatures: members answer the questions above themselves ----
+                        "multiple_signatures" -> {
+                            SwitchRow(
+                                label = "Members fill the form",
+                                checked = question.membersFill,
+                                onChange = { onUpdateQuestion(question.copy(membersFill = it)) }
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = if (question.membersFill) {
+                                    "The questions above, back to the previous signature block, are answered by each selected member separately, then they sign"
+                                } else {
+                                    "Members only sign. The questions above are filled by the person who sends the form"
+                                },
+                                fontSize = 12.sp,
+                                color = secondaryTextColor
+                            )
                         }
 
                         "auto" -> {
@@ -930,8 +933,12 @@ fun AddQuestionTypeSheet(
     val primaryTextColor = colors.onBackground
     val secondaryTextColor = colors.onSurfaceVariant
 
+    // Open fully so the whole list of question types is visible (scrolls on small screens)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
         containerColor = cardBgColor,
         scrimColor = Color.Black.copy(alpha = 0.45f),
@@ -953,6 +960,7 @@ fun AddQuestionTypeSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 28.dp)

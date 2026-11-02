@@ -384,6 +384,7 @@ fun encodeQuestionsToJson(questions: List<FormQuestionData>): String {
         obj.put("options", optArray)
         obj.put("hasWorkerBlock", q.hasWorkerBlock)
         obj.put("hasSupervisorBlock", q.hasSupervisorBlock)
+        obj.put("membersFill", q.membersFill)
 
         // New fields
         obj.put("allowNa", q.allowNa)
@@ -436,6 +437,7 @@ fun parseQuestionsFromJson(jsonStr: String): List<FormQuestionData> {
             }
             val hasWorkerBlock = obj.optBoolean("hasWorkerBlock", true)
             val hasSupervisorBlock = obj.optBoolean("hasSupervisorBlock", true)
+            val membersFill = obj.optBoolean("membersFill", false)
 
             val allowNa = obj.optBoolean("allowNa", true)
             val requireRemarkOnNotOk = obj.optBoolean("requireRemarkOnNotOk", true)
@@ -483,6 +485,7 @@ fun parseQuestionsFromJson(jsonStr: String): List<FormQuestionData> {
                     options = options,
                     hasWorkerBlock = hasWorkerBlock,
                     hasSupervisorBlock = hasSupervisorBlock,
+                    membersFill = membersFill,
                     allowNa = allowNa,
                     requireRemarkOnNotOk = requireRemarkOnNotOk,
                     items = items,

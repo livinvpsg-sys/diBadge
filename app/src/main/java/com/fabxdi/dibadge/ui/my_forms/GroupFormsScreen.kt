@@ -34,6 +34,7 @@ import com.fabxdi.dibadge.viewmodel.FormViewModel
 import com.fabxdi.dibadge.viewmodel.parseQuestionsFromJson
 import com.fabxdi.dibadge.viewmodel.parseSignersFromJson
 import com.fabxdi.dibadge.viewmodel.parseSingleSignerFromJson
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -196,7 +197,13 @@ fun GroupFormsScreen(
                                 .fillMaxWidth()
                                 .height(68.dp)
                                 .clickable {
-                                    if (sub.status == "awaitingSignatures") {
+                                    // a member who still has to answer and sign opens the request
+                                    val myUid = FirebaseAuth.getInstance().currentUser?.uid
+                                    val waitingOnMe = myUid != null && sub.submitterUid != myUid &&
+                                            parseSignersFromJson(sub.workersJson).any {
+                                                it.uid == myUid && it.stamp == null && !it.isRejected
+                                            }
+                                    if (sub.status == "awaitingSignatures" || waitingOnMe) {
                                         selectedSubmissionForSignatureRequest = sub
                                     } else {
                                         selectedSubmissionForDetail = sub
@@ -229,7 +236,7 @@ fun GroupFormsScreen(
                                     )
                                 }
 
-                                if (sub.status == "awaitingSignatures") {
+                                if (sub.status == "awaitingSignatures" || sub.status == "inProgress") {
                                     Text(
                                         text = "In progress",
                                         fontSize = 13.sp,
