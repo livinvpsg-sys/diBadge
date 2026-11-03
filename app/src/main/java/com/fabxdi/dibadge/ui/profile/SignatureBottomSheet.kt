@@ -22,11 +22,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -37,6 +42,10 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import androidx.core.graphics.drawable.toBitmap
+import coil.imageLoader
+import coil.request.ImageRequest
+import coil.request.SuccessResult
 import java.io.ByteArrayOutputStream
 import kotlin.math.sqrt
 
@@ -61,9 +70,28 @@ fun SignatureBottomSheet(
         mutableStateOf(initialStrokes.isEmpty() && existingSignatureUrl.isNotBlank() && initialMode == "draw")
     }
 
-    val existingBitmap = remember(existingSignatureUrl) {
+    val context = LocalContext.current
+    val localBitmap = remember(existingSignatureUrl) {
         parseSignatureImageBitmap(existingSignatureUrl)
     }
+    // A saved signature is an https link after upload, so fetch it for the editor
+    var fetchedBitmap by remember(existingSignatureUrl) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(existingSignatureUrl) {
+        if (localBitmap == null && existingSignatureUrl.startsWith("http")) {
+            try {
+                val result = context.imageLoader.execute(
+                    ImageRequest.Builder(context)
+                        .data(existingSignatureUrl)
+                        .allowHardware(false)
+                        .build()
+                )
+                if (result is SuccessResult) {
+                    fetchedBitmap = result.drawable.toBitmap().asImageBitmap()
+                }
+            } catch (e: Exception) {}
+        }
+    }
+    val existingBitmap = localBitmap ?: fetchedBitmap
 
     val colors = MaterialTheme.colorScheme
     val diBadgeColors = DiBadgeTheme.colors
@@ -76,8 +104,9 @@ fun SignatureBottomSheet(
     val accentColor = diBadgeColors.accent
     val tabInactiveColor = diBadgeColors.tabInactive
 
-    val isDark = colors.background.red < 0.5f
-    val strokeColorHex = if (isDark) "#FAF9F5" else "#1C1B1F"
+    // Always dark ink: the saved image is used on white forms and PDFs, and the app tints it
+    // to the current theme when it shows it.
+    val strokeColorHex = "#1C1B1F"
 
     BackHandler(enabled = true, onBack = onDismiss)
 
@@ -225,7 +254,8 @@ fun SignatureBottomSheet(
                             if (showExistingImage && existingBitmap != null) {
                                 drawImage(
                                     image = existingBitmap,
-                                    dstSize = IntSize(size.width.toInt(), size.height.toInt())
+                                    dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+                                    colorFilter = ColorFilter.tint(primaryTextColor, BlendMode.SrcIn)
                                 )
                             }
 

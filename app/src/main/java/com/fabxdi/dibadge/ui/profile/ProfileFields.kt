@@ -38,6 +38,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import com.fabxdi.dibadge.util.CountryData
+import com.fabxdi.dibadge.util.CountryInfo
 import java.io.ByteArrayOutputStream
 
 fun parseSignatureImageBitmap(sigUrl: String): ImageBitmap? {
@@ -187,11 +189,24 @@ fun ProfileCardRow(
     }
 }
 
+/** The country whose flag and tick represent a dial code (many countries share +1, +44 ...). */
+fun countryForDialCode(dialCode: String): CountryInfo? {
+    val clean = if (dialCode.startsWith("+")) dialCode else "+$dialCode"
+    val matches = CountryData.allCountries.filter { it.dialCode == clean }
+    return when (clean) {
+        "+1" -> matches.firstOrNull { it.isoCode.equals("US", ignoreCase = true) }
+        "+44" -> matches.firstOrNull { it.isoCode.equals("GB", ignoreCase = true) }
+        "+7" -> matches.firstOrNull { it.isoCode.equals("RU", ignoreCase = true) }
+        else -> null
+    } ?: matches.firstOrNull()
+}
+
 @Composable
 fun CountryChip(
     code: String = "+65",
     onClick: () -> Unit
 ) {
+    val flag = remember(code) { countryForDialCode(code)?.flagEmoji.orEmpty() }
     Surface(
         modifier = Modifier
             .height(30.dp)
@@ -206,7 +221,7 @@ fun CountryChip(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(
-                text = "🇸🇬 $code",
+                text = "$flag $code".trim(),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Normal,
                 color = MaterialTheme.colorScheme.onBackground
@@ -246,9 +261,9 @@ fun createSignatureDataUrl(
 
     if (mode == "draw" && strokes.isNotEmpty()) {
         var minX = Float.MAX_VALUE
-        var maxX = Float.MIN_VALUE
+        var maxX = -Float.MAX_VALUE
         var minY = Float.MAX_VALUE
-        var maxY = Float.MIN_VALUE
+        var maxY = -Float.MAX_VALUE
 
         for (stroke in strokes) {
             for (pt in stroke) {
@@ -286,9 +301,10 @@ fun createSignatureDataUrl(
         }
     } else if (typedText.isNotBlank()) {
         val selectedTypeface = when (fontIndex) {
-            0 -> Typeface.create("cursive", Typeface.ITALIC)
+            // same looks as the three previews in SignatureBottomSheet
+            0 -> Typeface.create("cursive", Typeface.NORMAL)
             1 -> Typeface.create(Typeface.SERIF, Typeface.ITALIC)
-            else -> Typeface.create(Typeface.MONOSPACE, Typeface.BOLD_ITALIC)
+            else -> Typeface.create(Typeface.SANS_SERIF, Typeface.ITALIC)
         }
 
         paint.style = Paint.Style.FILL

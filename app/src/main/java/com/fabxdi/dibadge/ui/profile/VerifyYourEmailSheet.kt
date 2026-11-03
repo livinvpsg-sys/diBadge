@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.maskEmail
 import com.fabxdi.dibadge.viewmodel.EmailVerificationState
 import kotlinx.coroutines.delay
@@ -123,7 +124,7 @@ fun VerifyYourEmailSheet(
 
                         val borderColor = when {
                             hasError -> MaterialTheme.colorScheme.error
-                            isActive -> MaterialTheme.colorScheme.primary
+                            isActive -> DiBadgeTheme.colors.accent
                             else -> MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                         }
 
@@ -173,7 +174,7 @@ fun VerifyYourEmailSheet(
                         text = "Resend code",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = DiBadgeTheme.colors.accent,
                         modifier = Modifier.clickable(onClick = onResendClick)
                     )
                 } else {
@@ -206,13 +207,13 @@ fun VerifyYourEmailSheet(
                         onClick = onVerifyClick,
                         enabled = isVerifyEnabled,
                         colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary,
-                            disabledContentColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                            contentColor = DiBadgeTheme.colors.accent,
+                            disabledContentColor = DiBadgeTheme.colors.accent.copy(alpha = 0.45f)
                         )
                     ) {
                         if (verificationState.isVerifying) {
                             CircularProgressIndicator(
-                                color = MaterialTheme.colorScheme.primary,
+                                color = DiBadgeTheme.colors.accent,
                                 strokeWidth = 2.dp,
                                 modifier = Modifier.size(16.dp)
                             )

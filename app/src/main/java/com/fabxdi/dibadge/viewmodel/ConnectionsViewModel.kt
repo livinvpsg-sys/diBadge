@@ -5,7 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -44,6 +46,20 @@ class ConnectionsViewModel : ViewModel() {
     val searching: StateFlow<Boolean> = _searching.asStateFlow()
 
     private var searchSeq = 0
+
+    // One-off messages for the screen to show (request sent, or why something failed)
+    private val _message = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val message: SharedFlow<String> = _message
+
+    private fun reportFailure(action: String, e: Exception) {
+        e.printStackTrace()
+        val reason = if (e.message?.contains("PERMISSION_DENIED") == true) {
+            "not allowed. Check that the latest Firestore rules are published."
+        } else {
+            e.localizedMessage ?: "please try again."
+        }
+        _message.tryEmit("Couldn't $action: $reason")
+    }
 
     init {
         loadConnections()
@@ -132,7 +148,7 @@ class ConnectionsViewModel : ViewModel() {
             val users = firestore.collection("users")
             val queries = listOf(
                 users.whereGreaterThanOrEqualTo("displayNameLower", lower)
-                    .whereLessThanOrEqualTo("displayNameLower", lower + ""),
+                    .whereLessThanOrEqualTo("displayNameLower", lower + "\uf8ff"),
                 users.whereEqualTo("emailLower", lower),
                 users.whereEqualTo("badgeNumber", q),
                 users.whereEqualTo("badgeNumber", q.uppercase())
@@ -200,7 +216,9 @@ class ConnectionsViewModel : ViewModel() {
                         "timestamp" to now
                     )
                 ).await()
+                _message.tryEmit("Request sent")
             } catch (e: Exception) {
+                reportFailure("send the request", e)
             }
         }
     }
@@ -213,6 +231,7 @@ class ConnectionsViewModel : ViewModel() {
                 theirConnections(item.uid).document(me.uid)
                     .update("status", "connected").await()
             } catch (e: Exception) {
+                reportFailure("accept the request", e)
             }
         }
     }

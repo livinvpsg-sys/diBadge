@@ -38,10 +38,19 @@ import kotlin.math.max
 
 fun loadOrientedBitmap(context: Context, imageUri: Uri): Bitmap? {
     return try {
-        val inputStream: InputStream = context.contentResolver.openInputStream(imageUri) ?: return null
-        val bitmap = BitmapFactory.decodeStream(inputStream)
-        inputStream.close()
-        if (bitmap == null) return null
+        // 1) read only the size, 2) decode a smaller copy so a 50 MP photo cannot run out of memory
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(imageUri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+        val maxSide = 2048
+        var sample = 1
+        while (max(bounds.outWidth, bounds.outHeight) / sample > maxSide) sample *= 2
+
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        val bitmap = context.contentResolver.openInputStream(imageUri)?.use {
+            BitmapFactory.decodeStream(it, null, opts)
+        } ?: return null
 
         val rotationDegrees = try {
             context.contentResolver.openInputStream(imageUri)?.use { stream ->
@@ -65,6 +74,8 @@ fun loadOrientedBitmap(context: Context, imageUri: Uri): Bitmap? {
             bitmap
         }
     } catch (e: Exception) {
+        null
+    } catch (e: OutOfMemoryError) {
         null
     }
 }
@@ -237,14 +248,11 @@ fun cropBitmapToCircleSquare(
     val cropLeftScreen = circleCenter.x - circleRadiusPx
     val cropTopScreen = circleCenter.y - circleRadiusPx
 
-    val cropLeftImg = max(0f, (cropLeftScreen - imgLeft) / scale)
-    val cropTopImg = max(0f, (cropTopScreen - imgTop) / scale)
-    val cropSideImg = (circleRadiusPx * 2f) / scale
+    // Always a perfect square, kept inside the picture
+    val side = (circleRadiusPx * 2f / scale).toInt()
+        .coerceIn(1, minOf(bitmap.width, bitmap.height))
+    val cropX = ((cropLeftScreen - imgLeft) / scale).toInt().coerceIn(0, bitmap.width - side)
+    val cropY = ((cropTopScreen - imgTop) / scale).toInt().coerceIn(0, bitmap.height - side)
 
-    val finalCropX = cropLeftImg.toInt().coerceIn(0, (bitmap.width - 1).coerceAtLeast(0))
-    val finalCropY = cropTopImg.toInt().coerceIn(0, (bitmap.height - 1).coerceAtLeast(0))
-    val finalCropW = cropSideImg.toInt().coerceIn(1, bitmap.width - finalCropX)
-    val finalCropH = cropSideImg.toInt().coerceIn(1, bitmap.height - finalCropY)
-
-    return Bitmap.createBitmap(bitmap, finalCropX, finalCropY, finalCropW, finalCropH)
+    return Bitmap.createBitmap(bitmap, cropX, cropY, side, side)
 }

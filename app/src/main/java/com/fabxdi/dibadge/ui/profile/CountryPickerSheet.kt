@@ -37,7 +37,7 @@ fun CountryPickerSheet(
     var searchQuery by remember { mutableStateOf("") }
     val allCountries = remember { CountryData.allCountries }
 
-    val filteredCountries = remember(searchQuery, allCountries) {
+    val filteredCountries = remember(searchQuery, allCountries, showDialCode) {
         val q = searchQuery.trim().lowercase()
         if (q.isEmpty()) {
             allCountries
@@ -46,13 +46,19 @@ fun CountryPickerSheet(
             allCountries.filter { c ->
                 c.name.lowercase().contains(q) ||
                         c.isoCode.lowercase() == q ||
-                        c.dialCode.contains(cleanQ) ||
-                        c.dialCode.substringAfter("+").contains(cleanQ)
+                        // dial codes only matter when picking a phone code
+                        (showDialCode && (c.dialCode.contains(cleanQ) ||
+                                c.dialCode.substringAfter("+").contains(cleanQ)))
             }
         }
     }
 
     val listState = rememberLazyListState()
+
+    // Many countries share a dial code; tick only the one the chip shows
+    val selectedDialIso = remember(selectedDialCode) {
+        if (selectedDialCode.isBlank()) "" else countryForDialCode(selectedDialCode)?.isoCode.orEmpty()
+    }
 
     // Scroll selected country into view on open
     LaunchedEffect(Unit) {
@@ -187,8 +193,7 @@ fun CountryPickerSheet(
 
                 items(filteredCountries, key = { "${it.isoCode}_${it.dialCode}" }) { country ->
                     val isSelected = if (showDialCode) {
-                        val cleanDial = if (selectedDialCode.startsWith("+")) selectedDialCode else "+$selectedDialCode"
-                        country.dialCode == cleanDial
+                        selectedDialIso.isNotBlank() && country.isoCode.equals(selectedDialIso, ignoreCase = true)
                     } else {
                         country.isoCode.equals(selectedIsoCode, ignoreCase = true)
                     }

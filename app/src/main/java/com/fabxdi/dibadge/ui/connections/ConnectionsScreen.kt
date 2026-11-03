@@ -25,12 +25,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import com.fabxdi.dibadge.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
 import kotlinx.coroutines.delay
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -52,18 +54,13 @@ fun ConnectionsScreen(
     val searchResults by viewModel.searchResults.collectAsState()
     val searching by viewModel.searching.collectAsState()
 
-    var activeScreenMode by remember { mutableStateOf("connections") } // "connections" or "requests"
     var isSearchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var expandedConnectionId by remember { mutableStateOf<String?>(null) }
 
-    val pendingCount = receivedRequests.size + sentRequests.size
-
-    // Auto-return to Screen 1 (Connections) when requests reach 0
-    LaunchedEffect(pendingCount) {
-        if (pendingCount == 0 && activeScreenMode == "requests") {
-            activeScreenMode = "connections"
-        }
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        viewModel.message.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
     }
 
     // Debounced search of people on diBadge
@@ -80,8 +77,6 @@ fun ConnectionsScreen(
         if (isSearchActive) {
             isSearchActive = false
             searchQuery = ""
-        } else if (activeScreenMode == "requests") {
-            activeScreenMode = "connections"
         } else {
             onBack()
         }
@@ -303,102 +298,191 @@ fun ConnectionsScreen(
                         }
                     }
                 }
-            } else if (activeScreenMode == "connections") {
-                // ==================== SCREEN 1: CONNECTIONS VIEW ====================
-                val isEmpty = connections.isEmpty() && pendingCount == 0
+            } else {
+                // ============ REQUESTS AND CONNECTIONS ON ONE SCREEN ============
+                var sentExpanded by remember { mutableStateOf(false) }
+                var showAllReceived by remember { mutableStateOf(false) }
+                val shownReceived = if (showAllReceived) receivedRequests else receivedRequests.take(2)
 
-                if (isEmpty) {
-                    // Empty State: No connections & no requests
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(horizontal = 32.dp)
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_connections),
-                                contentDescription = null,
-                                tint = tabInactiveColor,
-                                modifier = Modifier.size(48.dp)
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = "No connections yet",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Normal,
-                                color = primaryTextColor
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Search for people on diBadge to connect",
-                                fontSize = 13.sp,
-                                color = secondaryTextColor
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Search people",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = tealAccent,
-                                modifier = Modifier.clickable { isSearchActive = true }
-                            )
-                        }
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Switch Card (only when pendingCount > 0)
-                        if (pendingCount > 0) {
-                            item(key = "switch_card_requests") {
-                                Surface(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(56.dp)
-                                        .clickable { activeScreenMode = "requests" },
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = cardBgColor
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(horizontal = 16.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Text(
-                                            text = "Requests",
-                                            fontSize = 16.sp,
-                                            fontWeight = FontWeight.Normal,
-                                            color = primaryTextColor
-                                        )
-
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = pendingCount.toString(),
-                                                fontSize = 16.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = tealAccent
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Icon(
-                                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                                contentDescription = "View requests",
-                                                tint = secondaryTextColor,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        }
-                                    }
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // ---- Requests received
+                    if (receivedRequests.isNotEmpty()) {
+                        item(key = "header_received") {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "Requests",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = primaryTextColor
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = receivedRequests.size.toString(),
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = tealAccent
+                                    )
                                 }
-                                Spacer(modifier = Modifier.height(8.dp))
+                                if (receivedRequests.size > 2) {
+                                    Text(
+                                        text = if (showAllReceived) "Show less" else "See all",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = tealAccent,
+                                        modifier = Modifier
+                                            .clickable { showAllReceived = !showAllReceived }
+                                            .padding(vertical = 8.dp)
+                                    )
+                                }
                             }
                         }
 
-                        // Connected People Flat Rows
+                        items(shownReceived, key = { "r_" + it.id }) { item ->
+                            ReceivedRequestCard(
+                                item = item,
+                                primaryTextColor = primaryTextColor,
+                                secondaryTextColor = secondaryTextColor,
+                                cardBgColor = cardBgColor,
+                                tealAccent = tealAccent,
+                                onAccept = { viewModel.acceptRequest(item) },
+                                onDecline = { viewModel.declineRequest(item) }
+                            )
+                        }
+                    }
+
+                    // ---- Requests sent (collapsed by default)
+                    if (sentRequests.isNotEmpty()) {
+                        item(key = "sent_row") {
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 52.dp)
+                                    .clickable { sentExpanded = !sentExpanded },
+                                shape = RoundedCornerShape(14.dp),
+                                color = cardBgColor
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Sent requests",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color = primaryTextColor
+                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "${sentRequests.size} pending",
+                                            fontSize = 13.sp,
+                                            color = secondaryTextColor
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Icon(
+                                            imageVector = if (sentExpanded) Icons.Default.KeyboardArrowUp
+                                            else Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                            contentDescription = if (sentExpanded) "Hide sent requests" else "Show sent requests",
+                                            tint = secondaryTextColor,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (sentExpanded) {
+                            items(sentRequests, key = { "s_" + it.id }) { item ->
+                                SentRequestCard(
+                                    item = item,
+                                    primaryTextColor = primaryTextColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    cardBgColor = cardBgColor,
+                                    onCancel = { viewModel.cancelSentRequest(item) }
+                                )
+                            }
+                        }
+                    }
+
+                    // ---- Connections
+                    item(key = "header_connections") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Connections",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = primaryTextColor
+                            )
+                            if (connections.isNotEmpty()) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = connections.size.toString(),
+                                    fontSize = 15.sp,
+                                    color = secondaryTextColor
+                                )
+                            }
+                        }
+                    }
+
+                    if (connections.isEmpty()) {
+                        item(key = "no_connections_yet") {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 48.dp, start = 24.dp, end = 24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_connections),
+                                    contentDescription = null,
+                                    tint = tabInactiveColor,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = "No connections yet",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = primaryTextColor
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = when {
+                                        receivedRequests.isNotEmpty() -> "Accept a request to add your first connection"
+                                        sentRequests.isNotEmpty() -> "Your sent requests are waiting for a reply"
+                                        else -> "Search for people on diBadge to connect"
+                                    },
+                                    fontSize = 13.sp,
+                                    color = secondaryTextColor
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "Search people",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = tealAccent,
+                                    modifier = Modifier.clickable { isSearchActive = true }
+                                )
+                            }
+                        }
+                    } else {
                         items(connections, key = { it.id }) { item ->
                             ConnectionRow(
                                 item = item,
@@ -413,120 +497,6 @@ fun ConnectionsScreen(
                                 },
                                 onRemove = { viewModel.removeConnection(item) },
                                 onChatClick = { onOpenChat(item) }
-                            )
-                        }
-                    }
-                }
-            } else {
-                // ==================== SCREEN 2: REQUESTS VIEW ====================
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Switch Card (Back to Connections)
-                    item(key = "switch_card_connections") {
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp)
-                                .clickable { activeScreenMode = "connections" },
-                            shape = RoundedCornerShape(14.dp),
-                            color = cardBgColor
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(horizontal = 16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = "Connections",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    color = primaryTextColor
-                                )
-
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = connections.size.toString(),
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = tealAccent
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                        contentDescription = "Back to connections",
-                                        tint = secondaryTextColor,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-
-                    // Section 1: Received Requests
-                    if (receivedRequests.isNotEmpty()) {
-                        item(key = "header_received") {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Received ",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = secondaryTextColor
-                                )
-                                Text(
-                                    text = receivedRequests.size.toString(),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    color = secondaryTextColor
-                                )
-                            }
-                        }
-
-                        items(receivedRequests, key = { it.id }) { item ->
-                            ReceivedRequestCard(
-                                item = item,
-                                primaryTextColor = primaryTextColor,
-                                secondaryTextColor = secondaryTextColor,
-                                cardBgColor = cardBgColor,
-                                tealAccent = tealAccent,
-                                onAccept = { viewModel.acceptRequest(item) },
-                                onDecline = { viewModel.declineRequest(item) }
-                            )
-                        }
-                    }
-
-                    // Section 2: Sent Requests
-                    if (sentRequests.isNotEmpty()) {
-                        item(key = "header_sent") {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Sent ",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = secondaryTextColor
-                                )
-                                Text(
-                                    text = sentRequests.size.toString(),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    color = secondaryTextColor
-                                )
-                            }
-                        }
-
-                        items(sentRequests, key = { it.id }) { item ->
-                            SentRequestCard(
-                                item = item,
-                                primaryTextColor = primaryTextColor,
-                                secondaryTextColor = secondaryTextColor,
-                                cardBgColor = cardBgColor,
-                                onCancel = { viewModel.cancelSentRequest(item) }
                             )
                         }
                     }

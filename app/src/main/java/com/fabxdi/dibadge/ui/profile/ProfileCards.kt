@@ -475,7 +475,6 @@ fun ProfileUsernameCard(
 
             HorizontalDivider(thickness = 1.dp, color = dividerColor)
 
-            val effectiveFirstName = remember(profileData.firstName) { profileData.firstName.capitalizeWords() }
             Column(modifier = Modifier.fillMaxWidth()) {
                 ProfileCardRow(
                     label = "Nickname",
