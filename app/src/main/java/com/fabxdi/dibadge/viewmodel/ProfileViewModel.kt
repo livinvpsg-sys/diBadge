@@ -194,11 +194,8 @@ class ProfileViewModel : ViewModel() {
 
                     var badgeNo = doc.getString("badgeNumber") ?: ""
                     if (badgeNo.isBlank()) {
-                        badgeNo = generateBadgeNumber()
-                        try {
-                            firestore.collection("users").document(user.uid)
-                                .set(mapOf("badgeNumber" to badgeNo), SetOptions.merge())
-                        } catch (e: Exception) {}
+                        // created once, together with the rest of the searchable profile record
+                        badgeNo = try { ensureUserProfileDoc(user) } catch (e: Exception) { "" }
                     }
 
                     val un = doc.getString("username") ?: ""
@@ -238,11 +235,7 @@ class ProfileViewModel : ViewModel() {
                     val fn = parts.getOrNull(0) ?: ""
                     val ln = parts.getOrNull(1) ?: ""
 
-                    val badgeNo = generateBadgeNumber()
-                    try {
-                        firestore.collection("users").document(user.uid)
-                            .set(mapOf("badgeNumber" to badgeNo), SetOptions.merge())
-                    } catch (e: Exception) {}
+                    val badgeNo = try { ensureUserProfileDoc(user) } catch (e: Exception) { "" }
 
                     val loaded = UserProfileData(
                         badgeNumber = badgeNo,
@@ -653,11 +646,8 @@ class ProfileViewModel : ViewModel() {
                 _profileData.value = _profileData.value.copy(photoUrl = localUriStr)
                 initialProfileData = initialProfileData.copy(photoUrl = localUriStr)
 
-                firestore.collection("users")
-                    .document(user.uid)
-                    .set(mapOf("photoUrl" to localUriStr, "updatedAt" to System.currentTimeMillis()), SetOptions.merge())
-                    .await()
-
+                // The local file path is kept on this phone only. Firestore gets the photo link
+                // only after the upload succeeds, so other people never receive a path they cannot open.
                 _isUploadingPhoto.value = false
                 onComplete(true, localUriStr)
 
@@ -845,6 +835,7 @@ class ProfileViewModel : ViewModel() {
                         "middleName" to current.middleName.trim(),
                         "lastName" to current.lastName.trim(),
                         "displayName" to combinedDisplayName,
+                        "displayNameLower" to combinedDisplayName.lowercase(),
                         "nickname" to current.nickname.trim(),
                         "role" to current.role.trim(),
                         "organization" to current.organization.trim(),
@@ -853,7 +844,7 @@ class ProfileViewModel : ViewModel() {
                         "country" to current.country.trim().uppercase(),
                         "birthday" to current.birthday.trim(),
                         "bio" to current.bio.trim(),
-                        "photoUrl" to finalPhotoUrl,
+                        "photoUrl" to (if (finalPhotoUrl.startsWith("file://")) (userDoc.getString("photoUrl") ?: "") else finalPhotoUrl),
                         "signatureUrl" to finalSignatureUrl,
                         "updatedAt" to System.currentTimeMillis()
                     )

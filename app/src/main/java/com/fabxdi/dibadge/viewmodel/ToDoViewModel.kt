@@ -9,6 +9,7 @@ import com.fabxdi.dibadge.data.ToDoEntity
 import com.fabxdi.dibadge.ui.my_tasks.isReminderOnDate
 import com.fabxdi.dibadge.util.AlarmScheduler
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -19,9 +20,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.tasks.await
 import java.time.LocalDate
 
@@ -32,6 +35,7 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
     private val firestore = FirebaseFirestore.getInstance()
 
     private var firestoreListener: ListenerRegistration? = null
+    private var groupListener: ListenerRegistration? = null
     private var currentSyncedUserId: String? = null
 
     val allReminders: Flow<List<ToDoEntity>> = reminderDao.getAllReminders()
@@ -91,6 +95,7 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
     private fun setupFirestoreSync(userId: String) {
         removeFirestoreSync()
         currentSyncedUserId = userId
+        setupGroupSync(userId)
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -138,7 +143,115 @@ class ToDoViewModel(application: Application) : AndroidViewModel(application) {
     private fun removeFirestoreSync() {
         firestoreListener?.remove()
         firestoreListener = null
+        groupListener?.remove()
+        groupListener = null
         currentSyncedUserId = null
+    }
+
+    /**
+     * Brings every chat this account is a member of onto the Home list, so a chat started by
+     * someone else (a direct message, or a group you were added to) appears here without
+     * any action. Chats you were removed from are taken off the list.
+     */
+    private fun setupGroupSync(userId: String) {
+        groupListener?.remove()
+        groupListener = firestore.collection("personalGroups")
+            .whereArrayContains("members", userId)
+            .addSnapshotListener { snapshot, e ->
+                if (e != null || snapshot == null) return@addSnapshotListener
+                viewModelScope.launch(Dispatchers.IO) {
+                    val local = reminderDao.getAllHomeEntries().first()
+                    val localById = local.associateBy { it.id }
+                    for (change in snapshot.documentChanges) {
+                        val doc = change.document
+                        val id = doc.id.toIntOrNull() ?: continue
+                        if (change.type == DocumentChange.Type.REMOVED) {
+                            localById[id]?.let { reminderDao.deleteHomeEntry(it) }
+                            continue
+                        }
+                        if (localById.containsKey(id)) continue
+
+                        val isDirect = doc.getString("type") == "direct"
+                        val title: String
+                        val subtitle: String
+                        if (isDirect) {
+                            val members = (doc.get("members") as? List<*>)?.map { it.toString() } ?: emptyList()
+                            val names = doc.get("memberNames") as? Map<*, *>
+                            val otherUid = members.firstOrNull { it != userId }
+                            title = names?.get(otherUid)?.toString()?.takeIf { it.isNotBlank() } ?: "Chat"
+                            subtitle = "Direct"
+                        } else {
+                            title = (doc.getString("title") ?: doc.getString("name") ?: "Group").ifBlank { "Group" }
+                            subtitle = doc.getString("subtitle") ?: ""
+                        }
+                        reminderDao.insertHomeEntry(
+                            HomeEntryEntity(
+                                id = id,
+                                title = title,
+                                subtitle = subtitle,
+                                initials = title.take(1).uppercase()
+                            )
+                        )
+                    }
+                }
+            }
+    }
+
+    /** Same number on both phones for the same two people, so their messages meet. */
+    private fun directChatId(uidA: String, uidB: String): Int =
+        ("dm_" + listOf(uidA, uidB).sorted().joinToString("_")).hashCode() and 0x7FFFFFFF
+
+    /**
+     * Opens (and creates, if needed) the one chat shared by me and [otherUid].
+     * The chat record in Firestore lists both people, so the other account receives it.
+     */
+    fun openDirectChat(
+        otherUid: String,
+        otherName: String,
+        nickname: String = "",
+        onReady: (HomeEntryEntity) -> Unit
+    ) {
+        val me = auth.currentUser ?: return
+        if (otherUid.isBlank() || otherUid == me.uid) return
+        val id = directChatId(me.uid, otherUid)
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val existing = reminderDao.getAllHomeEntries().first().firstOrNull { it.id == id }
+            val entry = existing ?: HomeEntryEntity(
+                id = id,
+                title = otherName,
+                subtitle = nickname.ifBlank { "Direct" },
+                initials = otherName.take(1).uppercase()
+            )
+            if (existing == null) reminderDao.insertHomeEntry(entry)
+            withContext(Dispatchers.Main) { onReady(entry) }
+
+            // Create the shared record once; if it already exists, leave it as it is
+            try {
+                val ref = firestore.collection("personalGroups").document(id.toString())
+                val myName = me.displayName?.takeIf { it.isNotBlank() } ?: me.email ?: "User"
+                firestore.runTransaction { tx ->
+                    if (!tx.get(ref).exists()) {
+                        tx.set(
+                            ref,
+                            mapOf(
+                                "id" to id.toString(),
+                                "type" to "direct",
+                                "members" to listOf(me.uid, otherUid),
+                                "memberNames" to mapOf(me.uid to myName, otherUid to otherName),
+                                "creatorId" to me.uid,
+                                "createdBy" to me.uid,
+                                "ownerId" to me.uid,
+                                "roles" to mapOf(me.uid to "owner", otherUid to "member"),
+                                "createdAt" to FieldValue.serverTimestamp()
+                            )
+                        )
+                    }
+                }.await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     fun saveHomeEntry(title: String, subtitle: String, initials: String) {

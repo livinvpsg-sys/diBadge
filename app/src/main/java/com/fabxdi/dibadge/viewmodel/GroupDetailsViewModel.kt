@@ -1585,8 +1585,9 @@ class GroupDetailsViewModel : ViewModel() {
                     // Admin can search anyone by phone or email
                     val byPhone = db.collection("users").whereEqualTo("phoneNumber", q).get().await()
                     val byEmail = db.collection("users").whereEqualTo("email", q).get().await()
+                    val byEmailLower = db.collection("users").whereEqualTo("emailLower", q.lowercase()).get().await()
 
-                    val allDocs = (byPhone.documents + byEmail.documents).distinctBy { it.id }
+                    val allDocs = (byPhone.documents + byEmail.documents + byEmailLower.documents).distinctBy { it.id }
                     for (doc in allDocs) {
                         if (doc.id !in existingMemberUids) {
                             val name = doc.getString("displayName") ?: doc.getString("email") ?: doc.getString("phoneNumber") ?: doc.id
@@ -1600,27 +1601,19 @@ class GroupDetailsViewModel : ViewModel() {
                             )
                         }
                     }
-                } else {
-                    // Non-admin can only add established personal connections
-                    val connSnap = db.collection("userConnections")
-                        .whereArrayContains("participants", currentUid)
-                        .whereEqualTo("status", "accepted")
-                        .get().await()
+                }
 
-                    for (doc in connSnap.documents) {
-                        val participants = (doc.get("participants") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
-                        val otherUid = participants.find { it != currentUid }
-                        if (otherUid != null && otherUid !in existingMemberUids) {
-                            val userDoc = db.collection("users").document(otherUid).get().await()
-                            if (userDoc.exists()) {
-                                val name = userDoc.getString("displayName") ?: userDoc.getString("email") ?: userDoc.getString("phoneNumber") ?: otherUid
-                                val phone = userDoc.getString("phoneNumber") ?: ""
-                                val email = userDoc.getString("email") ?: ""
-                                if (name.contains(q, ignoreCase = true) || phone.contains(q) || email.contains(q, ignoreCase = true)) {
-                                    results.add(GroupMember(uid = otherUid, displayName = name, email = email, phoneNumber = phone))
-                                }
-                            }
-                        }
+                // Everyone can add the people they are connected with (by name)
+                val connSnap = db.collection("users").document(currentUid)
+                    .collection("userConnections")
+                    .whereEqualTo("status", "connected")
+                    .get().await()
+                for (doc in connSnap.documents) {
+                    val otherUid = doc.getString("uid") ?: doc.id
+                    if (otherUid in existingMemberUids || results.any { it.uid == otherUid }) continue
+                    val name = doc.getString("name") ?: doc.getString("displayName") ?: continue
+                    if (name.contains(q, ignoreCase = true)) {
+                        results.add(GroupMember(uid = otherUid, displayName = name))
                     }
                 }
 

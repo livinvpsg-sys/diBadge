@@ -7,6 +7,7 @@ import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.UserProfileChangeRequest
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -55,7 +56,19 @@ class AuthViewModel : ViewModel() {
     private var resendTimerJob: Job? = null
 
     private val authStateListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
-        _currentUser.value = firebaseAuth.currentUser
+        val signedIn = firebaseAuth.currentUser
+        _currentUser.value = signedIn
+        // Every signed-in account gets its profile record, so others can find it in search.
+        // A new Google account waits until its email code is confirmed.
+        if (signedIn != null && !_signupVerifyState.value.isOpen) ensureProfileRecord(signedIn)
+    }
+
+    private fun ensureProfileRecord(user: FirebaseUser) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                ensureUserProfileDoc(user)
+            } catch (e: Exception) {}
+        }
     }
 
     init {
@@ -203,6 +216,7 @@ class AuthViewModel : ViewModel() {
 
             if (state.typedCode == state.code) {
                 _signupVerifyState.value = SignupVerificationState(isOpen = false)
+                if (state.isGoogleSignup) auth.currentUser?.let { ensureProfileRecord(it) }
                 onSuccess()
             } else {
                 val newTriesLeft = state.triesLeft - 1
@@ -300,13 +314,16 @@ class AuthViewModel : ViewModel() {
                             user.updateProfile(profileUpdates)
                         }
                         // Create initial user document in Firestore with emailOtp: true
-                        firestore.collection("users").document(user.uid).set(
-                            mapOf(
-                                "email" to user.email,
-                                "emailOtp" to true,
-                                "createdAt" to System.currentTimeMillis()
-                            )
+                        val signUpFields = mutableMapOf<String, Any>(
+                            "email" to (user.email ?: email.trim()),
+                            "emailOtp" to true,
+                            "createdAt" to System.currentTimeMillis()
                         )
+                        if (name.isNotBlank()) {
+                            signUpFields["displayName"] = name.trim()
+                            signUpFields["displayNameLower"] = name.trim().lowercase()
+                        }
+                        firestore.collection("users").document(user.uid).set(signUpFields, SetOptions.merge())
                         _uiState.value = AuthUiState.Success(user)
                     } else {
                         _uiState.value = AuthUiState.Error("Account created successfully")

@@ -311,20 +311,8 @@ fun MainDashboard(
             onBack = { onTabSelected(HomeTab.Home) },
             bottomBar = { AppBottomBar(selectedTab, onTabSelected) },
             onOpenChat = { conn ->
-                val existingEntry = homeEntries.find { it.id.toString() == conn.id || it.title.equals(conn.name, ignoreCase = true) }
-                if (existingEntry != null) {
-                    selectedEntryForChat = existingEntry
-                } else {
-                    val connNick = userNicknames[conn.uid] ?: userNicknames[conn.id] ?: ""
-                    val generatedId = (conn.id.toIntOrNull() ?: (conn.uid.hashCode() and 0x7FFFFFFF))
-                    val tempEntry = HomeEntryEntity(
-                        id = generatedId,
-                        title = conn.name,
-                        subtitle = connNick.ifBlank { "Direct" },
-                        initials = conn.name.take(1)
-                    )
-                    selectedEntryForChat = tempEntry
-                }
+                val connNick = userNicknames[conn.uid] ?: userNicknames[conn.id] ?: ""
+                viewModel.openDirectChat(conn.uid, conn.name, connNick) { selectedEntryForChat = it }
             }
         )
         return
@@ -429,18 +417,6 @@ fun MainDashboard(
                                     }
                                 }
 
-                                // A 1-to-1 chat shows the connection's photo; groups use the remembered photo
-                                val photoFor: (HomeEntryEntity) -> String = { entry ->
-                                    val sub = entry.subtitle.trim().lowercase()
-                                    val isGroupEntry = sub.endsWith("member") || sub.endsWith("members") ||
-                                        sub == "project group" || sub == "group"
-                                    if (isGroupEntry) "" else {
-                                        userConnections.firstOrNull {
-                                            it.id == entry.id.toString() || it.name.equals(entry.title, ignoreCase = true)
-                                        }?.photoUrl.orEmpty()
-                                    }
-                                }
-
                                 LaunchedEffect(homeEntries) {
                                     val defaultEntries = homeEntries.filter { it.title == "diBadge Group" }
                                     for (entry in defaultEntries) {
@@ -465,7 +441,6 @@ fun MainDashboard(
                                                 val entry = homeEntries[index]
                                                 HomeEntryCard(
                                                     entry = entry,
-                                                    photoUrl = photoFor(entry),
                                                     isSelected = selectedEntries.contains(entry),
                                                     onClick = { 
                                                         if (selectedEntries.isNotEmpty()) {
@@ -564,7 +539,6 @@ fun MainDashboard(
                                                         title = entry.title,
                                                         subtitle = displaySubtitle,
                                                         isGroup = isGroup,
-                                                        photoUrl = photoFor(entry).ifBlank { AvatarPhotoCache.photoFor(entry.id.toString()) },
                                                         idForColor = entry.id.toString(),
                                                         query = query,
                                                         onClick = {
@@ -600,20 +574,7 @@ fun MainDashboard(
                                                         query = query,
                                                         onClick = {
                                                             focusManager.clearFocus()
-                                                            val existingEntry = homeEntries.find { it.id.toString() == conn.id || it.title.equals(conn.name, ignoreCase = true) }
-                                                            if (existingEntry != null) {
-                                                                selectedEntryForChat = existingEntry
-                                                            } else {
-                                                                val generatedId = (System.currentTimeMillis().toInt() and 0x7FFFFFFF) + (1..999).random()
-                                                                val newEntry = HomeEntryEntity(
-                                                                    id = generatedId,
-                                                                    title = conn.name,
-                                                                    subtitle = connNick.ifBlank { "Direct" },
-                                                                    initials = conn.name.take(1)
-                                                                )
-                                                                viewModel.saveHomeEntry(conn.name, connNick.ifBlank { "Direct" }, conn.name.take(1))
-                                                                selectedEntryForChat = newEntry
-                                                            }
+                                                            viewModel.openDirectChat(conn.uid, conn.name, connNick) { selectedEntryForChat = it }
                                                             homeSearchQuery = ""
                                                         }
                                                     )

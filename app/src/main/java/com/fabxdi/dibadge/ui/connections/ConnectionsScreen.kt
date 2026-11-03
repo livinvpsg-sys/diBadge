@@ -31,6 +31,7 @@ import com.fabxdi.dibadge.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
@@ -48,6 +49,8 @@ fun ConnectionsScreen(
     val connections by viewModel.connections.collectAsState()
     val receivedRequests by viewModel.receivedRequests.collectAsState()
     val sentRequests by viewModel.sentRequests.collectAsState()
+    val searchResults by viewModel.searchResults.collectAsState()
+    val searching by viewModel.searching.collectAsState()
 
     var activeScreenMode by remember { mutableStateOf("connections") } // "connections" or "requests"
     var isSearchActive by remember { mutableStateOf(false) }
@@ -60,6 +63,16 @@ fun ConnectionsScreen(
     LaunchedEffect(pendingCount) {
         if (pendingCount == 0 && activeScreenMode == "requests") {
             activeScreenMode = "connections"
+        }
+    }
+
+    // Debounced search of people on diBadge
+    LaunchedEffect(searchQuery, isSearchActive) {
+        if (!isSearchActive) {
+            viewModel.clearSearch()
+        } else {
+            delay(350)
+            viewModel.searchPeople(searchQuery)
         }
     }
 
@@ -202,7 +215,7 @@ fun ConnectionsScreen(
                     it.name.lowercase().contains(q) || it.organization.lowercase().contains(q)
                 }
 
-                if (q.isNotEmpty() && filteredConnected.isEmpty()) {
+                if (q.isNotEmpty() && filteredConnected.isEmpty() && searchResults.isEmpty() && !searching) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
                             text = "No people found",
@@ -240,6 +253,51 @@ fun ConnectionsScreen(
                                     },
                                     onRemove = { viewModel.removeConnection(item) },
                                     onChatClick = { onOpenChat(item) }
+                                )
+                            }
+                        }
+
+                        if (searching && searchResults.isEmpty()) {
+                            item {
+                                Text(
+                                    text = "Searching...",
+                                    fontSize = 13.sp,
+                                    color = secondaryTextColor,
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                )
+                            }
+                        }
+
+                        val connectedUids = connections.map { it.uid }.toSet()
+                        val people = searchResults.filter { it.uid !in connectedUids }
+                        if (people.isNotEmpty()) {
+                            item {
+                                Text(
+                                    text = "PEOPLE ON DIBADGE",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = secondaryTextColor,
+                                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                                )
+                            }
+                            items(people, key = { "p_" + it.uid }) { person ->
+                                val incoming = receivedRequests.firstOrNull { it.uid == person.uid }
+                                val outgoing = sentRequests.any { it.uid == person.uid }
+                                PersonSearchRow(
+                                    item = person,
+                                    actionLabel = when {
+                                        incoming != null -> "Accept"
+                                        outgoing -> "Pending"
+                                        else -> "Connect"
+                                    },
+                                    actionEnabled = !outgoing,
+                                    primaryTextColor = primaryTextColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    tealAccent = tealAccent,
+                                    onAction = {
+                                        if (incoming != null) viewModel.acceptRequest(incoming)
+                                        else viewModel.sendInvite(person)
+                                    }
                                 )
                             }
                         }
@@ -824,5 +882,87 @@ fun SentRequestCard(
                 )
             }
         }
+    }
+}
+
+@Composable
+fun PersonSearchRow(
+    item: ConnectionItem,
+    actionLabel: String,
+    actionEnabled: Boolean,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    tealAccent: Color,
+    onAction: () -> Unit
+) {
+    val avatarBgColor = remember(item.id) { UserColorUtils.getColorForName(item.id) }
+    val sublineText = remember(item.organization, item.role) {
+        if (item.organization.isNotBlank() && item.role.isNotBlank()) "${item.organization} • ${item.role}"
+        else item.organization.ifBlank { item.role }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(
+            modifier = Modifier.size(44.dp),
+            shape = CircleShape,
+            color = avatarBgColor
+        ) {
+            if (item.photoUrl.isNotBlank()) {
+                AsyncImage(
+                    model = item.photoUrl,
+                    contentDescription = "Avatar",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = item.name.take(1).uppercase(),
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.name,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Normal,
+                color = primaryTextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (sublineText.isNotBlank()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = sublineText,
+                    fontSize = 12.sp,
+                    color = secondaryTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        Text(
+            text = actionLabel,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (actionEnabled) tealAccent else secondaryTextColor,
+            modifier = Modifier
+                .clickable(enabled = actionEnabled) { onAction() }
+                .padding(horizontal = 8.dp, vertical = 12.dp)
+        )
     }
 }
