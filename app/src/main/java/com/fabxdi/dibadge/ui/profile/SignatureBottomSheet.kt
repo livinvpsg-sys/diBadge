@@ -119,9 +119,9 @@ fun SignatureBottomSheet(
     // Font Options
     val fontOptions = remember {
         listOf(
-            "Dancing Script" to FontFamily.Cursive,
-            "Caveat" to FontFamily.Serif,
-            "Homemade Apple" to FontFamily.SansSerif
+            "Script" to FontFamily.Cursive,
+            "Serif" to FontFamily.Serif,
+            "Typewriter" to FontFamily.Monospace
         )
     }
 
@@ -354,6 +354,7 @@ fun SignatureBottomSheet(
                                     fontSize = 26.sp,
                                     fontFamily = fontFam,
                                     fontStyle = if (index != 0) FontStyle.Italic else FontStyle.Normal,
+                                    fontWeight = if (index == 1) FontWeight.Bold else FontWeight.Normal,
                                     color = primaryTextColor,
                                     maxLines = 1
                                 )

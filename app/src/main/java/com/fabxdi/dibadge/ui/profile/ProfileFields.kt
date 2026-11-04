@@ -303,8 +303,8 @@ fun createSignatureDataUrl(
         val selectedTypeface = when (fontIndex) {
             // same looks as the three previews in SignatureBottomSheet
             0 -> Typeface.create("cursive", Typeface.NORMAL)
-            1 -> Typeface.create(Typeface.SERIF, Typeface.ITALIC)
-            else -> Typeface.create(Typeface.SANS_SERIF, Typeface.ITALIC)
+            1 -> Typeface.create(Typeface.SERIF, Typeface.BOLD_ITALIC)
+            else -> Typeface.create(Typeface.MONOSPACE, Typeface.ITALIC)
         }
 
         paint.style = Paint.Style.FILL

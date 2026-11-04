@@ -4,7 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.SetOptions
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -22,7 +28,8 @@ data class ConnectionItem(
     val bio: String = "",
     val photoUrl: String = "",
     val status: String = "connected", // "connected", "received", "sent"
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val country: String = "" // ISO code, only filled for people found by search / suggestions
 )
 
 class ConnectionsViewModel : ViewModel() {
@@ -47,6 +54,15 @@ class ConnectionsViewModel : ViewModel() {
 
     private var searchSeq = 0
 
+    // People I have blocked (same blockedUsers/{me}/blocked list the chat screen uses)
+    private val _blockedPeople = MutableStateFlow<List<ConnectionItem>>(emptyList())
+    val blockedPeople: StateFlow<List<ConnectionItem>> = _blockedPeople.asStateFlow()
+
+    // "People you may know": a pool of people on diBadge. The screen hides anyone you already
+    // have a connection or request with.
+    private val _suggestions = MutableStateFlow<List<ConnectionItem>>(emptyList())
+    val suggestions: StateFlow<List<ConnectionItem>> = _suggestions.asStateFlow()
+
     // One-off messages for the screen to show (request sent, or why something failed)
     private val _message = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val message: SharedFlow<String> = _message
@@ -63,6 +79,93 @@ class ConnectionsViewModel : ViewModel() {
 
     init {
         loadConnections()
+        loadBlocked()
+        loadSuggestions()
+    }
+
+    private fun loadBlocked() {
+        val me = auth.currentUser?.uid ?: return
+        firestore.collection("blockedUsers").document(me).collection("blocked")
+            .addSnapshotListener { snapshot, e ->
+                if (e != null || snapshot == null) return@addSnapshotListener
+                _blockedPeople.value = snapshot.documents.map { doc ->
+                    ConnectionItem(
+                        id = doc.id,
+                        uid = doc.getString("uid") ?: doc.id,
+                        name = doc.getString("name") ?: "User",
+                        organization = doc.getString("organization") ?: "",
+                        status = "blocked"
+                    )
+                }.sortedBy { it.name.lowercase() }
+            }
+    }
+
+    /**
+     * Leaves out people I blocked and people who blocked me, so a blocked person can never find
+     * the account by name, email or badge number. (Whether someone blocked me is read from
+     * their own blocked entry, which the rules let the blocked person open.)
+     */
+    private suspend fun withoutBlocked(me: String, people: Collection<ConnectionItem>): List<ConnectionItem> {
+        val mine = _blockedPeople.value.map { it.uid }.toSet()
+        val candidates = people.filter { it.uid !in mine }
+        return coroutineScope {
+            candidates.map { p ->
+                async {
+                    val blockedMe = try {
+                        firestore.collection("blockedUsers").document(p.uid)
+                            .collection("blocked").document(me).get().await().exists()
+                    } catch (e: Exception) {
+                        false
+                    }
+                    if (blockedMe) null else p
+                }
+            }.awaitAll().filterNotNull()
+        }
+    }
+
+    /** Block: remember it (chat reads the same list), then remove the connection on both sides. */
+    fun blockUser(item: ConnectionItem) {
+        val me = auth.currentUser ?: return
+        viewModelScope.launch {
+            try {
+                firestore.collection("blockedUsers").document(me.uid)
+                    .collection("blocked").document(item.uid)
+                    .set(
+                        mapOf(
+                            "uid" to item.uid,
+                            "name" to item.name,
+                            "organization" to item.organization,
+                            "createdAt" to FieldValue.serverTimestamp()
+                        ),
+                        SetOptions.merge()
+                    ).await()
+            } catch (e: Exception) {
+                reportFailure("block ${item.name}", e)
+                return@launch
+            }
+            try {
+                myConnections()?.document(item.id)?.delete()?.await()
+            } catch (e: Exception) {
+            }
+            try {
+                theirConnections(item.uid).document(me.uid).delete().await()
+            } catch (e: Exception) {
+            }
+            _message.tryEmit("${item.name} blocked")
+        }
+    }
+
+    fun unblockUser(item: ConnectionItem) {
+        val me = auth.currentUser ?: return
+        viewModelScope.launch {
+            try {
+                firestore.collection("blockedUsers").document(me.uid)
+                    .collection("blocked").document(item.uid).delete().await()
+                _message.tryEmit("${item.name} unblocked")
+            } catch (e: Exception) {
+                reportFailure("unblock ${item.name}", e)
+            }
+        }
     }
 
     private fun myConnections() =
@@ -87,6 +190,7 @@ class ConnectionsViewModel : ViewModel() {
                     val org = doc.getString("organization") ?: doc.getString("company") ?: ""
                     val role = doc.getString("role") ?: ""
                     val bio = doc.getString("bio") ?: ""
+                    val country = doc.getString("country") ?: ""
                     val photoUrl = doc.getString("photoUrl") ?: ""
                     val status = doc.getString("status") ?: "connected"
                     val time = doc.getLong("timestamp") ?: System.currentTimeMillis()
@@ -100,7 +204,8 @@ class ConnectionsViewModel : ViewModel() {
                         bio = bio,
                         photoUrl = photoUrl,
                         status = status,
-                        timestamp = time
+                        timestamp = time,
+                        country = country
                     )
 
                     when (status) {
@@ -126,7 +231,8 @@ class ConnectionsViewModel : ViewModel() {
         role = getString("role") ?: getString("jobTitle") ?: "",
         bio = getString("bio") ?: "",
         photoUrl = getString("photoUrl") ?: getString("photoURL") ?: "",
-        status = "none"
+        status = "none",
+        country = getString("country") ?: ""
     )
 
     /**
@@ -166,10 +272,48 @@ class ConnectionsViewModel : ViewModel() {
                     // one failing query should not hide the others
                 }
             }
+            val visible = withoutBlocked(me, found.values)
             if (seq == searchSeq) {
-                _searchResults.value = found.values.sortedBy { it.name.lowercase() }
+                _searchResults.value = visible.sortedBy { it.name.lowercase() }
                 _searching.value = false
             }
+        }
+    }
+
+    /** Same-organisation people first, then recently active people. Personal accounts only. */
+    fun loadSuggestions() {
+        val me = auth.currentUser?.uid ?: return
+        viewModelScope.launch {
+            val users = firestore.collection("users")
+            val found = LinkedHashMap<String, ConnectionItem>()
+
+            fun add(docs: List<DocumentSnapshot>) {
+                for (doc in docs) {
+                    if (doc.id == me) continue
+                    if (doc.getBoolean("hideFromSearch") == true) continue
+                    if (doc.getString("displayName").isNullOrBlank()) continue
+                    if (!found.containsKey(doc.id)) found[doc.id] = doc.toPerson()
+                }
+            }
+
+            try {
+                val mine = users.document(me).get().await()
+                val org = (mine.getString("organization") ?: mine.getString("company") ?: "").trim()
+                if (org.isNotBlank()) {
+                    add(users.whereEqualTo("organization", org).limit(20).get().await().documents)
+                }
+            } catch (e: Exception) {
+                // suggestions are optional - ignore
+            }
+            try {
+                add(
+                    users.orderBy("updatedAt", Query.Direction.DESCENDING)
+                        .limit(30).get().await().documents
+                )
+            } catch (e: Exception) {
+                // suggestions are optional - ignore
+            }
+            _suggestions.value = withoutBlocked(me, found.values)
         }
     }
 
@@ -195,6 +339,8 @@ class ConnectionsViewModel : ViewModel() {
                         "organization" to item.organization,
                         "role" to item.role,
                         "photoUrl" to item.photoUrl,
+                        "bio" to item.bio,
+                        "country" to item.country,
                         "status" to "sent",
                         "timestamp" to now
                     )
@@ -212,6 +358,8 @@ class ConnectionsViewModel : ViewModel() {
                         "organization" to (mine?.getString("organization") ?: mine?.getString("company") ?: ""),
                         "role" to (mine?.getString("role") ?: mine?.getString("jobTitle") ?: ""),
                         "photoUrl" to (mine?.getString("photoUrl") ?: mine?.getString("photoURL") ?: ""),
+                        "bio" to (mine?.getString("bio") ?: ""),
+                        "country" to (mine?.getString("country") ?: ""),
                         "status" to "received",
                         "timestamp" to now
                     )

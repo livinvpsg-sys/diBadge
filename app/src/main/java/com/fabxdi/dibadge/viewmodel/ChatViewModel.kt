@@ -749,7 +749,7 @@ class ChatViewModel : ViewModel() {
 
         viewModelScope.launch {
             try {
-                db.collection("groups")
+                db.collection("personalGroups")
                     .document(groupId)
                     .collection("messages")
                     .document(messageId)
@@ -797,7 +797,7 @@ class ChatViewModel : ViewModel() {
 
         viewModelScope.launch {
             try {
-                db.collection("groups")
+                db.collection("personalGroups")
                     .document(groupId)
                     .collection("messages")
                     .document(messageId)
@@ -841,7 +841,7 @@ class ChatViewModel : ViewModel() {
 
         viewModelScope.launch {
             try {
-                db.collection("groups")
+                db.collection("personalGroups")
                     .document(groupId)
                     .collection("messages")
                     .document(messageId)
@@ -909,7 +909,7 @@ class ChatViewModel : ViewModel() {
                             "isForwarded" to true
                         )
 
-                        db.collection("groups")
+                        db.collection("personalGroups")
                             .document(targetGroupId)
                             .collection("messages")
                             .document(newMsgId)

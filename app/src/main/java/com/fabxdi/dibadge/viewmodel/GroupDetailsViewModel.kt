@@ -167,6 +167,27 @@ class GroupDetailsViewModel : ViewModel() {
     private val _media = MutableStateFlow<List<GroupMediaItem>>(emptyList())
     val media: StateFlow<List<GroupMediaItem>> = _media.asStateFlow()
 
+    // Media and files come from three places: the group's own folders (Firestore), files
+    // attached in the chat, and local deletions. They are kept apart and merged each time,
+    // so one source can no longer overwrite another.
+    private var fsMedia: List<GroupMediaItem> = emptyList()
+    private var fsFiles: List<GroupFolderFile> = emptyList()
+    private var chatMedia: List<GroupMediaItem> = emptyList()
+    private var chatFiles: List<GroupFolderFile> = emptyList()
+    private val hiddenIds = mutableSetOf<String>()
+    private var listeningGroupId: String? = null
+
+    private fun publishMediaAndFiles() {
+        _media.value = (fsMedia + chatMedia)
+            .filter { it.id !in hiddenIds }
+            .distinctBy { it.url }
+            .sortedByDescending { it.timestamp }
+        _files.value = (fsFiles + chatFiles)
+            .filter { it.id !in hiddenIds }
+            .distinctBy { it.downloadUrl }
+            .sortedByDescending { it.timestamp }
+    }
+
     private val _credentials = MutableStateFlow<List<GroupCredentialItem>>(emptyList())
     val credentials: StateFlow<List<GroupCredentialItem>> = _credentials.asStateFlow()
 
@@ -226,6 +247,16 @@ class GroupDetailsViewModel : ViewModel() {
         _groupName.value = initialName.ifBlank { if (isDirect) "Chat" else "Group" }
         val isMemberCountInitial = subLower.let { it.endsWith("member") || it.endsWith("members") }
         _groupSubtitle.value = if (initialSubtitle == "test" || isMemberCountInitial || isDirect) "" else initialSubtitle
+
+        // This runs again whenever chat messages change; start the listeners only once per chat.
+        if (listeningGroupId == groupId) {
+            _isLoading.value = false
+            return
+        }
+        listeningGroupId = groupId
+        fsMedia = emptyList(); fsFiles = emptyList()
+        chatMedia = emptyList(); chatFiles = emptyList()
+        hiddenIds.clear()
 
         viewModelScope.launch {
             try {
@@ -1090,8 +1121,8 @@ class GroupDetailsViewModel : ViewModel() {
 
     fun deleteMediaItem(context: Context, item: GroupMediaItem) {
         viewModelScope.launch {
-            _media.value = _media.value.filter { it.id != item.id }
-            _files.value = _files.value.filter { it.id != item.id && it.downloadUrl != item.url }
+            hiddenIds.add(item.id)
+            publishMediaAndFiles()
             Toast.makeText(context, "Media deleted", Toast.LENGTH_SHORT).show()
         }
     }
@@ -1099,8 +1130,8 @@ class GroupDetailsViewModel : ViewModel() {
     fun deleteSelectedMediaForMe(context: Context, idsToDelete: Set<String>) {
         if (idsToDelete.isEmpty()) return
         viewModelScope.launch {
-            _media.value = _media.value.filterNot { idsToDelete.contains(it.id) }
-            _files.value = _files.value.filterNot { idsToDelete.contains(it.id) }
+            hiddenIds.addAll(idsToDelete)
+            publishMediaAndFiles()
             Toast.makeText(context, "Deleted for you", Toast.LENGTH_SHORT).show()
         }
     }
@@ -1108,8 +1139,8 @@ class GroupDetailsViewModel : ViewModel() {
     fun deleteSelectedMediaForAll(context: Context, idsToDelete: Set<String>) {
         if (idsToDelete.isEmpty()) return
         viewModelScope.launch {
-            _media.value = _media.value.filterNot { idsToDelete.contains(it.id) }
-            _files.value = _files.value.filterNot { idsToDelete.contains(it.id) }
+            hiddenIds.addAll(idsToDelete)
+            publishMediaAndFiles()
             if (currentGroupId.isNotBlank()) {
                 for (id in idsToDelete) {
                     try {
@@ -1125,7 +1156,6 @@ class GroupDetailsViewModel : ViewModel() {
     }
 
     fun syncChatMessagesMedia(context: Context, messages: List<ChatMessage>) {
-        if (messages.isEmpty()) return
 
         val extractedMedia = mutableListOf<GroupMediaItem>()
         val extractedFiles = mutableListOf<GroupFolderFile>()
@@ -1171,15 +1201,10 @@ class GroupDetailsViewModel : ViewModel() {
             }
         }
 
-        if (extractedMedia.isNotEmpty()) {
-            val combinedMedia = (_media.value + extractedMedia).distinctBy { it.url }.sortedByDescending { it.timestamp }
-            _media.value = combinedMedia
-        }
-
-        if (extractedFiles.isNotEmpty()) {
-            val combinedFiles = (_files.value + extractedFiles).distinctBy { it.downloadUrl }.sortedByDescending { it.timestamp }
-            _files.value = combinedFiles
-        }
+        // Replace (not append) so a deleted chat message also leaves Media and Files.
+        chatMedia = extractedMedia
+        chatFiles = extractedFiles
+        publishMediaAndFiles()
     }
 
     private fun getMediaTypeFromUri(context: Context, uriString: String): String {
@@ -1545,6 +1570,11 @@ class GroupDetailsViewModel : ViewModel() {
             .set(docData, SetOptions.merge())
             .addOnSuccessListener {
                 _isOtherUserBlocked.value = true
+                // Blocking also ends the connection, on both sides
+                db.collection("users").document(currentUid)
+                    .collection("userConnections").document(otherUid).delete()
+                db.collection("users").document(otherUid)
+                    .collection("userConnections").document(currentUid).delete()
                 onDone()
             }
     }
@@ -1565,6 +1595,16 @@ class GroupDetailsViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             val dao = AppDatabase.getDatabase(context).reminderDao()
             dao.clearChatMessagesForGroup(groupId)
+        }
+    }
+
+    /** True when either person has blocked the other. */
+    private suspend fun isBlockedEitherWay(me: String, other: String): Boolean {
+        return try {
+            db.collection("blockedUsers").document(me).collection("blocked").document(other).get().await().exists() ||
+                    db.collection("blockedUsers").document(other).collection("blocked").document(me).get().await().exists()
+        } catch (e: Exception) {
+            false
         }
     }
 
@@ -1589,7 +1629,7 @@ class GroupDetailsViewModel : ViewModel() {
 
                     val allDocs = (byPhone.documents + byEmail.documents + byEmailLower.documents).distinctBy { it.id }
                     for (doc in allDocs) {
-                        if (doc.id !in existingMemberUids) {
+                        if (doc.id !in existingMemberUids && !isBlockedEitherWay(currentUid, doc.id)) {
                             val name = doc.getString("displayName") ?: doc.getString("email") ?: doc.getString("phoneNumber") ?: doc.id
                             results.add(
                                 GroupMember(
@@ -1816,7 +1856,8 @@ class GroupDetailsViewModel : ViewModel() {
                     )
                 }.sortedByDescending { it.timestamp }
 
-                _files.value = fileList
+                fsFiles = fileList
+                publishMediaAndFiles()
             }
     }
 
@@ -1833,7 +1874,8 @@ class GroupDetailsViewModel : ViewModel() {
         )
 
         // Local update for instant UI feedback
-        _files.value = (listOf(localFile) + _files.value).distinctBy { it.downloadUrl }
+        fsFiles = (listOf(localFile) + fsFiles).distinctBy { it.downloadUrl }
+        publishMediaAndFiles()
 
         viewModelScope.launch {
             try {
@@ -1897,7 +1939,8 @@ class GroupDetailsViewModel : ViewModel() {
                     )
                 }
 
-                _media.value = mediaList
+                fsMedia = mediaList
+                publishMediaAndFiles()
             }
     }
 }

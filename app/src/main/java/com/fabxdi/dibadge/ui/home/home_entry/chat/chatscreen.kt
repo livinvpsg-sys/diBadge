@@ -89,8 +89,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.fabxdi.dibadge.data.HomeEntryEntity
 import com.fabxdi.dibadge.ui.components.AttachmentList
-import com.fabxdi.dibadge.ui.home.AvatarPhotoCache
-import com.fabxdi.dibadge.ui.home.ChatAvatar
 import com.fabxdi.dibadge.ui.home.home_entry.chat_details.ChatDetailsScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.AudioPlayer
@@ -176,6 +174,7 @@ data class PollOptionItem(
 fun DeleteMessageSheet(
     selectedCount: Int,
     canDeleteForEveryone: Boolean,
+    deleteForEveryoneExplanation: String,
     onDeleteForEveryone: () -> Unit,
     onDeleteForMe: () -> Unit,
     onDismiss: () -> Unit
@@ -235,8 +234,7 @@ fun DeleteMessageSheet(
                             onDeleteForEveryone()
                             onDismiss()
                         }
-                        .padding(vertical = 10.dp),
-                    horizontalAlignment = Alignment.End
+                        .padding(vertical = 10.dp)
                 ) {
                     Text(
                         text = "Delete for everyone",
@@ -244,7 +242,19 @@ fun DeleteMessageSheet(
                         fontWeight = FontWeight.Medium,
                         color = errorColor
                     )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = deleteForEveryoneExplanation,
+                        fontSize = 12.sp,
+                        color = secondaryTextColor
+                    )
                 }
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 4.dp),
+                    thickness = 1.dp,
+                    color = outlineColor
+                )
             }
 
             Column(
@@ -254,14 +264,19 @@ fun DeleteMessageSheet(
                         onDeleteForMe()
                         onDismiss()
                     }
-                    .padding(vertical = 10.dp),
-                horizontalAlignment = Alignment.End
+                    .padding(vertical = 10.dp)
             ) {
                 Text(
                     text = "Delete for me",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Medium,
                     color = primaryTextColor
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "Removed only from your phone",
+                    fontSize = 12.sp,
+                    color = secondaryTextColor
                 )
             }
 
@@ -609,7 +624,6 @@ fun ChatScreen(
     }
 
     val messages by chatViewModel.messages.collectAsState()
-    val messagesLoaded by chatViewModel.messagesLoaded.collectAsState()
     val members by detailsViewModel.members.collectAsState()
     val isAdmin by detailsViewModel.isAdmin.collectAsState()
     val acceptedConnections by detailsViewModel.acceptedConnections.collectAsState()
@@ -675,6 +689,7 @@ fun ChatScreen(
     var otherUserName by remember { mutableStateOf("") }
     var otherUserFirstName by remember { mutableStateOf("") }
     var isBlockedByMe by remember { mutableStateOf(false) }
+    var isBlockedByOther by remember { mutableStateOf(false) }
 
     LaunchedEffect(otherUid, currentUserId, isOneToOne) {
         if (otherUid.isNotBlank() && isOneToOne) {
@@ -704,6 +719,13 @@ fun ChatScreen(
                     .collection("blocked").document(otherUid)
                     .addSnapshotListener { snap, _ ->
                         isBlockedByMe = (snap != null && snap.exists())
+                    }
+
+                // 4. Has the other person blocked me? (the rules let me open that one entry)
+                db.collection("blockedUsers").document(otherUid)
+                    .collection("blocked").document(currentUserId)
+                    .addSnapshotListener { snap, _ ->
+                        isBlockedByOther = (snap != null && snap.exists())
                     }
             }
         }
@@ -795,7 +817,7 @@ fun ChatScreen(
 
     val colors = MaterialTheme.colorScheme
     val diBadgeColors = DiBadgeTheme.colors
-    val isDark = DiBadgeTheme.colors.isDark
+    val isDark = colors.onBackground.red > 0.5f
 
     val isCurrentUserMember = remember(members, currentUserId) {
         members.isEmpty() || members.any { it.uid == currentUserId }
@@ -1074,10 +1096,16 @@ fun ChatScreen(
         val canDeleteForEveryone = remember(allOwn, isAdmin, selectedMsgObjects) {
             allOwn || (isAdmin && selectedMsgObjects.all { !it.isSentByMe })
         }
+        val deleteForEveryoneExplanation = if (allOwn) {
+            "Removed for all members, in every group it was sent to"
+        } else {
+            "Removed for all members as admin"
+        }
 
         DeleteMessageSheet(
             selectedCount = selectedMessages.size,
             canDeleteForEveryone = canDeleteForEveryone,
+            deleteForEveryoneExplanation = deleteForEveryoneExplanation,
             onDeleteForEveryone = {
                 chatViewModel.deleteForEveryone(
                     context = context,
@@ -1312,29 +1340,8 @@ fun ChatScreen(
                                 imageVector = Icons.AutoMirrored.Filled.Reply,
                                 contentDescription = "Forward",
                                 tint = primaryTextColor,
-                                modifier = Modifier.size(22.dp).graphicsLayer(scaleX = -1f)
+                                modifier = Modifier.size(22.dp)
                             )
-                        }
-
-                        // Edit Icon (Only one own, editable message)
-                        val canEditSelected = isSingleSelected && firstSelectedMsg != null && firstSelectedMsg.isSentByMe &&
-                                !firstSelectedMsg.isDeleted && !firstSelectedMsg.isForwarded && !firstSelectedMsg.isVoiceNote
-                        if (canEditSelected && firstSelectedMsg != null) {
-                            IconButton(
-                                onClick = {
-                                    editingMessage = firstSelectedMsg
-                                    inputText = firstSelectedMsg.text
-                                    selectedMessages = emptySet()
-                                },
-                                modifier = Modifier.size(44.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Edit,
-                                    contentDescription = "Edit",
-                                    tint = primaryTextColor,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
                         }
 
                         // Copy Icon (If text present)
@@ -1422,24 +1429,33 @@ fun ChatScreen(
                                 .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            val entryKey = currentEntry.id.toString()
-                            val cachedPhoto = AvatarPhotoCache.photoFor(entryKey)
-                            val headerPhoto = if (isOneToOne) otherUserPhotoUrl.ifBlank { cachedPhoto } else cachedPhoto
-                            // Same name the home list shows, so the letter matches on every screen
+                            val headerPhoto = if (isOneToOne) otherUserPhotoUrl else ""
                             val headerTitle = if (isOneToOne && otherUserName.isNotBlank()) otherUserName else currentEntry.title
 
-                            LaunchedEffect(otherUserPhotoUrl, isOneToOne) {
-                                if (isOneToOne && otherUserPhotoUrl.isNotBlank()) {
-                                    AvatarPhotoCache.put(context, entryKey, otherUserPhotoUrl)
+                            Surface(
+                                modifier = Modifier.size(40.dp),
+                                shape = CircleShape,
+                                color = cardColor,
+                                border = BorderStroke(1.dp, outlineColor)
+                            ) {
+                                if (headerPhoto.isNotBlank()) {
+                                    AsyncImage(
+                                        model = headerPhoto,
+                                        contentDescription = "Avatar",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = headerTitle.take(1).uppercase(),
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = primaryTextColor
+                                        )
+                                    }
                                 }
                             }
-
-                            ChatAvatar(
-                                title = currentEntry.title,
-                                idForColor = entryKey,
-                                size = 40.dp,
-                                photoUrl = headerPhoto
-                            )
 
                             Spacer(modifier = Modifier.width(12.dp))
 
@@ -1545,6 +1561,136 @@ fun ChatScreen(
                                 }
                                 .padding(vertical = 12.dp, horizontal = 8.dp)
                         )
+                    }
+                }
+            } else if (isBlockedByOther) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(84.dp)
+                        .background(cardColor),
+                    color = cardColor,
+                    border = BorderStroke(1.dp, outlineColor)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "You can't send messages to this person",
+                            fontSize = 14.sp,
+                            color = secondaryTextColor
+                        )
+                    }
+                }
+            } else if (selectedMessages.isNotEmpty()) {
+                val selectedList = remember(selectedMessages, messages) {
+                    messages.filter { selectedMessages.contains(it.id) }
+                }
+                val hasTextToCopy = selectedList.any { it.text.isNotBlank() }
+                val allOwnMessages = selectedList.all { it.isSentByMe }
+
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(84.dp)
+                        .background(cardColor),
+                    color = cardColor,
+                    border = BorderStroke(1.dp, outlineColor)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = { selectedMessages = emptySet() },
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Clear selection",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Text(
+                            text = "${selectedMessages.size} selected",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = primaryTextColor,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        // Action: Forward
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .width(62.dp)
+                                .clickable { showForwardSheet = true }
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Reply,
+                                contentDescription = "Forward",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(text = "Forward", fontSize = 11.sp, color = primaryTextColor)
+                        }
+
+                        // Action: Copy
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .width(62.dp)
+                                .alpha(if (hasTextToCopy) 1f else 0.40f)
+                                .clickable(enabled = hasTextToCopy) {
+                                    val combinedText = selectedList.filter { it.text.isNotBlank() }.joinToString("\n") { it.text }
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    val clip = ClipData.newPlainText("chat_text", combinedText)
+                                    clipboard.setPrimaryClip(clip)
+                                    Toast.makeText(context, "Text copied", Toast.LENGTH_SHORT).show()
+                                    selectedMessages = emptySet()
+                                }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "Copy text",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(text = "Copy", fontSize = 11.sp, color = primaryTextColor)
+                        }
+
+                        // Action: Delete
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .width(62.dp)
+                                .alpha(if (allOwnMessages) 1f else 0.40f)
+                                .clickable(enabled = allOwnMessages) {
+                                    showDeleteDialog = true
+                                }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                tint = if (allOwnMessages) errorColor else dimTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(text = "Delete", fontSize = 11.sp, color = if (allOwnMessages) errorColor else dimTextColor)
+                        }
                     }
                 }
             } else {
@@ -2757,28 +2903,6 @@ fun ChatScreen(
                     }
                 }
 
-                if (messagesLoaded && messages.isEmpty()) {
-                    val emptyKey = currentEntry.id.toString()
-                    val emptyPhoto = if (isOneToOne) otherUserPhotoUrl.ifBlank { AvatarPhotoCache.photoFor(emptyKey) } else AvatarPhotoCache.photoFor(emptyKey)
-                    val emptyTitle = if (isOneToOne && otherUserName.isNotBlank()) otherUserName else currentEntry.title
-                    val emptyFirstName = if (isOneToOne) {
-                        otherUserFirstName.ifBlank { emptyTitle.split(" ").firstOrNull().orEmpty() }
-                    } else ""
-                    EmptyChatState(
-                        title = emptyTitle,
-                        idForColor = emptyKey,
-                        photoUrl = emptyPhoto,
-                        isOneToOne = isOneToOne,
-                        createdDateText = groupCreatedDateText,
-                        memberCount = members.size,
-                        firstName = emptyFirstName,
-                        primaryTextColor = primaryTextColor,
-                        secondaryTextColor = secondaryTextColor,
-                        isDark = isDark,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
-                }
-
                 // 50% Black Scrim over chat area when mention picker is open
                 if (showMentionPicker) {
                     Box(
@@ -3144,7 +3268,7 @@ fun ChatScreen(
                                         imageVector = Icons.AutoMirrored.Filled.Reply,
                                         contentDescription = "Forward",
                                         tint = primaryTextColor,
-                                        modifier = Modifier.size(22.dp).graphicsLayer(scaleX = -1f)
+                                        modifier = Modifier.size(22.dp)
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text("Forward", fontSize = 11.sp, color = primaryTextColor)
@@ -3273,11 +3397,9 @@ fun ChatScreen(
             if (selectedPollForVotes != null) {
                 val targetPoll = selectedPollForVotes!!
                 val optionGroups = targetPoll.pollOptions.map { opt ->
-                    val iVoted = targetPoll.userVotedOptionIds.contains(opt.id)
                     PollVoterOptionGroup(
                         optionText = opt.text,
-                        voters = if (iVoted) listOf(PollVoter(currentUserId, "You")) else emptyList(),
-                        otherVoterCount = (opt.voteCount - if (iVoted) 1 else 0).coerceAtLeast(0)
+                        voters = listOf(PollVoter(currentUserId, "You"))
                     )
                 }
 

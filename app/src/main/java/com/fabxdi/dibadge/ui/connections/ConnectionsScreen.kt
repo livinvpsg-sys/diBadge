@@ -15,7 +15,11 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.Business
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.LocationOn
+import androidx.compose.material.icons.outlined.WorkOutline
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
@@ -37,6 +41,7 @@ import kotlinx.coroutines.delay
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import com.fabxdi.dibadge.util.CountryData
 import com.fabxdi.dibadge.util.UserColorUtils
 import com.fabxdi.dibadge.viewmodel.ConnectionItem
 import com.fabxdi.dibadge.viewmodel.ConnectionsViewModel
@@ -57,6 +62,9 @@ fun ConnectionsScreen(
     var isSearchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var expandedConnectionId by remember { mutableStateOf<String?>(null) }
+    val blockedPeople by viewModel.blockedPeople.collectAsState()
+    var blockTarget by remember { mutableStateOf<ConnectionItem?>(null) }
+    var showBlockedList by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     LaunchedEffect(Unit) {
@@ -246,7 +254,7 @@ fun ConnectionsScreen(
                                     onClick = {
                                         expandedConnectionId = if (expandedConnectionId == item.id) null else item.id
                                     },
-                                    onRemove = { viewModel.removeConnection(item) },
+                                    onBlock = { blockTarget = item },
                                     onChatClick = { onOpenChat(item) }
                                 )
                             }
@@ -299,210 +307,342 @@ fun ConnectionsScreen(
                     }
                 }
             } else {
-                // ============ REQUESTS AND CONNECTIONS ON ONE SCREEN ============
-                var sentExpanded by remember { mutableStateOf(false) }
-                var showAllReceived by remember { mutableStateOf(false) }
-                val shownReceived = if (showAllReceived) receivedRequests else receivedRequests.take(2)
+                // ============ CHIPS: Connections / Requests / Sent, plus people you may know ============
+                val defaultTab = when {
+                    receivedRequests.isNotEmpty() -> "requests"
+                    connections.isNotEmpty() -> "connections"
+                    sentRequests.isNotEmpty() -> "sent"
+                    else -> "connections"
+                }
+                var pickedTab by remember { mutableStateOf<String?>(null) }
+                var expandedSuggestionId by remember { mutableStateOf<String?>(null) }
+                val tab = pickedTab ?: defaultTab
 
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // ---- Requests received
-                    if (receivedRequests.isNotEmpty()) {
-                        item(key = "header_received") {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "Requests",
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = primaryTextColor
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = receivedRequests.size.toString(),
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = tealAccent
-                                    )
+                val allSuggestions by viewModel.suggestions.collectAsState()
+                val suggestions = remember(allSuggestions, connections, receivedRequests, sentRequests, blockedPeople) {
+                    val known = (connections + receivedRequests + sentRequests + blockedPeople).map { it.uid }.toSet()
+                    allSuggestions.filter { it.uid !in known }.take(6)
+                }
+
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ConnectionsChip(
+                            label = "Connections",
+                            count = connections.size,
+                            selected = tab == "connections",
+                            highlightCount = false,
+                            pageBgColor = pageBgColor,
+                            primaryTextColor = primaryTextColor,
+                            secondaryTextColor = secondaryTextColor,
+                            outlineColor = outlineColor,
+                            tealAccent = tealAccent,
+                            onClick = { pickedTab = "connections" }
+                        )
+                        ConnectionsChip(
+                            label = "Requests",
+                            count = receivedRequests.size,
+                            selected = tab == "requests",
+                            highlightCount = receivedRequests.isNotEmpty(),
+                            pageBgColor = pageBgColor,
+                            primaryTextColor = primaryTextColor,
+                            secondaryTextColor = secondaryTextColor,
+                            outlineColor = outlineColor,
+                            tealAccent = tealAccent,
+                            onClick = { pickedTab = "requests" }
+                        )
+                        ConnectionsChip(
+                            label = "Sent",
+                            count = sentRequests.size,
+                            selected = tab == "sent",
+                            highlightCount = false,
+                            pageBgColor = pageBgColor,
+                            primaryTextColor = primaryTextColor,
+                            secondaryTextColor = secondaryTextColor,
+                            outlineColor = outlineColor,
+                            tealAccent = tealAccent,
+                            onClick = { pickedTab = "sent" }
+                        )
+                    }
+
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        when (tab) {
+                            "requests" -> {
+                                if (receivedRequests.isEmpty()) {
+                                    item(key = "requests_empty") {
+                                        TabEmptyState(
+                                            title = "No requests right now",
+                                            subtitle = "When someone wants to connect, it shows up here",
+                                            primaryTextColor = primaryTextColor,
+                                            secondaryTextColor = secondaryTextColor
+                                        )
+                                    }
+                                } else {
+                                    items(receivedRequests, key = { "r_" + it.id }) { item ->
+                                        ReceivedRequestCard(
+                                            item = item,
+                                            primaryTextColor = primaryTextColor,
+                                            secondaryTextColor = secondaryTextColor,
+                                            cardBgColor = cardBgColor,
+                                            tealAccent = tealAccent,
+                                            onAccept = { viewModel.acceptRequest(item) },
+                                            onDecline = { viewModel.declineRequest(item) }
+                                        )
+                                    }
                                 }
-                                if (receivedRequests.size > 2) {
+                            }
+
+                            "sent" -> {
+                                if (sentRequests.isEmpty()) {
+                                    item(key = "sent_empty") {
+                                        TabEmptyState(
+                                            title = "No sent requests",
+                                            subtitle = "Requests you send wait here until the other person replies",
+                                            primaryTextColor = primaryTextColor,
+                                            secondaryTextColor = secondaryTextColor
+                                        )
+                                    }
+                                } else {
+                                    items(sentRequests, key = { "s_" + it.id }) { item ->
+                                        SentRequestCard(
+                                            item = item,
+                                            primaryTextColor = primaryTextColor,
+                                            secondaryTextColor = secondaryTextColor,
+                                            cardBgColor = cardBgColor,
+                                            onCancel = { viewModel.cancelSentRequest(item) }
+                                        )
+                                    }
+                                }
+                                item(key = "sent_search") {
                                     Text(
-                                        text = if (showAllReceived) "Show less" else "See all",
-                                        fontSize = 13.sp,
+                                        text = "Search people",
+                                        fontSize = 14.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = tealAccent,
                                         modifier = Modifier
-                                            .clickable { showAllReceived = !showAllReceived }
-                                            .padding(vertical = 8.dp)
+                                            .fillMaxWidth()
+                                            .clickable { isSearchActive = true }
+                                            .padding(vertical = 16.dp),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                     )
                                 }
                             }
-                        }
 
-                        items(shownReceived, key = { "r_" + it.id }) { item ->
-                            ReceivedRequestCard(
-                                item = item,
-                                primaryTextColor = primaryTextColor,
-                                secondaryTextColor = secondaryTextColor,
-                                cardBgColor = cardBgColor,
-                                tealAccent = tealAccent,
-                                onAccept = { viewModel.acceptRequest(item) },
-                                onDecline = { viewModel.declineRequest(item) }
-                            )
-                        }
-                    }
-
-                    // ---- Requests sent (collapsed by default)
-                    if (sentRequests.isNotEmpty()) {
-                        item(key = "sent_row") {
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 52.dp)
-                                    .clickable { sentExpanded = !sentExpanded },
-                                shape = RoundedCornerShape(14.dp),
-                                color = cardBgColor
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        text = "Sent requests",
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        color = primaryTextColor
-                                    )
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = "${sentRequests.size} pending",
-                                            fontSize = 13.sp,
-                                            color = secondaryTextColor
+                            else -> {
+                                if (connections.isEmpty()) {
+                                    item(key = "no_connections_yet") {
+                                        TabEmptyState(
+                                            title = "No connections yet",
+                                            subtitle = when {
+                                                receivedRequests.isNotEmpty() -> "You have ${receivedRequests.size} request${if (receivedRequests.size == 1) "" else "s"} waiting"
+                                                sentRequests.isNotEmpty() -> "Your sent requests are waiting for a reply"
+                                                else -> "Connect with people you work with"
+                                            },
+                                            primaryTextColor = primaryTextColor,
+                                            secondaryTextColor = secondaryTextColor
                                         )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Icon(
-                                            imageVector = if (sentExpanded) Icons.Default.KeyboardArrowUp
-                                            else Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                            contentDescription = if (sentExpanded) "Hide sent requests" else "Show sent requests",
-                                            tint = secondaryTextColor,
-                                            modifier = Modifier.size(20.dp)
+                                    }
+                                } else {
+                                    items(connections, key = { it.id }) { item ->
+                                        ConnectionRow(
+                                            item = item,
+                                            isExpanded = expandedConnectionId == item.id,
+                                            primaryTextColor = primaryTextColor,
+                                            secondaryTextColor = secondaryTextColor,
+                                            cardBgColor = cardBgColor,
+                                            tealAccent = tealAccent,
+                                            errorColor = errorColor,
+                                            onClick = {
+                                                expandedConnectionId = if (expandedConnectionId == item.id) null else item.id
+                                            },
+                                            onBlock = { blockTarget = item },
+                                            onChatClick = { onOpenChat(item) }
+                                        )
+                                    }
+                                }
+
+                                if (suggestions.isNotEmpty()) {
+                                    item(key = "header_suggestions") {
+                                        Text(
+                                            text = "People you may know",
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = primaryTextColor,
+                                            modifier = Modifier.padding(top = 16.dp, bottom = 2.dp)
+                                        )
+                                    }
+                                    items(suggestions, key = { "sg_" + it.uid }) { person ->
+                                        SuggestionRow(
+                                            item = person,
+                                            isExpanded = expandedSuggestionId == person.uid,
+                                            primaryTextColor = primaryTextColor,
+                                            secondaryTextColor = secondaryTextColor,
+                                            cardBgColor = cardBgColor,
+                                            tealAccent = tealAccent,
+                                            onClick = {
+                                                expandedSuggestionId =
+                                                    if (expandedSuggestionId == person.uid) null else person.uid
+                                            },
+                                            onConnect = {
+                                                expandedSuggestionId = null
+                                                viewModel.sendInvite(person)
+                                            }
+                                        )
+                                    }
+                                }
+
+                                item(key = "connections_search") {
+                                    Text(
+                                        text = "Search people",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = tealAccent,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { isSearchActive = true }
+                                            .padding(vertical = 16.dp),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    )
+                                }
+
+                                if (blockedPeople.isNotEmpty()) {
+                                    item(key = "blocked_link") {
+                                        Text(
+                                            text = "Blocked people (${blockedPeople.size})",
+                                            fontSize = 13.sp,
+                                            color = secondaryTextColor,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { showBlockedList = true }
+                                                .padding(vertical = 12.dp),
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                         )
                                     }
                                 }
                             }
                         }
-                        if (sentExpanded) {
-                            items(sentRequests, key = { "s_" + it.id }) { item ->
-                                SentRequestCard(
-                                    item = item,
-                                    primaryTextColor = primaryTextColor,
-                                    secondaryTextColor = secondaryTextColor,
-                                    cardBgColor = cardBgColor,
-                                    onCancel = { viewModel.cancelSentRequest(item) }
-                                )
-                            }
-                        }
-                    }
-
-                    // ---- Connections
-                    item(key = "header_connections") {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Connections",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = primaryTextColor
-                            )
-                            if (connections.isNotEmpty()) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = connections.size.toString(),
-                                    fontSize = 15.sp,
-                                    color = secondaryTextColor
-                                )
-                            }
-                        }
-                    }
-
-                    if (connections.isEmpty()) {
-                        item(key = "no_connections_yet") {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 48.dp, start = 24.dp, end = 24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_connections),
-                                    contentDescription = null,
-                                    tint = tabInactiveColor,
-                                    modifier = Modifier.size(48.dp)
-                                )
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Text(
-                                    text = "No connections yet",
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    color = primaryTextColor
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = when {
-                                        receivedRequests.isNotEmpty() -> "Accept a request to add your first connection"
-                                        sentRequests.isNotEmpty() -> "Your sent requests are waiting for a reply"
-                                        else -> "Search for people on diBadge to connect"
-                                    },
-                                    fontSize = 13.sp,
-                                    color = secondaryTextColor
-                                )
-                                Spacer(modifier = Modifier.height(16.dp))
-                                Text(
-                                    text = "Search people",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = tealAccent,
-                                    modifier = Modifier.clickable { isSearchActive = true }
-                                )
-                            }
-                        }
-                    } else {
-                        items(connections, key = { it.id }) { item ->
-                            ConnectionRow(
-                                item = item,
-                                isExpanded = expandedConnectionId == item.id,
-                                primaryTextColor = primaryTextColor,
-                                secondaryTextColor = secondaryTextColor,
-                                cardBgColor = cardBgColor,
-                                tealAccent = tealAccent,
-                                errorColor = errorColor,
-                                onClick = {
-                                    expandedConnectionId = if (expandedConnectionId == item.id) null else item.id
-                                },
-                                onRemove = { viewModel.removeConnection(item) },
-                                onChatClick = { onOpenChat(item) }
-                            )
-                        }
                     }
                 }
             }
         }
+    }
+
+    // Confirm before blocking
+    blockTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { blockTarget = null },
+            containerColor = cardBgColor,
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text(
+                    text = "Block ${target.name}?",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryTextColor
+                )
+            },
+            text = {
+                Text(
+                    text = "You will be disconnected. They won't be able to message you, send you a request, or find your account in search. You can unblock them anytime.",
+                    fontSize = 14.sp,
+                    color = secondaryTextColor
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val t = target
+                        blockTarget = null
+                        expandedConnectionId = null
+                        viewModel.blockUser(t)
+                    }
+                ) {
+                    Text("Block", fontWeight = FontWeight.Bold, color = errorColor)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { blockTarget = null }) {
+                    Text("Cancel", color = secondaryTextColor)
+                }
+            }
+        )
+    }
+
+    // Blocked people, with Unblock
+    if (showBlockedList) {
+        AlertDialog(
+            onDismissRequest = { showBlockedList = false },
+            containerColor = cardBgColor,
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text(
+                    text = "Blocked people",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryTextColor
+                )
+            },
+            text = {
+                if (blockedPeople.isEmpty()) {
+                    Text("No one is blocked.", fontSize = 14.sp, color = secondaryTextColor)
+                } else {
+                    Column {
+                        blockedPeople.forEach { person ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = person.name,
+                                        fontSize = 15.sp,
+                                        color = primaryTextColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (person.organization.isNotBlank()) {
+                                        Text(
+                                            text = person.organization,
+                                            fontSize = 12.sp,
+                                            color = secondaryTextColor,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "Unblock",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = tealAccent,
+                                    modifier = Modifier
+                                        .clickable { viewModel.unblockUser(person) }
+                                        .padding(horizontal = 8.dp, vertical = 12.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showBlockedList = false }) {
+                    Text("Done", fontWeight = FontWeight.Bold, color = tealAccent)
+                }
+            }
+        )
     }
 }
 
@@ -516,104 +656,71 @@ fun ConnectionRow(
     tealAccent: Color,
     errorColor: Color,
     onClick: () -> Unit,
-    onRemove: () -> Unit,
+    onBlock: () -> Unit,
     onChatClick: () -> Unit = {}
 ) {
     val avatarBgColor = remember(item.id) { UserColorUtils.getColorForName(item.id) }
-    val sublineText = remember(item.organization, item.role) {
-        if (item.organization.isNotBlank() && item.role.isNotBlank()) "${item.organization} • ${item.role}"
-        else item.organization.ifBlank { item.role }
+    val countryName = remember(item.country) {
+        if (item.country.isBlank()) "" else CountryData.getCountryDisplayName(item.country)
     }
 
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 52.dp)
-                .clickable { onClick() }
-                .padding(vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                modifier = Modifier.size(44.dp),
-                shape = CircleShape,
-                color = avatarBgColor
-            ) {
-                if (item.photoUrl.isNotBlank()) {
-                    AsyncImage(
-                        model = item.photoUrl,
-                        contentDescription = "Avatar",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = item.name.take(1).uppercase(),
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.name,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = primaryTextColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (sublineText.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = sublineText,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = secondaryTextColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-
-        if (isExpanded) {
-            Surface(
+    // The whole card opens: it gets a background and grows downwards
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = if (isExpanded) cardBgColor else Color.Transparent
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 58.dp, bottom = 8.dp),
-                shape = RoundedCornerShape(12.dp),
-                color = cardBgColor
+                    .heightIn(min = 52.dp)
+                    .clickable { onClick() }
+                    .padding(horizontal = if (isExpanded) 12.dp else 0.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    // Header Row with subline/company/role on left and Chat icon + Red Trash icon at top right
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (sublineText.isNotBlank()) {
+                Surface(
+                    modifier = Modifier.size(44.dp),
+                    shape = CircleShape,
+                    color = avatarBgColor
+                ) {
+                    if (item.photoUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = item.photoUrl,
+                            contentDescription = "Avatar",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Box(contentAlignment = Alignment.Center) {
                             Text(
-                                text = sublineText,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Normal,
-                                color = secondaryTextColor,
-                                modifier = Modifier.weight(1f)
+                                text = item.name.take(1).uppercase(),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
                             )
-                        } else {
-                            Spacer(modifier = Modifier.weight(1f))
                         }
+                    }
+                }
 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    // Name on the left; chat and block icons on the same line when open
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = item.name,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = primaryTextColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (isExpanded) {
                             IconButton(
                                 onClick = onChatClick,
-                                modifier = Modifier.size(48.dp)
+                                modifier = Modifier.size(40.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Outlined.ChatBubbleOutline,
@@ -622,49 +729,233 @@ fun ConnectionRow(
                                     modifier = Modifier.size(22.dp)
                                 )
                             }
-
                             IconButton(
-                                onClick = onRemove,
-                                modifier = Modifier.size(48.dp)
+                                onClick = onBlock,
+                                modifier = Modifier.size(40.dp)
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Remove connection",
+                                    imageVector = Icons.Outlined.Block,
+                                    contentDescription = "Block ${item.name}",
                                     tint = errorColor,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
                         }
                     }
-
-                    if (item.bio.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = item.bio,
-                            fontSize = 13.sp,
-                            color = secondaryTextColor
+                    if (isExpanded) {
+                        if (countryName.isNotBlank()) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Outlined.LocationOn,
+                                    contentDescription = "Country",
+                                    tint = secondaryTextColor,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(text = countryName, fontSize = 13.sp, color = secondaryTextColor)
+                            }
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        CompanyRoleLine(
+                            organization = item.organization,
+                            role = item.role,
+                            textColor = secondaryTextColor,
+                            iconColor = secondaryTextColor,
+                            fontSize = 12.sp
                         )
                     }
+                }
+            }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Bottom Row: Collapse Chevron at right
+            if (isExpanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 4.dp)
+                ) {
+                    CompanyRoleLine(
+                        organization = item.organization,
+                        role = item.role,
+                        textColor = primaryTextColor,
+                        iconColor = secondaryTextColor,
+                        fontSize = 15.sp
+                    )
+                    if (item.bio.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(text = item.bio, fontSize = 14.sp, color = secondaryTextColor)
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.End
                     ) {
-                        IconButton(
-                            onClick = onClick,
-                            modifier = Modifier.size(32.dp)
-                        ) {
+                        IconButton(onClick = onClick) {
                             Icon(
                                 imageVector = Icons.Default.KeyboardArrowUp,
                                 contentDescription = "Collapse",
-                                tint = secondaryTextColor,
-                                modifier = Modifier.size(20.dp)
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(24.dp)
                             )
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Shared look for received and sent requests: collapsed shows name and company | role with the
+ * two actions underneath; tapping the card opens it to show country and bio too.
+ */
+@Composable
+private fun RequestCardBody(
+    item: ConnectionItem,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    cardBgColor: Color,
+    firstLabel: String,
+    firstColor: Color,
+    firstBold: Boolean,
+    firstEnabled: Boolean,
+    onFirst: () -> Unit,
+    secondLabel: String,
+    onSecond: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val avatarBgColor = remember(item.id) { UserColorUtils.getColorForName(item.id) }
+    val countryName = remember(item.country) {
+        if (item.country.isBlank()) "" else CountryData.getCountryDisplayName(item.country)
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = cardBgColor
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 52.dp)
+                    .clickable { expanded = !expanded }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    modifier = Modifier.size(44.dp),
+                    shape = CircleShape,
+                    color = avatarBgColor
+                ) {
+                    if (item.photoUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = item.photoUrl,
+                            contentDescription = "Avatar",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = item.name.take(1).uppercase(),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = item.name,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = primaryTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    if (expanded) {
+                        if (countryName.isNotBlank()) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Outlined.LocationOn,
+                                    contentDescription = "Country",
+                                    tint = secondaryTextColor,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(text = countryName, fontSize = 13.sp, color = secondaryTextColor)
+                            }
+                        }
+                    } else {
+                        CompanyRoleLine(
+                            organization = item.organization,
+                            role = item.role,
+                            textColor = secondaryTextColor,
+                            iconColor = secondaryTextColor,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+
+            if (expanded) {
+                Spacer(modifier = Modifier.height(4.dp))
+                CompanyRoleLine(
+                    organization = item.organization,
+                    role = item.role,
+                    textColor = primaryTextColor,
+                    iconColor = secondaryTextColor,
+                    fontSize = 15.sp
+                )
+                if (item.bio.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(text = item.bio, fontSize = 14.sp, color = secondaryTextColor)
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.padding(start = if (expanded) 0.dp else 58.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = firstLabel,
+                        fontSize = 14.sp,
+                        fontWeight = if (firstBold) FontWeight.Bold else FontWeight.Normal,
+                        color = firstColor,
+                        modifier = Modifier
+                            .clickable(enabled = firstEnabled) { onFirst() }
+                            .heightIn(min = 44.dp)
+                            .wrapContentHeight(Alignment.CenterVertically)
+                            .padding(end = 22.dp)
+                    )
+                    Text(
+                        text = secondLabel,
+                        fontSize = 14.sp,
+                        color = secondaryTextColor,
+                        modifier = Modifier
+                            .clickable { onSecond() }
+                            .heightIn(min = 44.dp)
+                            .wrapContentHeight(Alignment.CenterVertically)
+                    )
+                }
+                if (expanded) {
+                    IconButton(onClick = { expanded = false }) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowUp,
+                            contentDescription = "Collapse",
+                            tint = primaryTextColor,
+                            modifier = Modifier.size(24.dp)
+                        )
                     }
                 }
             }
@@ -682,87 +973,19 @@ fun ReceivedRequestCard(
     onAccept: () -> Unit,
     onDecline: () -> Unit
 ) {
-    val avatarBgColor = remember(item.id) { UserColorUtils.getColorForName(item.id) }
-    val sublineText = remember(item.organization, item.role) {
-        if (item.organization.isNotBlank() && item.role.isNotBlank()) "${item.organization} • ${item.role}"
-        else item.organization.ifBlank { item.role }
-    }
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = cardBgColor
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    modifier = Modifier.size(44.dp),
-                    shape = CircleShape,
-                    color = avatarBgColor
-                ) {
-                    if (item.photoUrl.isNotBlank()) {
-                        AsyncImage(
-                            model = item.photoUrl,
-                            contentDescription = "Avatar",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = item.name.take(1).uppercase(),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(14.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = item.name,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = primaryTextColor
-                    )
-                    if (sublineText.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = sublineText,
-                            fontSize = 12.sp,
-                            color = secondaryTextColor
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Action Line inset 58dp from left
-            Row(
-                modifier = Modifier.padding(start = 58.dp),
-                horizontalArrangement = Arrangement.spacedBy(22.dp)
-            ) {
-                Text(
-                    text = "Accept",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = tealAccent,
-                    modifier = Modifier.clickable { onAccept() }
-                )
-                Text(
-                    text = "Decline",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = secondaryTextColor,
-                    modifier = Modifier.clickable { onDecline() }
-                )
-            }
-        }
-    }
+    RequestCardBody(
+        item = item,
+        primaryTextColor = primaryTextColor,
+        secondaryTextColor = secondaryTextColor,
+        cardBgColor = cardBgColor,
+        firstLabel = "Accept",
+        firstColor = tealAccent,
+        firstBold = true,
+        firstEnabled = true,
+        onFirst = onAccept,
+        secondLabel = "Decline",
+        onSecond = onDecline
+    )
 }
 
 @Composable
@@ -773,86 +996,19 @@ fun SentRequestCard(
     cardBgColor: Color,
     onCancel: () -> Unit
 ) {
-    val avatarBgColor = remember(item.id) { UserColorUtils.getColorForName(item.id) }
-    val sublineText = remember(item.organization, item.role) {
-        if (item.organization.isNotBlank() && item.role.isNotBlank()) "${item.organization} • ${item.role}"
-        else item.organization.ifBlank { item.role }
-    }
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = cardBgColor
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    modifier = Modifier.size(44.dp),
-                    shape = CircleShape,
-                    color = avatarBgColor
-                ) {
-                    if (item.photoUrl.isNotBlank()) {
-                        AsyncImage(
-                            model = item.photoUrl,
-                            contentDescription = "Avatar",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = item.name.take(1).uppercase(),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(14.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = item.name,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = primaryTextColor
-                    )
-                    if (sublineText.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = sublineText,
-                            fontSize = 12.sp,
-                            color = secondaryTextColor
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Action Line inset 58dp from left
-            Row(
-                modifier = Modifier.padding(start = 58.dp),
-                horizontalArrangement = Arrangement.spacedBy(22.dp)
-            ) {
-                Text(
-                    text = "Pending",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = primaryTextColor
-                )
-                Text(
-                    text = "Cancel",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = secondaryTextColor,
-                    modifier = Modifier.clickable { onCancel() }
-                )
-            }
-        }
-    }
+    RequestCardBody(
+        item = item,
+        primaryTextColor = primaryTextColor,
+        secondaryTextColor = secondaryTextColor,
+        cardBgColor = cardBgColor,
+        firstLabel = "Pending",
+        firstColor = primaryTextColor,
+        firstBold = true,
+        firstEnabled = false,
+        onFirst = {},
+        secondLabel = "Cancel",
+        onSecond = onCancel
+    )
 }
 
 @Composable
@@ -934,5 +1090,278 @@ fun PersonSearchRow(
                 .clickable(enabled = actionEnabled) { onAction() }
                 .padding(horizontal = 8.dp, vertical = 12.dp)
         )
+    }
+}
+
+@Composable
+private fun ConnectionsChip(
+    label: String,
+    count: Int,
+    selected: Boolean,
+    highlightCount: Boolean,
+    pageBgColor: Color,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    outlineColor: Color,
+    tealAccent: Color,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .heightIn(min = 36.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        color = if (selected) primaryTextColor else Color.Transparent,
+        border = if (selected) null else BorderStroke(1.dp, outlineColor)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                fontSize = 13.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (selected) pageBgColor else secondaryTextColor,
+                maxLines = 1
+            )
+            Spacer(modifier = Modifier.width(5.dp))
+            Text(
+                text = count.toString(),
+                fontSize = 13.sp,
+                fontWeight = if (highlightCount && !selected) FontWeight.Bold else FontWeight.Normal,
+                color = when {
+                    selected -> pageBgColor.copy(alpha = 0.7f)
+                    highlightCount -> tealAccent
+                    else -> secondaryTextColor
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun TabEmptyState(
+    title: String,
+    subtitle: String,
+    primaryTextColor: Color,
+    secondaryTextColor: Color
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 24.dp, bottom = 8.dp, start = 24.dp, end = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = title,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Normal,
+            color = primaryTextColor
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = subtitle,
+            fontSize = 13.sp,
+            color = secondaryTextColor,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+    }
+}
+
+/** Company and role on one line, each with a small icon: [building] Company | [briefcase] Role */
+@Composable
+private fun CompanyRoleLine(
+    organization: String,
+    role: String,
+    textColor: Color,
+    iconColor: Color,
+    fontSize: androidx.compose.ui.unit.TextUnit
+) {
+    if (organization.isBlank() && role.isBlank()) return
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (organization.isNotBlank()) {
+            Icon(
+                imageVector = Icons.Outlined.Business,
+                contentDescription = "Company",
+                tint = iconColor,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = organization,
+                fontSize = fontSize,
+                color = textColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+        }
+        if (organization.isNotBlank() && role.isNotBlank()) {
+            Text(
+                text = "  |  ",
+                fontSize = fontSize,
+                color = iconColor
+            )
+        }
+        if (role.isNotBlank()) {
+            Icon(
+                imageVector = Icons.Outlined.WorkOutline,
+                contentDescription = "Role",
+                tint = iconColor,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = role,
+                fontSize = fontSize,
+                color = textColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+        }
+    }
+}
+
+@Composable
+fun SuggestionRow(
+    item: ConnectionItem,
+    isExpanded: Boolean,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    cardBgColor: Color,
+    tealAccent: Color,
+    onClick: () -> Unit,
+    onConnect: () -> Unit
+) {
+    val avatarBgColor = remember(item.id) { UserColorUtils.getColorForName(item.id) }
+    val countryName = remember(item.country) {
+        if (item.country.isBlank()) "" else CountryData.getCountryDisplayName(item.country)
+    }
+
+    // The whole card opens: it gets a background and grows downwards
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = if (isExpanded) cardBgColor else Color.Transparent
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 52.dp)
+                    .clickable { onClick() }
+                    .padding(horizontal = if (isExpanded) 12.dp else 0.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    modifier = Modifier.size(44.dp),
+                    shape = CircleShape,
+                    color = avatarBgColor
+                ) {
+                    if (item.photoUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = item.photoUrl,
+                            contentDescription = "Avatar",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = item.name.take(1).uppercase(),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = item.name,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = primaryTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    if (isExpanded) {
+                        // Expanded: country under the name
+                        if (countryName.isNotBlank()) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Outlined.LocationOn,
+                                    contentDescription = "Country",
+                                    tint = secondaryTextColor,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(text = countryName, fontSize = 13.sp, color = secondaryTextColor)
+                            }
+                        }
+                    } else {
+                        // Collapsed: company | role under the name
+                        CompanyRoleLine(
+                            organization = item.organization,
+                            role = item.role,
+                            textColor = secondaryTextColor,
+                            iconColor = secondaryTextColor,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+
+            if (isExpanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 4.dp)
+                ) {
+                    CompanyRoleLine(
+                        organization = item.organization,
+                        role = item.role,
+                        textColor = primaryTextColor,
+                        iconColor = secondaryTextColor,
+                        fontSize = 15.sp
+                    )
+                    if (item.bio.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(text = item.bio, fontSize = 14.sp, color = secondaryTextColor)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Connect",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = tealAccent,
+                            modifier = Modifier
+                                .clickable { onConnect() }
+                                .heightIn(min = 48.dp)
+                                .padding(end = 16.dp)
+                                .wrapContentHeight(Alignment.CenterVertically)
+                        )
+                        IconButton(onClick = onClick) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowUp,
+                                contentDescription = "Collapse",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
