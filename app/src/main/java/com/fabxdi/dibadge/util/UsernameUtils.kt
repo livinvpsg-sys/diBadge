@@ -6,6 +6,9 @@ val RESERVED_USERNAMES = setOf(
     "team", "security", "null", "undefined", "api", "www", "me", "you"
 )
 
+// Names that contain these (ignoring dots and underscores) look like staff or the brand itself
+private val BLOCKED_PARTS = listOf("dibadge", "official", "admin", "support", "moderator")
+
 enum class UsernameFormatResult {
     EMPTY,
     INVALID_FORMAT,
@@ -21,6 +24,8 @@ fun validateUsernameFormat(username: String): UsernameFormatResult {
     val clean = username.lowercase().trim()
     if (clean.isEmpty()) return UsernameFormatResult.EMPTY
     if (clean in RESERVED_USERNAMES) return UsernameFormatResult.RESERVED
+    val squashed = clean.replace(".", "").replace("_", "")
+    if (squashed in RESERVED_USERNAMES || BLOCKED_PARTS.any { it in squashed }) return UsernameFormatResult.RESERVED
 
     if (clean.length !in 3..20) return UsernameFormatResult.INVALID_FORMAT
     if (!clean.all { it in 'a'..'z' || it in '0'..'9' || it == '.' || it == '_' }) {

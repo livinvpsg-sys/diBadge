@@ -1,6 +1,7 @@
 package com.fabxdi.dibadge.ui.my_docs
 
 import android.content.Context
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -23,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -62,7 +64,7 @@ fun DocDetailsScreen(
     val secondaryTextColor = colors.onSurfaceVariant
     val tealAccent = diBadgeColors.accent
     val errorColor = colors.error
-    val isDark = primaryTextColor.red > 0.5f
+    val isDark = diBadgeColors.isDark
 
     val today = remember { LocalDate.now() }
     val dateFormatter = remember { DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault()) }
@@ -231,16 +233,24 @@ fun DocDetailsScreen(
                 SettingsCard {
                     doc.files.forEachIndexed { index, uri ->
                         val fileName = doc.fileNames.getOrElse(index) { "Document" }
-                        val fileSize = doc.fileSizes.getOrElse(index) { 500_000L }
+                        val fileSize = doc.fileSizes.getOrNull(index)
                         val isPdf = doc.fileIsPdf.getOrElse(index) { uri.endsWith(".pdf", ignoreCase = true) }
 
-                        val sizeKb = fileSize / 1024
-                        val sizeMbStr = if (sizeKb > 1024) "${String.format(Locale.US, "%.1f", sizeKb / 1024.0)} MB" else "$sizeKb KB"
+                        // Only show a size when it is really known
+                        val sizeLabel = fileSize?.takeIf { it > 0 }?.let { bytes ->
+                            val kb = bytes / 1024
+                            if (kb > 1024) "${String.format(Locale.US, "%.1f", kb / 1024.0)} MB" else "$kb KB"
+                        }
 
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(64.dp)
+                                .clickable(role = Role.Button) {
+                                    if (!DocFileUtils.openFile(context, uri, isPdf)) {
+                                        Toast.makeText(context, "Couldn't open this file", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
                                 .padding(horizontal = 16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -270,7 +280,7 @@ fun DocDetailsScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = "${if (isPdf) "PDF" else "Photo"} · $sizeMbStr",
+                                    text = if (sizeLabel != null) "${if (isPdf) "PDF" else "Photo"} · $sizeLabel" else if (isPdf) "PDF" else "Photo",
                                     fontSize = 12.sp,
                                     color = secondaryTextColor
                                 )

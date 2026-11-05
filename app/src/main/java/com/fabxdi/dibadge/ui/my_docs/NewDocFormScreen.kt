@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -33,7 +34,9 @@ import com.fabxdi.dibadge.ui.calendar.AttachmentsSection
 import com.fabxdi.dibadge.ui.settings.SettingsCard
 import com.fabxdi.dibadge.ui.settings.SettingsSwitch
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -47,13 +50,14 @@ fun NewDocFormScreen(
     onClose: () -> Unit
 ) {
     val isEditing = docToEdit != null
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
     var nameInput by remember { mutableStateOf(docToEdit?.name ?: "") }
     var selectedType by remember { mutableStateOf(docToEdit?.type ?: "") }
     var numberInput by remember { mutableStateOf(docToEdit?.number ?: "") }
-    var expiryDate by remember { mutableStateOf<LocalDate?>(docToEdit?.expiryDate ?: LocalDate.now().plusYears(1)) }
+    var expiryDate by remember { mutableStateOf<LocalDate?>(docToEdit?.expiryDate) }
     var noExpiry by remember { mutableStateOf(docToEdit?.noExpiry ?: false) }
 
     var attachedFiles by remember {
@@ -83,7 +87,8 @@ fun NewDocFormScreen(
 
     val hasUnsavedChanges = remember(nameInput, selectedType, numberInput, expiryDate, noExpiry, attachedFiles) {
         if (!isEditing) nameInput.isNotBlank() || selectedType.isNotBlank() || numberInput.isNotBlank() || attachedFiles.isNotEmpty()
-        else (nameInput != docToEdit?.name || selectedType != docToEdit?.type || numberInput != docToEdit?.number || expiryDate != docToEdit?.expiryDate || noExpiry != docToEdit?.noExpiry)
+        else (nameInput != docToEdit?.name || selectedType != docToEdit?.type || numberInput != docToEdit?.number || expiryDate != docToEdit?.expiryDate || noExpiry != docToEdit?.noExpiry ||
+            attachedFiles.map { it.uriString } != docToEdit?.files)
     }
 
     val handleBack = {
@@ -170,7 +175,7 @@ fun NewDocFormScreen(
                             )
                             onSave(savedDoc)
                         }
-                        .padding(horizontal = 8.dp, vertical = 8.dp)
+                        .padding(horizontal = 12.dp, vertical = 14.dp)
                         .semantics {
                             contentDescription = if (canSave) "Save" else "Save, unavailable"
                         }
@@ -334,7 +339,17 @@ fun NewDocFormScreen(
             // Files Section
             AttachmentsSection(
                 attachedFiles = attachedFiles,
-                onAddFile = { attachedFiles = attachedFiles + it },
+                onAddFile = { picked ->
+                    // Keep a copy in app storage so the file can still be opened later
+                    coroutineScope.launch {
+                        val saved = withContext(Dispatchers.IO) { DocFileUtils.persist(context, picked) }
+                        if (saved != null) {
+                            attachedFiles = attachedFiles + saved
+                        } else {
+                            snackbarHostState.showSnackbar("Couldn't add that file")
+                        }
+                    }
+                },
                 onRemoveFile = { attachedFiles = attachedFiles - it },
                 onShowSnackbar = { msg ->
                     coroutineScope.launch {

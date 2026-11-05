@@ -12,7 +12,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -66,17 +65,19 @@ import com.fabxdi.dibadge.data.ReminderEntity
 import com.fabxdi.dibadge.ui.components.AttachmentList
 import com.fabxdi.dibadge.ui.components.DiBadgeDatePicker
 import com.fabxdi.dibadge.ui.components.DiBadgeDateRangePicker
-import com.fabxdi.dibadge.ui.my_tasks.TaskDatePickerDialog
+import com.fabxdi.dibadge.ui.my_tasks.customRepeatValue
+import com.fabxdi.dibadge.ui.my_tasks.parseCustomRange
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.FilePickerUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.time.DayOfWeek
-import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.Month
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -152,6 +153,16 @@ fun ReminderFormScreen(
         }
     }
 
+    // Due date moved to today: repeating is not allowed, so reset it (only on a change, not on open)
+    var lastDueDate by remember { mutableStateOf(selectedDueDate) }
+    LaunchedEffect(selectedDueDate) {
+        if (selectedDueDate != lastDueDate) {
+            lastDueDate = selectedDueDate
+            val repeating = selectedRepeat != null && selectedRepeat != "once"
+            if (selectedDueDate == LocalDate.now() && repeating) selectedRepeat = "once"
+        }
+    }
+
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     var showUnsavedChangesDialog by remember { mutableStateOf(false) }
     var triedToSave by remember { mutableStateOf(false) }
@@ -180,20 +191,46 @@ fun ReminderFormScreen(
         contract = ActivityResultContracts.OpenMultipleDocuments(),
         onResult = { uris ->
             val remainingSpace = 5 - attachedFiles.size
-            if (remainingSpace > 0) {
-                val newUris = uris.take(remainingSpace)
-                newUris.forEach { uri ->
-                    try {
-                        context.contentResolver.takePersistableUriPermission(
-                            uri,
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION
-                        )
-                    } catch (e: Exception) {}
+            val fresh = uris.distinct()
+            if (fresh.size > remainingSpace) {
+                android.widget.Toast.makeText(context, "You can attach up to 5 files", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            if (remainingSpace > 0 && fresh.isNotEmpty()) {
+                coroutineScope.launch {
+                    var skipped = false
+                    val imported = withContext(Dispatchers.IO) {
+                        fresh.take(remainingSpace).mapNotNull { uri ->
+                            FilePickerUtils.importToAppStorage(context, uri).also { if (it == null) skipped = true }
+                        }
+                    }
+                    if (skipped) {
+                        android.widget.Toast.makeText(context, "Some files were skipped (max 5 MB each)", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    attachedFiles = attachedFiles + imported
                 }
-                attachedFiles = attachedFiles + newUris
             }
         }
     )
+
+    // Attachments are copied into app storage, so remove the copies we no longer need
+    val originalAttachments = remember { reminderToEdit?.attachments ?: emptyList() }
+
+    fun removeAttachmentAt(index: Int) {
+        val uri = attachedFiles.getOrNull(index) ?: return
+        if (uri.toString() !in originalAttachments) FilePickerUtils.deleteAppStored(context, uri)
+        attachedFiles = attachedFiles.filterIndexed { i, _ -> i != index }
+    }
+
+    fun discardNewAttachments() {
+        attachedFiles.filter { it.toString() !in originalAttachments }
+            .forEach { FilePickerUtils.deleteAppStored(context, it) }
+    }
+
+    fun cleanupAfterSave() {
+        val kept = attachedFiles.map { it.toString() }.toSet()
+        originalAttachments.filter { it !in kept }
+            .forEach { FilePickerUtils.deleteAppStored(context, Uri.parse(it)) }
+    }
 
     fun handleSmartContentValueChange(oldValue: TextFieldValue, newValue: TextFieldValue): TextFieldValue {
         val oldText = oldValue.text
@@ -276,7 +313,17 @@ fun ReminderFormScreen(
     val toggleOffColor = colors.outline
     val errorColor = colors.error
     val tabInactiveColor = diBadgeColors.tabInactive
-    val isDark = isSystemInDarkTheme()
+    val isDark = DiBadgeTheme.colors.isDark
+
+    // Repeating tasks run from their start until the due date; custom repeats use their own range
+    val isRepeatingTask = selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat"
+    val customRange = parseCustomRange(selectedRepeat)
+    val startDateToSave: LocalDate = when {
+        customRange != null -> customRange.first
+        isRepeatingTask -> minOf(reminderToEdit?.startDate ?: LocalDate.now(), LocalDate.now())
+        else -> selectedDueDate ?: selectedRemindDate ?: LocalDate.now()
+    }
+    val endDateToSave: LocalDate? = customRange?.second ?: selectedDueDate
 
     val hasChanges = remember(
         title, content, selectedRepeat, selectedTime, selectedRemindDate, isAlarmEnabled,
@@ -349,8 +396,8 @@ fun ReminderFormScreen(
                                         title.trim(),
                                         content.trim(),
                                         selectedDueDate,
-                                        selectedDueDate ?: selectedRemindDate ?: LocalDate.now(),
-                                        selectedDueDate,
+ startDateToSave,
+ endDateToSave,
                                         selectedRepeat ?: "once",
                                         selectedTime,
                                         isAlarmEnabled,
@@ -358,9 +405,10 @@ fun ReminderFormScreen(
                                         reminderToEdit?.id ?: 0,
                                         selectedRemindDate
                                     )
+ cleanupAfterSave()
                                 }
                             },
-                            enabled = isSaveEnabled
+                            enabled = true
                         ) {
                             Text(
                                 text = "Save",
@@ -533,11 +581,13 @@ fun ReminderFormScreen(
         }
     } else {
         // --- ADD TASK SCREEN LAYOUT ---
+        Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(pageBgColor)
                 .windowInsetsPadding(WindowInsets.systemBars)
+                .imePadding()
         ) {
             // 1. Top Bar
             Row(
@@ -573,8 +623,8 @@ fun ReminderFormScreen(
                                 title.trim(),
                                 content.trim(),
                                 selectedDueDate,
-                                selectedDueDate ?: selectedRemindDate ?: LocalDate.now(),
-                                selectedDueDate,
+ startDateToSave,
+ endDateToSave,
                                 selectedRepeat ?: "once",
                                 selectedTime,
                                 isAlarmEnabled,
@@ -582,9 +632,10 @@ fun ReminderFormScreen(
                                 0,
                                 selectedRemindDate
                             )
+ cleanupAfterSave()
                         }
                     },
-                    enabled = isSaveEnabled
+                    enabled = true
                 ) {
                     Text(
                         text = "Save",
@@ -627,11 +678,11 @@ fun ReminderFormScreen(
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Sentences,
                                 autoCorrectEnabled = true,
-                                imeAction = ImeAction.Default
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onNext = null
-                            ),
+                                imeAction = ImeAction.Next
+ ),
+ keyboardActions = KeyboardActions(
+ onNext = { noteFocusRequester.requestFocus() }
+ ),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .focusRequester(titleFocusRequester),
@@ -814,11 +865,6 @@ fun ReminderFormScreen(
                         HorizontalDivider(thickness = 1.dp, color = dividerColor)
 
                         val isRepeatDisabled = selectedDueDate == LocalDate.now()
-                        LaunchedEffect(isRepeatDisabled) {
-                            if (isRepeatDisabled) {
-                                selectedRepeat = "once"
-                            }
-                        }
 
                         Row(
                             modifier = Modifier
@@ -852,10 +898,10 @@ fun ReminderFormScreen(
                                 )
                             }
                             Text(
-                                text = if (isRepeatDisabled) "None" else formatRepeatValue(selectedRepeat),
+                                text = formatRepeatValue(selectedRepeat),
                                 fontSize = 15.sp,
-                                fontWeight = if (!isRepeatDisabled && selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") FontWeight.Medium else FontWeight.Normal,
-                                color = if (!isRepeatDisabled && selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") primaryTextColor else faintColor
+                                fontWeight = if (selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") FontWeight.Medium else FontWeight.Normal,
+                                color = if (selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") primaryTextColor else faintColor
                             )
                         }
 
@@ -946,9 +992,7 @@ fun ReminderFormScreen(
                             AttachmentList(
                                 context = context,
                                 attachedFiles = attachedFiles,
-                                onRemove = { index ->
-                                    attachedFiles = attachedFiles.filterIndexed { i, _ -> i != index }
-                                },
+                                onRemove = { index -> removeAttachmentAt(index) },
                                 onAddClick = { attachmentLauncher.launch(arrayOf("*/*")) },
                                 isReadOnly = false
                             )
@@ -958,6 +1002,15 @@ fun ReminderFormScreen(
 
                 Spacer(modifier = Modifier.height(32.dp))
             }
+        }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .imePadding()
+        )
         }
     }
 
@@ -992,6 +1045,13 @@ fun ReminderFormScreen(
             initialDate = selectedRemindDate,
             dueDate = selectedDueDate,
             isRepeating = selectedRepeat != null && selectedRepeat != "once",
+            validate = { t, d ->
+                val repeating = selectedRepeat != null && selectedRepeat != "once"
+                val effective = d ?: selectedDueDate ?: LocalDate.now()
+                if (!repeating && effective.isEqual(LocalDate.now()) && t.isBefore(LocalTime.now())) {
+                    "Pick a time later than now"
+                } else null
+            },
             onConfirm = { chosenTime, chosenDate ->
                 val formattedTime = if (is24HourFormat) {
                     chosenTime.format(DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault()))
@@ -999,18 +1059,9 @@ fun ReminderFormScreen(
                     chosenTime.format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()))
                 }
 
-                val effectiveRemindDate = chosenDate ?: selectedDueDate ?: LocalDate.now()
-                val isToday = effectiveRemindDate.isEqual(LocalDate.now())
-
-                if (isToday && chosenTime.isBefore(LocalTime.now())) {
-                    coroutineScope.launch {
-                        snackbarHostState.showSnackbar("Pick a time later than now")
-                    }
-                } else {
-                    selectedTime = formattedTime
-                    selectedRemindDate = chosenDate
-                    showRemindMePicker = false
-                }
+                selectedTime = formattedTime
+                selectedRemindDate = chosenDate
+                showRemindMePicker = false
             },
             onResetCustomDate = {
                 selectedRemindDate = null
@@ -1075,15 +1126,13 @@ fun ReminderFormScreen(
 
     if (showDateRangePicker) {
         DiBadgeDateRangePicker(
-            initialStartDate = null,
-            initialEndDate = null,
+ initialStartDate = parseCustomRange(selectedRepeat)?.first,
+ initialEndDate = parseCustomRange(selectedRepeat)?.second,
             minDate = LocalDate.now(),
             maxDate = selectedDueDate,
             onRangeSelected = { start, end ->
                 showDateRangePicker = false
-                val startStr = start.format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))
-                val endStr = end.format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))
-                selectedRepeat = "custom:$startStr – $endStr"
+                selectedRepeat = customRepeatValue(start, end)
                 if (selectedDueDate == null) {
                     selectedDueDate = end
                 }
@@ -1132,7 +1181,7 @@ fun ReminderFormScreen(
 
     if (isRepeatMenuExpanded) {
         RepeatOptionsBottomSheet(
-            selectedOption = if (selectedRepeat == "daily") "Every day" else selectedRepeat,
+            selectedOption = repeatSheetOption(selectedRepeat),
             onOptionSelected = { option ->
                 when (option) {
                     "Custom" -> showDateRangePicker = true
@@ -1163,7 +1212,7 @@ fun ReminderFormScreen(
             },
             text = {
                 Text(
-                    text = "If you go back now, this task will be lost.",
+                    text = if (reminderToEdit == null) "If you go back now, this task will be lost." else "If you go back now, your changes will be lost.",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Normal,
                     color = secondaryTextColor
@@ -1173,6 +1222,7 @@ fun ReminderFormScreen(
                 TextButton(
                     onClick = {
                         showUnsavedChangesDialog = false
+                        discardNewAttachments()
                         onCancel()
                     }
                 ) {
@@ -1363,10 +1413,10 @@ fun ReminderFormScreen(
                         )
                     }
                     Text(
-                        text = if (isRepeatDisabled) "None" else formatRepeatValue(selectedRepeat),
+                        text = formatRepeatValue(selectedRepeat),
                         fontSize = 15.sp,
-                        fontWeight = if (!isRepeatDisabled && selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") FontWeight.Medium else FontWeight.Normal,
-                        color = if (!isRepeatDisabled && selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") primaryTextColor else tabInactiveColor
+                        fontWeight = if (selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") FontWeight.Medium else FontWeight.Normal,
+                        color = if (selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat") primaryTextColor else tabInactiveColor
                     )
                 }
 
@@ -1474,26 +1524,10 @@ fun ReminderFormScreen(
                                 }
                             }
                             IconButton(
-                                onClick = {
-                                    val removedUri = attachedFiles[index]
-                                    val removedIndex = index
-                                    attachedFiles = attachedFiles.filterIndexed { i, _ -> i != index }
-                                    coroutineScope.launch {
-                                        val result = snackbarHostState.showSnackbar(
-                                            message = "Attachment removed",
-                                            actionLabel = "Undo",
-                                            duration = SnackbarDuration.Short
-                                        )
-                                        if (result == SnackbarResult.ActionPerformed) {
-                                            attachedFiles = attachedFiles.toMutableList().apply {
-                                                add(removedIndex.coerceAtMost(size), removedUri)
-                                            }
-                                        }
-                                    }
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
+                                onClick = { removeAttachmentAt(index) }
+ ) {
+ Icon(
+ imageVector = Icons.Default.Close,
                                     contentDescription = "Remove attachment",
                                     tint = tabInactiveColor,
                                     modifier = Modifier.size(20.dp)
@@ -1560,6 +1594,9 @@ fun ReminderFormScreen(
                     onClick = {
                         showDeleteConfirmation = false
                         if (reminderToEdit != null) {
+                            reminderToEdit.attachments.forEach {
+                                FilePickerUtils.deleteAppStored(context, Uri.parse(it))
+                            }
                             onDelete(reminderToEdit)
                         }
                     }
@@ -1618,6 +1655,7 @@ fun DueDateBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(horizontal = 24.dp, vertical = 12.dp)
         ) {
             // Row 1: Today
@@ -1752,6 +1790,7 @@ fun RepeatOptionsBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(horizontal = 24.dp, vertical = 12.dp)
         ) {
             options.forEach { option ->
@@ -1813,7 +1852,7 @@ fun formatRepeatValue(selectedRepeat: String?): String {
                     .mapNotNull {
                         try { DayOfWeek.valueOf(it.trim().uppercase()) } catch (e: Exception) { null }
                     }
-                    .sortedBy { if (it.value == 7) 0 else it.value } // Monday is 1, Sunday is 7; order Mon to Sun. Wait, the prompt says "week order starts on Monday". DayOfWeek value: Monday=1, Sunday=7. So default order is Monday to Sunday.
+                    .sortedBy { it.value }
                     
                 val orderedDays = days.sortedBy { it.value }
                 
@@ -1850,14 +1889,18 @@ fun formatRepeatValue(selectedRepeat: String?): String {
             if (selectedRepeat.contains(":")) {
                 val parts = selectedRepeat.substringAfter(":").split("-")
                 if (parts.size == 2) {
-                    val m = try { Month.valueOf(parts[0].uppercase()).name.lowercase().replaceFirstChar { it.uppercase() }.take(3) } catch (e: Exception) { "Oct" }
-                    val d = parts[1].toIntOrNull() ?: 15
-                    "Every $d $m"
+                    val m: String? = try { Month.valueOf(parts[0].uppercase()).name.lowercase().replaceFirstChar { it.uppercase() }.take(3) } catch (e: Exception) { null }
+                    val d = parts[1].toIntOrNull()
+                    if (m != null && d != null) "Every $d $m" else "Yearly"
                 } else "Yearly"
             } else "Yearly"
         }
         selectedRepeat.startsWith("custom:") -> {
-            selectedRepeat.substringAfter("custom:")
+            val range = parseCustomRange(selectedRepeat)
+            if (range != null) {
+                val fmt = DateTimeFormatter.ofPattern("d MMM", Locale.getDefault())
+                "${range.first.format(fmt)} – ${range.second.format(fmt)}"
+            } else selectedRepeat.substringAfter("custom:")
         }
         selectedRepeat == "Custom" -> "Custom"
         else -> selectedRepeat.lowercase().replaceFirstChar { it.uppercase() }
@@ -1890,6 +1933,7 @@ fun getRepeatEndLine(selectedRepeat: String?, dueDate: LocalDate?): String? {
 }
 
 private fun getFileSize(context: Context, uri: Uri): String {
+    if (uri.scheme == "file") return FilePickerUtils.formatFileSize(File(uri.path ?: "").length())
     return try {
         context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
             val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
@@ -1926,8 +1970,7 @@ private fun TaskSummaryBar(
         } else null
     }
 
-    val isRepeatSet = selectedDueDate != LocalDate.now() &&
-            selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat"
+    val isRepeatSet = selectedRepeat != null && selectedRepeat != "once" && selectedRepeat != "Does not repeat"
     val repeatText = if (isRepeatSet) formatRepeatValue(selectedRepeat) else null
     val isAlarmOn = isAlarmEnabled && selectedTime != null
 
@@ -2182,3 +2225,14 @@ private fun AttachmentChipsRow(
 }
 
 
+
+/** Maps a stored repeat value to the matching option row in the repeat sheet. */
+fun repeatSheetOption(repeat: String?): String = when {
+    repeat == null || repeat == "once" || repeat == "Does not repeat" -> "Does not repeat"
+    repeat == "daily" -> "Every day"
+    repeat.startsWith("weekly") -> "Weekly"
+    repeat.startsWith("monthly") -> "Monthly"
+    repeat.startsWith("yearly") -> "Yearly"
+    repeat.startsWith("custom") -> "Custom"
+    else -> repeat
+}

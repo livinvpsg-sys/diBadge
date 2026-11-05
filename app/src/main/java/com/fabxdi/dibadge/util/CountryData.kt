@@ -211,8 +211,22 @@ object CountryData {
             CountryInfo("Vietnam", "VN", "+84", "🇻🇳"),
             CountryInfo("Yemen", "YE", "+967", "🇾🇪"),
             CountryInfo("Zambia", "ZM", "+260", "🇿🇲"),
-            CountryInfo("Zimbabwe", "ZW", "+263", "🇿🇼")
-        ).sortedBy { it.name }
+            CountryInfo("Zimbabwe", "ZW", "+263", "🇿🇼"),
+            CountryInfo("Côte d'Ivoire", "CI", "+225", "🇨🇮"),
+            CountryInfo("DR Congo", "CD", "+243", "🇨🇩"),
+            CountryInfo("Guinea-Bissau", "GW", "+245", "🇬🇼"),
+            CountryInfo("São Tomé and Príncipe", "ST", "+239", "🇸🇹"),
+            CountryInfo("Greenland", "GL", "+299", "🇬🇱"),
+            CountryInfo("Puerto Rico", "PR", "+1787", "🇵🇷"),
+            CountryInfo("Kosovo", "XK", "+383", "🇽🇰"),
+            CountryInfo("Gibraltar", "GI", "+350", "🇬🇮"),
+            CountryInfo("Turks and Caicos Islands", "TC", "+1649", "🇹🇨"),
+            CountryInfo("British Virgin Islands", "VG", "+1284", "🇻🇬"),
+            CountryInfo("US Virgin Islands", "VI", "+1340", "🇻🇮"),
+            CountryInfo("Cook Islands", "CK", "+682", "🇨🇰"),
+            CountryInfo("Faroe Islands", "FO", "+298", "🇫🇴"),
+            CountryInfo("Curaçao", "CW", "+599", "🇨🇼")
+        ).sortedWith(compareBy(java.text.Collator.getInstance()) { it.name })
     }
 
     fun getCountryDisplayName(isoCode: String): String {
@@ -232,6 +246,15 @@ object CountryData {
 
     fun getCountryInfoByDialCode(dialCode: String): CountryInfo? {
         val clean = if (dialCode.startsWith("+")) dialCode else "+$dialCode"
+        // Several countries share +1 and +7; pick the main one instead of the first alphabetically
+        val preferredIso = when (clean) {
+            "+1" -> "US"
+            "+7" -> "RU"
+            else -> null
+        }
+        if (preferredIso != null) {
+            allCountries.find { it.isoCode == preferredIso }?.let { return it }
+        }
         return allCountries.find { it.dialCode == clean }
     }
 }

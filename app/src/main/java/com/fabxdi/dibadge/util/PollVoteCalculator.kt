@@ -14,7 +14,8 @@ object PollVoteCalculator {
         isClosed: Boolean
     ): Map<String, Int> {
         val counts = options.associateWith { 0 }.toMutableMap()
-        votes.forEach { vote ->
+        // one vote per person: if a voter appears twice, the last record counts
+        votes.associateBy { it.voterUid }.values.forEach { vote ->
             val validOptions = if (!isMultiSelect && vote.optionIds.size > 1) {
                 setOf(vote.optionIds.first())
             } else {

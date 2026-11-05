@@ -48,9 +48,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.data.DocEntity
 import com.fabxdi.dibadge.ui.calendar.AttachmentFile
+import com.fabxdi.dibadge.ui.calendar.rememberOrganizationName
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.DocViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -77,7 +80,8 @@ fun MyDocsScreen(
 
     var showAddDocSheet by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
-    var showShareSheet by remember { mutableStateOf(false) }
+    // The documents being shared; empty when the share sheet is closed
+    var docsToShare by remember { mutableStateOf<List<DocEntity>>(emptyList()) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -111,27 +115,38 @@ fun MyDocsScreen(
     val errorColor = colors.error
 
     val today = remember { LocalDate.now() }
+    val organisationName = rememberOrganizationName()
+
+    // Reads the real name and size, keeps a copy in app storage, then opens the new-document form
+    fun handlePickedFile(uri: Uri, isPdf: Boolean) {
+        coroutineScope.launch {
+            val file = withContext(Dispatchers.IO) { DocFileUtils.importPicked(context, uri, isPdf) }
+            when {
+                file == null -> snackbarHostState.showSnackbar("Couldn't add that file")
+                file.sizeBytes > DocFileUtils.MAX_FILE_BYTES -> {
+                    DocFileUtils.discard(context, file)
+                    snackbarHostState.showSnackbar("File is larger than 5 MB")
+                }
+                else -> {
+                    initialFileForNewDoc = file
+                    showNewDocForm = true
+                }
+            }
+        }
+    }
 
     // Pick Photo Launcher
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        if (uri != null) {
-            val file = AttachmentFile(uri.toString(), "Photo", 1_200_000L, false)
-            initialFileForNewDoc = file
-            showNewDocForm = true
-        }
+        if (uri != null) handlePickedFile(uri, false)
     }
 
     // Pick PDF Launcher
     val pdfPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        if (uri != null) {
-            val file = AttachmentFile(uri.toString(), "Document.pdf", 350_000L, true)
-            initialFileForNewDoc = file
-            showNewDocForm = true
-        }
+        if (uri != null) handlePickedFile(uri, true)
     }
 
     // Filter & Sort Documents by Urgency
@@ -165,20 +180,43 @@ fun MyDocsScreen(
         })
     }
 
+    // Composed before the early returns below, so it also works from the document detail screen
+    if (docsToShare.isNotEmpty()) {
+        ShareDocSheet(
+            docs = docsToShare,
+            context = context,
+            organisations = listOfNotNull(organisationName.takeIf { it.isNotBlank() }),
+            onShareWithOrg = { orgName ->
+                docsToShare.forEach { viewModel.shareDocumentWithOrg(it, orgName) }
+                if (isSelectionMode) selectedDocs = emptySet()
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("Shared with $orgName")
+                }
+            },
+            onDismiss = { docsToShare = emptyList() }
+        )
+    }
+
+    // The open document, kept up to date (for example after sharing)
+    val liveDetailDoc = activeDocForDetail?.let { d -> allDocs.firstOrNull { it.id == d.id } ?: d }
+
     if (showNewDocForm) {
         NewDocFormScreen(
             docToEdit = docToEdit,
             initialFile = initialFileForNewDoc,
             onSave = { savedDoc ->
+                val wasEditing = docToEdit != null
                 viewModel.saveDocument(savedDoc)
                 showNewDocForm = false
                 docToEdit = null
                 initialFileForNewDoc = null
                 coroutineScope.launch {
-                    snackbarHostState.showSnackbar("Document saved")
+                    snackbarHostState.showSnackbar(if (wasEditing) "Document updated" else "Document saved")
                 }
             },
             onClose = {
+                // A new document that was never saved: do not keep its copied file
+                if (docToEdit == null) initialFileForNewDoc?.let { DocFileUtils.discard(context, it) }
                 showNewDocForm = false
                 docToEdit = null
                 initialFileForNewDoc = null
@@ -189,7 +227,7 @@ fun MyDocsScreen(
 
     if (activeDocForDetail != null) {
         DocDetailsScreen(
-            doc = activeDocForDetail!!,
+            doc = liveDetailDoc!!,
             onBack = { activeDocForDetail = null },
             onEdit = {
                 docToEdit = activeDocForDetail
@@ -205,7 +243,7 @@ fun MyDocsScreen(
                 }
             },
             onShare = {
-                showShareSheet = true
+                liveDetailDoc?.let { docsToShare = listOf(it) }
             }
         )
         return
@@ -261,7 +299,7 @@ fun MyDocsScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             IconButton(
-                                onClick = { showShareSheet = true },
+                                onClick = { docsToShare = selectedDocs.toList() },
                                 modifier = Modifier.size(40.dp)
                             ) {
                                 Icon(
@@ -520,25 +558,6 @@ fun MyDocsScreen(
         }
     }
 
-    if (showShareSheet && selectedDocs.isNotEmpty()) {
-        ShareDocSheet(
-            doc = selectedDocs.first(),
-            context = context,
-            onShareWithOrg = { orgName ->
-                val docsList = selectedDocs.toList()
-                for (d in docsList) {
-                    viewModel.shareDocumentWithOrg(d, orgName)
-                }
-                selectedDocs = emptySet()
-                showShareSheet = false
-                coroutineScope.launch {
-                    snackbarHostState.showSnackbar("Shared with $orgName")
-                }
-            },
-            onDismiss = { showShareSheet = false }
-        )
-    }
-
     if (showDeleteConfirmDialog && selectedDocs.isNotEmpty()) {
         val count = selectedDocs.size
         val titleText = if (count == 1) "Delete 1 document?" else "Delete $count documents?"
@@ -638,7 +657,7 @@ fun DocRowItem(
         }
     }
 
-    val isDark = primaryTextColor.red > 0.5f
+    val isDark = DiBadgeTheme.colors.isDark
 
     Surface(
         modifier = Modifier

@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -296,7 +297,8 @@ fun DiBadgeDatePicker(
                                                             .clickable(
                                                                 interactionSource = remember { MutableInteractionSource() },
                                                                 indication = null,
-                                                                enabled = !isDisabled
+                                                                enabled = !isDisabled,
+                                                                role = Role.Button
                                                             ) {
                                                                 tempSelectedDate = date
                                                                 onDateSelected(date)

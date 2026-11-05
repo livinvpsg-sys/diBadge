@@ -9,10 +9,14 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.fabxdi.dibadge.util.AudioPlayer
 
@@ -28,23 +32,34 @@ fun AttachmentList(
     player: AudioPlayer? = null
 ) {
     Column(modifier = modifier) {
-        val isDark = MaterialTheme.colorScheme.onBackground.red > 0.5f
+        val isDark = DiBadgeTheme.colors.isDark
 
         attachedFiles.forEachIndexed { index, uri ->
-            val fileName = FilePickerUtils.getFileName(context, uri).lowercase()
-            val ext = fileName.substringAfterLast('.', "")
+            // Read the name once; a file whose access has expired must not crash the screen
+            val displayName = remember(uri) {
+                try {
+                    FilePickerUtils.getFileName(context, uri)
+                } catch (e: Exception) {
+                    "Attachment"
+                }
+            }
+            val ext = displayName.lowercase().substringAfterLast('.', "")
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .padding(vertical = 4.dp)
-                    .clickable {
-                        val isAudio = context.contentResolver.getType(uri)?.startsWith("audio/") == true || 
-                                     uri.path?.lowercase()?.endsWith(".m4a") == true
-                        if (isAudio && player != null) {
-                            player.playFile(uri) {}
-                        } else {
-                            FilePickerUtils.openFile(context, uri)
+                    .clickable(role = Role.Button) {
+                        try {
+                            val isAudio = context.contentResolver.getType(uri)?.startsWith("audio/") == true ||
+                                uri.path?.lowercase()?.endsWith(".m4a") == true
+                            if (isAudio && player != null) {
+                                player.playFile(uri) {}
+                            } else {
+                                FilePickerUtils.openFile(context, uri)
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
                         }
                     }
             ) {
@@ -53,18 +68,19 @@ fun AttachmentList(
                 Spacer(modifier = Modifier.width(12.dp))
                 
                 Text(
-                    text = FilePickerUtils.getFileName(context, uri),
+                    text = displayName,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.weight(1f),
-                    maxLines = 1
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 
                 if (!isReadOnly) {
                     Spacer(modifier = Modifier.width(12.dp))
                     IconButton(
                         onClick = { onRemove(index) },
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(40.dp)
                     ) {
                         Icon(
                             Icons.Default.Close,

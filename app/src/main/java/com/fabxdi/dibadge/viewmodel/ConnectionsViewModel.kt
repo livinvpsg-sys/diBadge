@@ -6,6 +6,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.async
@@ -77,15 +78,48 @@ class ConnectionsViewModel : ViewModel() {
         _message.tryEmit("Couldn't $action: $reason")
     }
 
+    private var connectionsListener: ListenerRegistration? = null
+    private var blockedListener: ListenerRegistration? = null
+    private var loadedForUid: String? = null
+
+    // This ViewModel outlives a sign-out, so it follows the signed-in account itself:
+    // when the account changes, the old listeners are removed and the old lists are emptied.
+    private val authStateListener = FirebaseAuth.AuthStateListener { fa ->
+        val uid = fa.currentUser?.uid
+        if (uid == loadedForUid) return@AuthStateListener
+        loadedForUid = uid
+
+        connectionsListener?.remove(); connectionsListener = null
+        blockedListener?.remove(); blockedListener = null
+        _connections.value = emptyList()
+        _receivedRequests.value = emptyList()
+        _sentRequests.value = emptyList()
+        _searchResults.value = emptyList()
+        _blockedPeople.value = emptyList()
+        _suggestions.value = emptyList()
+
+        if (uid != null) {
+            loadConnections()
+            loadBlocked()
+            loadSuggestions()
+        }
+    }
+
     init {
-        loadConnections()
-        loadBlocked()
-        loadSuggestions()
+        auth.addAuthStateListener(authStateListener)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        auth.removeAuthStateListener(authStateListener)
+        connectionsListener?.remove()
+        blockedListener?.remove()
     }
 
     private fun loadBlocked() {
         val me = auth.currentUser?.uid ?: return
-        firestore.collection("blockedUsers").document(me).collection("blocked")
+        blockedListener?.remove()
+        blockedListener = firestore.collection("blockedUsers").document(me).collection("blocked")
             .addSnapshotListener { snapshot, e ->
                 if (e != null || snapshot == null) return@addSnapshotListener
                 _blockedPeople.value = snapshot.documents.map { doc ->
@@ -176,7 +210,8 @@ class ConnectionsViewModel : ViewModel() {
 
     fun loadConnections() {
         val user = auth.currentUser ?: return
-        firestore.collection("users").document(user.uid).collection("userConnections")
+        connectionsListener?.remove()
+        connectionsListener = firestore.collection("users").document(user.uid).collection("userConnections")
             .addSnapshotListener { snapshot, e ->
                 if (e != null || snapshot == null) return@addSnapshotListener
                 val connList = mutableListOf<ConnectionItem>()

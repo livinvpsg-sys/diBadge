@@ -10,11 +10,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.ui.theme.AppThemeMode
+import com.fabxdi.dibadge.util.SubscriptionManager
 import com.fabxdi.dibadge.viewmodel.ThemeViewModel
 import com.fabxdi.dibadge.viewmodel.ToDoViewModel
 import com.google.firebase.auth.FirebaseAuth
@@ -33,7 +35,8 @@ enum class SettingsSubPage {
     DATA_PRIVACY,
     DRIVE_BACKUP,
     MANAGE_MEDIA,
-    SET_PASSWORD
+    SET_PASSWORD,
+    VERIFY_PASSCODE_OFF
 }
 
 @Composable
@@ -47,40 +50,44 @@ fun SettingsScreen(
     val context = LocalContext.current
     val currentThemeMode by themeViewModel.themeMode.collectAsState()
 
-    var activeSubPage by remember { mutableStateOf(SettingsSubPage.MAIN) }
+    LaunchedEffect(Unit) { SubscriptionManager.listenToSubscription(context) }
+    val subscription by SubscriptionManager.subscriptionState.collectAsState()
+
+    var activeSubPage by rememberSaveable { mutableStateOf(SettingsSubPage.MAIN) }
     var showThemeSheet by remember { mutableStateOf(false) }
     var showSetPasswordSheet by remember { mutableStateOf(false) }
     var showLinkedDevicesScanner by remember { mutableStateOf(false) }
 
-    val currentUid = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
+    // Read every time so a different signed-in account never sees the previous one's data
+    val currentUid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
+    var passwordVersion by remember { mutableIntStateOf(0) }
     var linkedDevicesCount by remember { mutableIntStateOf(0) }
     var isHideFromSearch by remember { mutableStateOf(false) }
-    var backupFrequency by remember { mutableStateOf("Weekly") }
 
-    LaunchedEffect(currentUid) {
-        if (currentUid.isNotBlank()) {
-            val db = FirebaseFirestore.getInstance()
+    DisposableEffect(currentUid) {
+        if (currentUid.isBlank()) return@DisposableEffect onDispose { }
+        val db = FirebaseFirestore.getInstance()
 
-            // 1. Linked Devices Count
-            db.collection("users").document(currentUid)
-                .collection("linkedDevices")
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null || snapshot == null) return@addSnapshotListener
-                    linkedDevicesCount = snapshot.documents.size
-                }
+        val devicesReg = db.collection("users").document(currentUid)
+            .collection("linkedDevices")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) return@addSnapshotListener
+                linkedDevicesCount = snapshot.documents.size
+            }
 
-            // 2. Hide from Search & Backup settings
-            db.collection("users").document(currentUid)
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
-                    isHideFromSearch = snapshot.getBoolean("hideFromSearch") ?: false
-                    backupFrequency = snapshot.getString("backupFrequency") ?: "Weekly"
-                }
+        val userReg = db.collection("users").document(currentUid)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null || !snapshot.exists()) return@addSnapshotListener
+                isHideFromSearch = snapshot.getBoolean("hideFromSearch") ?: false
+            }
+
+        onDispose {
+            devicesReg.remove()
+            userReg.remove()
         }
     }
 
-    val passcodePrefs = remember(context) { context.getSharedPreferences("passcode_prefs", Context.MODE_PRIVATE) }
-    var isPasscodeOn by remember { mutableStateOf(passcodePrefs.getString("passcode_hash", null) != null) }
+    var isPasscodeOn by remember { mutableStateOf(PasscodeStore.isSet(context)) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -138,9 +145,23 @@ fun SettingsScreen(
                 title = "Create passcode",
                 subtitle = "Enter a 6-digit passcode",
                 onPasscodeEntered = { newPin ->
-                    passcodePrefs.edit().putString("passcode_hash", newPin).apply()
+                    PasscodeStore.set(context, newPin)
                     isPasscodeOn = true
                     activeSubPage = SettingsSubPage.PASSCODE
+                },
+                onCancel = { activeSubPage = SettingsSubPage.MAIN }
+            )
+            return
+        }
+        SettingsSubPage.VERIFY_PASSCODE_OFF -> {
+            PinVerifyScreen(
+                title = "Turn off passcode",
+                subtitle = "Enter your passcode to turn it off",
+                onVerified = {
+                    PasscodeStore.clear(context)
+                    isPasscodeOn = false
+                    activeSubPage = SettingsSubPage.MAIN
+                    coroutineScope.launch { snackbarHostState.showSnackbar("Passcode turned off") }
                 },
                 onCancel = { activeSubPage = SettingsSubPage.MAIN }
             )
@@ -188,6 +209,7 @@ fun SettingsScreen(
                 onBack = { activeSubPage = SettingsSubPage.MAIN },
                 onPasswordSavedSuccessfully = { isNew ->
                     activeSubPage = SettingsSubPage.MAIN
+                    passwordVersion++
                     coroutineScope.launch {
                         val msg = if (isNew) "Password set" else "Password changed"
                         snackbarHostState.showSnackbar(msg)
@@ -201,11 +223,7 @@ fun SettingsScreen(
 
     val colors = MaterialTheme.colorScheme
 
-    val currentThemeLabel = when (currentThemeMode) {
-        AppThemeMode.SYSTEM -> "System"
-        AppThemeMode.LIGHT -> "Light"
-        AppThemeMode.DARK -> "Dark"
-    }
+    val currentThemeLabel = currentThemeMode.title
 
     Scaffold(
         topBar = {
@@ -230,7 +248,7 @@ fun SettingsScreen(
             SettingsCard {
                 SettingsRow(
                     title = "Subscription",
-                    valueText = "Free",
+                    valueText = if (subscription.isPro) "Pro" else "Free",
                     onClick = { activeSubPage = SettingsSubPage.SUBSCRIPTION }
                 )
 
@@ -248,7 +266,7 @@ fun SettingsScreen(
 
                 SettingsRow(
                     title = "Back up",
-                    valueText = backupFrequency,
+                    valueText = "Coming soon",
                     onClick = { activeSubPage = SettingsSubPage.DRIVE_BACKUP }
                 )
             }
@@ -308,13 +326,11 @@ fun SettingsScreen(
                                 if (toggle) {
                                     activeSubPage = SettingsSubPage.CREATE_PASSCODE
                                 } else {
-                                    passcodePrefs.edit().remove("passcode_hash").apply()
-                                    isPasscodeOn = false
-                                    coroutineScope.launch {
-                                        snackbarHostState.showSnackbar("Passcode turned off")
-                                    }
+                                    // Needs the current passcode first
+                                    activeSubPage = SettingsSubPage.VERIFY_PASSCODE_OFF
                                 }
-                            }
+                            },
+                            label = "Passcode"
                         )
                     }
                 )
@@ -343,15 +359,17 @@ fun SettingsScreen(
                                     FirebaseFirestore.getInstance().collection("users").document(currentUid)
                                         .set(mapOf("hideFromSearch" to toggle), SetOptions.merge())
                                 }
-                            }
+                            },
+                            label = "Hide from search"
                         )
                     }
                 )
 
                 HorizontalDivider(thickness = 1.dp, color = colors.outline)
 
-                val currentUser = FirebaseAuth.getInstance().currentUser
-                val hasPassword = currentUser?.providerData?.any { it.providerId == "password" } == true
+                val hasPassword = remember(passwordVersion, currentUid) {
+                    FirebaseAuth.getInstance().currentUser?.providerData?.any { it.providerId == "password" } == true
+                }
 
                 // 3. Set password / Change password
                 SettingsRow(
@@ -398,6 +416,7 @@ fun SettingsScreen(
         SetPasswordSheet(
             userEmail = userEmail,
             onSaveSuccess = {
+                passwordVersion++
                 coroutineScope.launch {
                     snackbarHostState.showSnackbar("Password set")
                 }

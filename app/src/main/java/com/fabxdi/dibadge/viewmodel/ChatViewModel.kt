@@ -11,6 +11,7 @@ import com.fabxdi.dibadge.data.ChatMessageEntity
 import com.fabxdi.dibadge.data.HomeEntryEntity
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatComment
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatMessage
+import com.fabxdi.dibadge.ui.home.home_entry.chat.PollOptionItem
 import com.fabxdi.dibadge.ui.home.home_entry.chat.stripGroupMention
 import com.fabxdi.dibadge.util.AlarmReceiver
 import com.fabxdi.dibadge.util.FilePickerUtils
@@ -20,6 +21,7 @@ import com.fabxdi.dibadge.ui.home.home_entry.chat.getAttachmentCategory
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -39,6 +41,142 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.UUID
+import org.json.JSONArray
+import org.json.JSONObject
+
+// ---------------------------------------------------------------------------------------------
+// Polls, locations and voice notes carry extra data. The local chat table has no columns for it,
+// so it travels as one JSON text in the spare `libraryRevision` column (only for these types).
+// ---------------------------------------------------------------------------------------------
+private val EXTRAS_TYPES = setOf("poll", "location", "audio")
+
+private fun extrasFromDoc(doc: DocumentSnapshot, msgType: String, myUid: String): String? {
+    return try {
+        when (msgType) {
+            "poll" -> {
+                val votes = doc.get("pollVotes") as? Map<*, *> ?: emptyMap<Any, Any>()
+                val names = doc.get("pollVoterNames") as? Map<*, *> ?: emptyMap<Any, Any>()
+                val opts = JSONArray()
+                val mine = JSONArray()
+                val voters = JSONObject()
+                (doc.get("pollOptions") as? List<*>)?.forEach { raw ->
+                    val m = raw as? Map<*, *> ?: return@forEach
+                    val id = m["id"]?.toString() ?: return@forEach
+                    val uids = (votes[id] as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
+                    opts.put(JSONObject().put("id", id).put("t", m["text"]?.toString() ?: "").put("c", uids.size))
+                    if (myUid in uids) mine.put(id)
+                    voters.put(
+                        id,
+                        JSONArray(uids.map { if (it == myUid) "You" else (names[it]?.toString() ?: "Member") })
+                    )
+                }
+                JSONObject()
+                    .put("q", doc.getString("pollQuestion") ?: "")
+                    .put("opts", opts)
+                    .put("multi", doc.getBoolean("pollAllowMultiple") ?: false)
+                    .put("show", doc.getBoolean("pollShowVoters") ?: true)
+                    .put("closed", doc.getBoolean("isPollClosed") ?: false)
+                    .put("mine", mine)
+                    .put("voters", voters)
+                    .toString()
+            }
+            "location" -> JSONObject()
+                .put("lat", doc.getDouble("locationLat") ?: 0.0)
+                .put("lng", doc.getDouble("locationLng") ?: 0.0)
+                .put("acc", (doc.getLong("locationAccuracy") ?: 0L).toInt())
+                .put("place", doc.getString("locationPlaceName") ?: "")
+                .put("live", doc.getBoolean("isLiveLocation") ?: false)
+                .put("exp", doc.getLong("liveExpiresAt") ?: 0L)
+                .put("ended", doc.getBoolean("isLiveEnded") ?: false)
+                .toString()
+            "audio" -> JSONObject()
+                .put("voice", doc.getBoolean("isVoiceNote") ?: true)
+                .put("wave", JSONArray((doc.get("waveformArray") as? List<*>)?.mapNotNull { (it as? Number)?.toInt() } ?: emptyList<Int>()))
+                .toString()
+            else -> null
+        }
+    } catch (e: Exception) {
+        null
+    }
+}
+
+private fun ChatMessage.packExtras(): String? {
+    return try {
+        when (msgType) {
+            "poll" -> JSONObject()
+                .put("q", pollQuestion)
+                .put("opts", JSONArray().also { a ->
+                    pollOptions.forEach { a.put(JSONObject().put("id", it.id).put("t", it.text).put("c", it.voteCount)) }
+                })
+                .put("multi", pollAllowMultiple)
+                .put("show", pollShowVoters)
+                .put("closed", isPollClosed)
+                .put("mine", JSONArray(userVotedOptionIds.toList()))
+                .put("voters", JSONObject().also { o -> pollVoters.forEach { (k, v) -> o.put(k, JSONArray(v)) } })
+                .toString()
+            "location" -> JSONObject()
+                .put("lat", locationLat).put("lng", locationLng).put("acc", locationAccuracy)
+                .put("place", locationPlaceName ?: "").put("live", isLiveLocation)
+                .put("exp", liveExpiresAt).put("ended", isLiveEnded)
+                .toString()
+            "audio" -> JSONObject().put("voice", isVoiceNote).put("wave", JSONArray(waveformArray)).toString()
+            else -> null
+        }
+    } catch (e: Exception) {
+        null
+    }
+}
+
+private fun ChatMessage.withExtras(json: String?): ChatMessage {
+    if (json.isNullOrBlank() || msgType !in EXTRAS_TYPES) return this
+    return try {
+        val o = JSONObject(json)
+        when (msgType) {
+            "poll" -> {
+                val opts = o.optJSONArray("opts") ?: JSONArray()
+                val mine = o.optJSONArray("mine") ?: JSONArray()
+                val voters = o.optJSONObject("voters") ?: JSONObject()
+                copy(
+                    libraryRevision = null,
+                    pollQuestion = o.optString("q"),
+                    pollOptions = (0 until opts.length()).map {
+                        val x = opts.getJSONObject(it)
+                        PollOptionItem(x.getString("id"), x.optString("t"), x.optInt("c"))
+                    },
+                    pollAllowMultiple = o.optBoolean("multi"),
+                    pollShowVoters = o.optBoolean("show", true),
+                    isPollClosed = o.optBoolean("closed"),
+                    userVotedOptionIds = (0 until mine.length()).map { mine.getString(it) }.toSet(),
+                    pollVoters = voters.keys().asSequence().associateWith { k ->
+                        val arr = voters.optJSONArray(k) ?: JSONArray()
+                        (0 until arr.length()).map { arr.getString(it) }
+                    }
+                )
+            }
+            "location" -> copy(
+                libraryRevision = null,
+                locationLat = o.optDouble("lat"),
+                locationLng = o.optDouble("lng"),
+                locationAccuracy = o.optInt("acc"),
+                locationPlaceName = o.optString("place"),
+                isLiveLocation = o.optBoolean("live"),
+                liveExpiresAt = o.optLong("exp"),
+                isLiveEnded = o.optBoolean("ended")
+            )
+            "audio" -> {
+                val w = o.optJSONArray("wave") ?: JSONArray()
+                copy(
+                    libraryRevision = null,
+                    isVoiceNote = o.optBoolean("voice", true),
+                    waveformArray = (0 until w.length()).map { w.getInt(it) }
+                )
+            }
+            else -> this
+        }
+    } catch (e: Exception) {
+        this
+    }
+}
 
 fun ChatMessage.toEntity(groupId: String): ChatMessageEntity {
     return ChatMessageEntity(
@@ -65,7 +203,7 @@ fun ChatMessage.toEntity(groupId: String): ChatMessageEntity {
         libraryCount = this.libraryCount,
         libraryActorUid = this.libraryActorUid,
         libraryActorName = this.libraryActorName,
-        libraryRevision = this.libraryRevision,
+        libraryRevision = this.packExtras() ?: this.libraryRevision,
         isDeleted = this.isDeleted,
         deletedByRole = this.deletedByRole,
         isHiddenForMe = this.isHiddenForMe,
@@ -119,7 +257,7 @@ fun ChatMessageEntity.toDomain(): ChatMessage {
         deletedByRole = this.deletedByRole,
         isHiddenForMe = this.isHiddenForMe,
         sendStatus = this.sendStatus
-    )
+    ).withExtras(this.libraryRevision)
 }
 
 class ChatViewModel : ViewModel() {
@@ -262,7 +400,7 @@ class ChatViewModel : ViewModel() {
                                     libraryCount = libraryCount,
                                     libraryActorUid = libraryActorUid,
                                     libraryActorName = libraryActorName,
-                                    libraryRevision = libraryRevision,
+                                    libraryRevision = extrasFromDoc(doc, msgType, currentUid) ?: libraryRevision,
                                     isDeleted = isDeleted,
                                     deletedByRole = deletedByRole,
                                     isHiddenForMe = isHiddenForMe
@@ -754,6 +892,39 @@ class ChatViewModel : ViewModel() {
                     .collection("messages")
                     .document(messageId)
                     .set(docData)
+                    .await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    /** Casts, changes or removes the current user's vote on a poll message. */
+    fun votePoll(groupId: String, message: ChatMessage, optionId: String) {
+        val user = auth.currentUser ?: return
+        if (message.isPollClosed) return
+        val uid = user.uid
+        val name = user.displayName.takeIf { !it.isNullOrBlank() } ?: "Member"
+
+        val updates = mutableMapOf<String, Any>("pollVoterNames.$uid" to name)
+        if (optionId in message.userVotedOptionIds) {
+            updates["pollVotes.$optionId"] = FieldValue.arrayRemove(uid)
+        } else {
+            updates["pollVotes.$optionId"] = FieldValue.arrayUnion(uid)
+            if (!message.pollAllowMultiple) {
+                message.userVotedOptionIds.filter { it != optionId }.forEach {
+                    updates["pollVotes.$it"] = FieldValue.arrayRemove(uid)
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            try {
+                db.collection("personalGroups")
+                    .document(groupId)
+                    .collection("messages")
+                    .document(message.id)
+                    .update(updates)
                     .await()
             } catch (e: Exception) {
                 e.printStackTrace()

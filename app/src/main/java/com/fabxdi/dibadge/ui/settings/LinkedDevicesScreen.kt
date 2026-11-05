@@ -29,7 +29,10 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.google.firebase.auth.FirebaseAuth
+import androidx.compose.ui.semantics.Role
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -57,30 +60,24 @@ fun LinkedDevicesScreen(
     var selectedDeviceForDetails by remember { mutableStateOf<LinkedDeviceItem?>(null) }
     var showLogOutAllDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(userUid) {
-        if (userUid.isNotBlank() && !isOrganisationAccount) {
-            val db = FirebaseFirestore.getInstance()
-            db.collection("users").document(userUid)
-                .collection("linkedDevices")
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null || snapshot == null) return@addSnapshotListener
-                    val items = snapshot.documents.mapNotNull { doc ->
-                        val id = doc.id
-                        val name = doc.getString("deviceName") ?: doc.getString("browser") ?: "Web Session"
-                        val city = doc.getString("city") ?: doc.getString("location") ?: "Web"
-                        val linkedAt = doc.getTimestamp("linkedAt")?.toDate()?.time ?: doc.getLong("linkedAt") ?: System.currentTimeMillis()
-                        val lastActiveAt = doc.getTimestamp("lastActiveAt")?.toDate()?.time ?: doc.getLong("lastActiveAt") ?: System.currentTimeMillis()
-                        LinkedDeviceItem(
-                            id = id,
-                            deviceName = name,
-                            city = city,
-                            linkedAt = linkedAt,
-                            lastActiveAt = lastActiveAt
-                        )
-                    }.sortedByDescending { it.lastActiveAt }
-                    linkedDevices = items
-                }
-        }
+    DisposableEffect(userUid, isOrganisationAccount) {
+        if (userUid.isBlank() || isOrganisationAccount) return@DisposableEffect onDispose { }
+        val registration = FirebaseFirestore.getInstance().collection("users").document(userUid)
+            .collection("linkedDevices")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) return@addSnapshotListener
+                linkedDevices = snapshot.documents.map { doc ->
+                    LinkedDeviceItem(
+                        id = doc.id,
+                        deviceName = doc.getString("deviceName") ?: doc.getString("browser") ?: "Web Session",
+                        city = doc.getString("city") ?: doc.getString("location") ?: "Web",
+                        linkedAt = doc.getTimestamp("linkedAt")?.toDate()?.time ?: doc.getLong("linkedAt") ?: System.currentTimeMillis(),
+                        // 0 = never reported; shown as "Linked" instead of a false "Active now"
+                        lastActiveAt = doc.getTimestamp("lastActiveAt")?.toDate()?.time ?: doc.getLong("lastActiveAt") ?: 0L
+                    )
+                }.sortedWith(compareByDescending<LinkedDeviceItem> { it.lastActiveAt }.thenByDescending { it.linkedAt })
+            }
+        onDispose { registration.remove() }
     }
 
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
@@ -194,7 +191,7 @@ fun LinkedDevicesScreen(
         val dateFmt = SimpleDateFormat("d MMM yyyy", Locale.getDefault())
         val timeFmt = SimpleDateFormat("h:mm a", Locale.getDefault())
         val linkedDateStr = dateFmt.format(Date(dev.linkedAt))
-        val activeTimeStr = timeFmt.format(Date(dev.lastActiveAt))
+        val activeTimeStr = if (dev.lastActiveAt > 0L) timeFmt.format(Date(dev.lastActiveAt)) else ""
 
         ModalBottomSheet(
             onDismissRequest = { selectedDeviceForDetails = null },
@@ -228,7 +225,7 @@ fun LinkedDevicesScreen(
                 Spacer(modifier = Modifier.height(2.dp))
 
                 Text(
-                    text = "Last active $activeTimeStr",
+                    text = if (activeTimeStr.isNotEmpty()) "Last active $activeTimeStr" else "Not active yet",
                     fontSize = 13.sp,
                     color = secondaryTextColor
                 )
@@ -241,13 +238,10 @@ fun LinkedDevicesScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp)
-                        .clickable {
+                        .clickable(role = Role.Button) {
                             val targetId = dev.id
                             selectedDeviceForDetails = null
-                            FirebaseFirestore.getInstance().collection("users").document(userUid)
-                                .collection("linkedDevices").document(targetId)
-                                .delete()
-                            Toast.makeText(context, "Device logged out", Toast.LENGTH_SHORT).show()
+                            revokeDevices(context, userUid, listOf(targetId), "Device logged out")
                         },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -263,7 +257,7 @@ fun LinkedDevicesScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp)
-                        .clickable { selectedDeviceForDetails = null },
+                        .clickable(role = Role.Button) { selectedDeviceForDetails = null },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
@@ -301,16 +295,7 @@ fun LinkedDevicesScreen(
                 TextButton(
                     onClick = {
                         showLogOutAllDialog = false
-                        val db = FirebaseFirestore.getInstance()
-                        db.collection("users").document(userUid)
-                            .collection("linkedDevices")
-                            .get()
-                            .addOnSuccessListener { snap ->
-                                for (doc in snap.documents) {
-                                    doc.reference.delete()
-                                }
-                                Toast.makeText(context, "Logged out of all devices", Toast.LENGTH_SHORT).show()
-                            }
+                        revokeDevices(context, userUid, linkedDevices.map { it.id }, "Logged out of all devices")
                     }
                 ) {
                     Text(
@@ -335,6 +320,7 @@ fun LinkedDevicesScreen(
 }
 
 private fun formatActiveTime(lastActiveMs: Long): String {
+    if (lastActiveMs <= 0L) return "Linked"
     val diffMs = System.currentTimeMillis() - lastActiveMs
     val minutes = diffMs / (60 * 1000)
     return when {
@@ -344,5 +330,28 @@ private fun formatActiveTime(lastActiveMs: Long): String {
             val dateFmt = SimpleDateFormat("d MMM", Locale.getDefault())
             "Last active ${dateFmt.format(Date(lastActiveMs))}"
         }
+    }
+}
+
+/**
+ * Removes the device records AND revokes the web sessions behind them, in one batch.
+ * The web app must treat webLogins/{id} with revoked == true (or approved == false) as signed out.
+ */
+private fun revokeDevices(context: Context, userUid: String, sessionIds: List<String>, successMessage: String) {
+    if (userUid.isBlank() || sessionIds.isEmpty()) return
+    val db = FirebaseFirestore.getInstance()
+    sessionIds.chunked(200).forEach { chunk ->
+        val batch = db.batch()
+        chunk.forEach { id ->
+            batch.delete(db.collection("users").document(userUid).collection("linkedDevices").document(id))
+            batch.set(
+                db.collection("webLogins").document(id),
+                mapOf("approved" to false, "revoked" to true, "revokedAt" to FieldValue.serverTimestamp()),
+                SetOptions.merge()
+            )
+        }
+        batch.commit()
+            .addOnSuccessListener { Toast.makeText(context, successMessage, Toast.LENGTH_SHORT).show() }
+            .addOnFailureListener { Toast.makeText(context, "Could not log out. Try again", Toast.LENGTH_SHORT).show() }
     }
 }

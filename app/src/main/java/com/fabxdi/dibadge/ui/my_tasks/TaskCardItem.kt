@@ -106,13 +106,7 @@ fun TaskCardItem(
         if (reminder.isImportant) append(". Important") else append(". Not important")
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics(mergeDescendants = true) {
-                contentDescription = accessibilityRowDescription
-            }
-    ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -165,7 +159,11 @@ fun TaskCardItem(
 
                 // 2. TEXT BLOCK (Title & Details)
                 Column(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = accessibilityRowDescription
+                        },
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
@@ -205,7 +203,7 @@ fun TaskCardItem(
                     // Star Icon (20dp, 48dp touch target)
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(48.dp)
                             .clickable(onClick = onStarClick)
                             .semantics {
                                 role = Role.Button

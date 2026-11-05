@@ -35,7 +35,12 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import androidx.compose.ui.semantics.Role
+import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.EmailAuthProvider
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
+import com.google.firebase.auth.FirebaseAuthUserCollisionException
+import com.google.firebase.auth.FirebaseAuthWeakPasswordException
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
 import kotlinx.coroutines.launch
@@ -47,7 +52,8 @@ fun SetPasswordScreen(
     hasExistingPassword: Boolean = false,
     onBack: () -> Unit,
     onPasswordSavedSuccessfully: (isNew: Boolean) -> Unit,
-    onGoogleReauthRequest: () -> Unit = {}
+    /** Pass a handler that signs in with Google again. When null the sheet asks the user to sign in again manually. */
+    onGoogleReauthRequest: (() -> Unit)? = null
 ) {
     val auth = FirebaseAuth.getInstance()
     val focusManager = LocalFocusManager.current
@@ -64,6 +70,7 @@ fun SetPasswordScreen(
 
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showReauthSheet by remember { mutableStateOf(false) }
+    var isSaving by remember { mutableStateOf(false) }
 
     BackHandler(enabled = true, onBack = onBack)
 
@@ -84,57 +91,54 @@ fun SetPasswordScreen(
     val isMatch = newPassword.isNotEmpty() && confirmPassword.isNotEmpty() && newPassword == confirmPassword
     val isMismatchError = confirmPassword.isNotEmpty() && newPassword != confirmPassword
 
-    val canSave = if (hasExistingPassword) {
+    val canSave = !isSaving && if (hasExistingPassword) {
         oldPassword.isNotBlank() && isMinLengthMet && isLetterAndNumberMet && isMatch
     } else {
         isMinLengthMet && isLetterAndNumberMet && isMatch
     }
 
-    val handleSavePassword = {
+    val handleSavePassword: () -> Unit = {
         if (canSave) {
             errorMessage = null
             val user = auth.currentUser
-            if (user != null) {
+            if (user == null) {
+                errorMessage = "You are signed out. Sign in again and retry"
+            } else {
+                isSaving = true
+                val email = user.email ?: userEmail
                 if (hasExistingPassword) {
-                    // Re-authenticate with current password then update
-                    val credential = EmailAuthProvider.getCredential(user.email ?: userEmail, oldPassword)
-                    user.reauthenticate(credential)
+                    // Re-authenticate with the current password, then update
+                    user.reauthenticate(EmailAuthProvider.getCredential(email, oldPassword))
                         .addOnSuccessListener {
                             user.updatePassword(newPassword)
                                 .addOnSuccessListener {
+                                    isSaving = false
                                     onPasswordSavedSuccessfully(false)
                                 }
                                 .addOnFailureListener { e ->
-                                    if (e is FirebaseAuthRecentLoginRequiredException) {
-                                        showReauthSheet = true
-                                    } else {
-                                        errorMessage = e.localizedMessage ?: "Failed to update password"
-                                    }
+                                    isSaving = false
+                                    if (e is FirebaseAuthRecentLoginRequiredException) showReauthSheet = true
+                                    else errorMessage = authErrorText(e, "Failed to update password")
                                 }
                         }
-                        .addOnFailureListener {
-                            errorMessage = "Current password is wrong"
+                        .addOnFailureListener { e ->
+                            isSaving = false
+                            errorMessage = when (e) {
+                                is FirebaseAuthInvalidCredentialsException -> "Current password is wrong"
+                                else -> authErrorText(e, "Could not check your current password")
+                            }
                         }
                 } else {
-                    // Link Email/Password credential to Google account
-                    val credential = EmailAuthProvider.getCredential(user.email ?: userEmail, newPassword)
-                    user.linkWithCredential(credential)
+                    // Add an email + password sign-in to this (Google) account
+                    user.linkWithCredential(EmailAuthProvider.getCredential(email, newPassword))
                         .addOnSuccessListener {
+                            isSaving = false
                             onPasswordSavedSuccessfully(true)
                         }
                         .addOnFailureListener { e ->
-                            if (e is FirebaseAuthRecentLoginRequiredException) {
-                                showReauthSheet = true
-                            } else {
-                                // Try updating directly if already has provider
-                                user.updatePassword(newPassword)
-                                    .addOnSuccessListener {
-                                        onPasswordSavedSuccessfully(true)
-                                    }
-                                    .addOnFailureListener { err ->
-                                        errorMessage = err.localizedMessage ?: "Failed to set password"
-                                    }
-                            }
+                            isSaving = false
+                            if (e is FirebaseAuthRecentLoginRequiredException) showReauthSheet = true
+                            else errorMessage = authErrorText(e, "Failed to set password")
                         }
                 }
             }
@@ -180,8 +184,8 @@ fun SetPasswordScreen(
                     fontWeight = FontWeight.Bold,
                     color = if (canSave) tealAccent else tabInactiveColor,
                     modifier = Modifier
-                        .clickable(enabled = canSave) { handleSavePassword() }
-                        .padding(horizontal = 8.dp, vertical = 8.dp)
+                        .clickable(enabled = canSave, role = Role.Button) { handleSavePassword() }
+                        .padding(horizontal = 8.dp, vertical = 14.dp)
                 )
             }
         },
@@ -526,7 +530,8 @@ fun SetPasswordScreen(
                 Spacer(modifier = Modifier.height(6.dp))
 
                 Text(
-                    text = "For your security, sign in with Google again to set a password.",
+                    text = if (onGoogleReauthRequest != null) "For your security, sign in with Google again to set a password."
+                    else "For your security, sign out and sign in again, then try once more.",
                     fontSize = 14.sp,
                     color = secondaryTextColor
                 )
@@ -551,14 +556,14 @@ fun SetPasswordScreen(
                     Spacer(modifier = Modifier.width(28.dp))
 
                     Text(
-                        text = "Continue with Google",
+                        text = if (onGoogleReauthRequest != null) "Continue with Google" else "OK",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = tealAccent,
                         modifier = Modifier
                             .clickable {
                                 showReauthSheet = false
-                                onGoogleReauthRequest()
+                                onGoogleReauthRequest?.invoke()
                             }
                             .padding(horizontal = 12.dp, vertical = 8.dp)
                     )
@@ -595,7 +600,7 @@ fun SetPasswordSheet(
     val tealAccent = diBadgeColors.accent
     val errorColor = colors.error
 
-    val isMinLengthMet = newPassword.length >= 6
+    val isMinLengthMet = newPassword.length >= 8 && newPassword.any { it.isLetter() } && newPassword.any { it.isDigit() }
     val isMatch = newPassword.isNotEmpty() && confirmPassword.isNotEmpty() && newPassword == confirmPassword
     val canSave = isMinLengthMet && isMatch && !isSaving
 
@@ -624,7 +629,7 @@ fun SetPasswordSheet(
             Spacer(modifier = Modifier.height(4.dp))
 
             Text(
-                text = "You can use this password to sign in on other devices with your email.",
+                text = "Use at least 8 characters with a letter and a number. You can then sign in on other devices with your email.",
                 fontSize = 13.sp,
                 color = secondaryTextColor
             )
@@ -721,23 +726,25 @@ fun SetPasswordSheet(
                             if (canSave) {
                                 isSaving = true
                                 errorMessage = null
-                                coroutineScope.launch {
-                                    try {
-                                        val user = auth.currentUser
-                                        val emailStr = user?.email.orEmpty().ifBlank { userEmail }
-                                        if (user != null && emailStr.isNotBlank()) {
-                                            val cred = EmailAuthProvider.getCredential(emailStr, newPassword)
-                                            user.linkWithCredential(cred)
+                                val user = auth.currentUser
+                                val emailStr = user?.email.orEmpty().ifBlank { userEmail }
+                                if (user != null && emailStr.isNotBlank()) {
+                                    // Wait for the result before saying the password was set
+                                    user.linkWithCredential(EmailAuthProvider.getCredential(emailStr, newPassword))
+                                        .addOnSuccessListener {
+                                            isSaving = false
                                             onSaveSuccess()
                                             onDismiss()
-                                        } else {
-                                            errorMessage = "Could not link password. Please try again."
-                                            isSaving = false
                                         }
-                                    } catch (e: Exception) {
-                                        errorMessage = e.message ?: "Failed to set password"
-                                        isSaving = false
-                                    }
+                                        .addOnFailureListener { e ->
+                                            isSaving = false
+                                            errorMessage = if (e is FirebaseAuthRecentLoginRequiredException)
+                                                "For your security, sign out and sign in again, then try once more"
+                                            else authErrorText(e, "Failed to set password")
+                                        }
+                                } else {
+                                    errorMessage = "Could not link password. Please try again."
+                                    isSaving = false
                                 }
                             }
                         }
@@ -746,4 +753,11 @@ fun SetPasswordSheet(
             }
         }
     }
+}
+
+private fun authErrorText(e: Exception, fallback: String): String = when (e) {
+    is FirebaseAuthWeakPasswordException -> "That password is too weak"
+    is FirebaseAuthUserCollisionException -> "This account already has an email password. Use Change password instead"
+    is FirebaseNetworkException -> "No connection. Check your internet and try again"
+    else -> e.localizedMessage ?: fallback
 }

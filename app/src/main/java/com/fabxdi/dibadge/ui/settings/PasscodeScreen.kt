@@ -2,7 +2,6 @@ package com.fabxdi.dibadge.ui.settings
 
 import android.content.Context
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,11 +18,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -37,7 +36,9 @@ fun PasscodeScreen(
     var lockAfterOption by remember { mutableStateOf(prefs.getString("lock_after", "Immediately") ?: "Immediately") }
     var useFingerprint by remember { mutableStateOf(prefs.getBoolean("use_fingerprint", false)) }
     var showLockAfterSheet by remember { mutableStateOf(false) }
-    var showPinPadForChange by remember { mutableStateOf(false) }
+
+    // Changing the passcode: 1 = enter the current one, 2 = enter the new one
+    var changeStep by remember { mutableIntStateOf(0) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -51,18 +52,27 @@ fun PasscodeScreen(
     val secondaryTextColor = colors.onSurfaceVariant
     val cardBgColor = colors.surface
 
-    if (showPinPadForChange) {
+    if (changeStep == 1) {
+        PinVerifyScreen(
+            title = "Enter current passcode",
+            subtitle = "Enter your current 6-digit passcode",
+            onVerified = { changeStep = 2 },
+            onCancel = { changeStep = 0 }
+        )
+        return
+    }
+    if (changeStep == 2) {
         PinPadScreen(
             title = "Change passcode",
             subtitle = "Enter new 6-digit passcode",
             onPasscodeEntered = { newPin ->
-                prefs.edit().putString("passcode_hash", newPin).apply()
-                showPinPadForChange = false
+                PasscodeStore.set(context, newPin)
+                changeStep = 0
                 coroutineScope.launch {
                     snackbarHostState.showSnackbar("Passcode changed")
                 }
             },
-            onCancel = { showPinPadForChange = false }
+            onCancel = { changeStep = 0 }
         )
         return
     }
@@ -87,15 +97,13 @@ fun PasscodeScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             SettingsCard {
-                // Change Passcode
                 SettingsRow(
                     title = "Change passcode",
-                    onClick = { showPinPadForChange = true }
+                    onClick = { changeStep = 1 }
                 )
 
                 HorizontalDivider(thickness = 1.dp, color = colors.outline)
 
-                // Lock After
                 SettingsRow(
                     title = "Lock after",
                     valueText = lockAfterOption,
@@ -104,17 +112,21 @@ fun PasscodeScreen(
 
                 HorizontalDivider(thickness = 1.dp, color = colors.outline)
 
-                // Use Fingerprint
                 SettingsRow(
                     title = "Use fingerprint",
                     showChevron = false,
+                    onClick = {
+                        useFingerprint = !useFingerprint
+                        prefs.edit().putBoolean("use_fingerprint", useFingerprint).apply()
+                    },
                     trailingContent = {
                         SettingsSwitch(
                             checked = useFingerprint,
                             onCheckedChange = {
                                 useFingerprint = it
                                 prefs.edit().putBoolean("use_fingerprint", it).apply()
-                            }
+                            },
+                            label = "Use fingerprint"
                         )
                     }
                 )
@@ -168,7 +180,7 @@ fun PasscodeScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp)
-                            .clickable {
+                            .clickable(role = Role.RadioButton) {
                                 lockAfterOption = option
                                 prefs.edit().putString("lock_after", option).apply()
                                 showLockAfterSheet = false
@@ -207,6 +219,89 @@ fun PasscodeScreen(
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// PIN pad pieces shared by "create" and "verify"
+// ---------------------------------------------------------------------------------------------
+
+@Composable
+private fun PinDots(filled: Int) {
+    val tabInactiveColor = DiBadgeTheme.colors.tabInactive
+    val primaryTextColor = MaterialTheme.colorScheme.onBackground
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        for (i in 0 until 6) {
+            val isFilled = i < filled
+            Surface(
+                modifier = Modifier.size(14.dp),
+                shape = CircleShape,
+                color = if (isFilled) primaryTextColor else Color.Transparent,
+                border = if (!isFilled) BorderStroke(1.5.dp, tabInactiveColor) else null
+            ) {}
+        }
+    }
+}
+
+@Composable
+private fun PinKeypad(
+    onDigit: (String) -> Unit,
+    onBackspace: () -> Unit
+) {
+    val primaryTextColor = MaterialTheme.colorScheme.onBackground
+    val padNumbers = listOf(
+        listOf("1", "2", "3"),
+        listOf("4", "5", "6"),
+        listOf("7", "8", "9"),
+        listOf("", "0", "back")
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 40.dp)
+            .padding(bottom = 32.dp)
+    ) {
+        padNumbers.forEach { row ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                row.forEach { key ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clickable(enabled = key.isNotEmpty(), role = Role.Button) {
+                                if (key == "back") onBackspace() else onDigit(key)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (key == "back") {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Backspace,
+                                contentDescription = "Backspace",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        } else if (key.isNotEmpty()) {
+                            Text(
+                                text = key,
+                                fontSize = 26.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = primaryTextColor
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Create or change a passcode: enter it twice. */
 @Composable
 fun PinPadScreen(
     title: String = "Create passcode",
@@ -217,14 +312,12 @@ fun PinPadScreen(
     var step by remember { mutableIntStateOf(1) } // 1 = First Entry, 2 = Confirm
     var firstPin by remember { mutableStateOf("") }
     var currentPin by remember { mutableStateOf("") }
-    var isShaking by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
     val colors = MaterialTheme.colorScheme
     val primaryTextColor = colors.onBackground
     val secondaryTextColor = colors.onSurfaceVariant
-    val tabInactiveColor = DiBadgeTheme.colors.tabInactive
 
     val displayTitle = if (step == 1) title else "Confirm passcode"
     val displaySubtitle = if (step == 1) subtitle else "Enter passcode again to confirm"
@@ -232,12 +325,7 @@ fun PinPadScreen(
     BackHandler(enabled = true, onBack = onCancel)
 
     Scaffold(
-        topBar = {
-            SettingsHeader(
-                title = "Passcode",
-                onBackClick = onCancel
-            )
-        },
+        topBar = { SettingsHeader(title = "Passcode", onBackClick = onCancel) },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         Column(
@@ -248,119 +336,109 @@ fun PinPadScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(modifier = Modifier.height(40.dp))
-
-            Text(
-                text = displayTitle,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Medium,
-                color = primaryTextColor
-            )
-
+            Text(text = displayTitle, fontSize = 20.sp, fontWeight = FontWeight.Medium, color = primaryTextColor)
             Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = displaySubtitle,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Normal,
-                color = secondaryTextColor
-            )
-
+            Text(text = displaySubtitle, fontSize = 14.sp, color = secondaryTextColor)
             Spacer(modifier = Modifier.height(40.dp))
 
-            // 6 Passcode Dots
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(18.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                for (i in 0 until 6) {
-                    val isFilled = i < currentPin.length
-                    Surface(
-                        modifier = Modifier.size(14.dp),
-                        shape = CircleShape,
-                        color = if (isFilled) primaryTextColor else Color.Transparent,
-                        border = if (!isFilled) BorderStroke(1.5.dp, tabInactiveColor) else null
-                    ) {}
-                }
-            }
+            PinDots(filled = currentPin.length)
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // 3x4 Number Pad
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 40.dp)
-                    .padding(bottom = 32.dp)
-            ) {
-                val padNumbers = listOf(
-                    listOf("1", "2", "3"),
-                    listOf("4", "5", "6"),
-                    listOf("7", "8", "9"),
-                    listOf("", "0", "back")
-                )
+            PinKeypad(
+                onBackspace = { if (currentPin.isNotEmpty()) currentPin = currentPin.dropLast(1) },
+                onDigit = { key ->
+                    if (currentPin.length < 6) {
+                        currentPin += key
+                        if (currentPin.length == 6) {
+                            if (step == 1) {
+                                firstPin = currentPin
+                                currentPin = ""
+                                step = 2
+                            } else if (currentPin == firstPin) {
+                                onPasscodeEntered(currentPin)
+                            } else {
+                                coroutineScope.launch { snackbarHostState.showSnackbar("Passcodes do not match") }
+                                currentPin = ""
+                                step = 1
+                                firstPin = ""
+                            }
+                        }
+                    }
+                }
+            )
+        }
+    }
+}
 
-                padNumbers.forEach { row ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(64.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        row.forEach { key ->
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .clickable(enabled = key.isNotEmpty()) {
-                                        if (key == "back") {
-                                            if (currentPin.isNotEmpty()) {
-                                                currentPin = currentPin.dropLast(1)
-                                            }
-                                        } else if (key.isNotEmpty() && currentPin.length < 6) {
-                                            currentPin += key
-                                            if (currentPin.length == 6) {
-                                                if (step == 1) {
-                                                    firstPin = currentPin
-                                                    currentPin = ""
-                                                    step = 2
-                                                } else {
-                                                    if (currentPin == firstPin) {
-                                                        onPasscodeEntered(currentPin)
-                                                    } else {
-                                                        coroutineScope.launch {
-                                                            snackbarHostState.showSnackbar("Passcodes do not match")
-                                                        }
-                                                        currentPin = ""
-                                                        step = 1
-                                                        firstPin = ""
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (key == "back") {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Backspace,
-                                        contentDescription = "Backspace",
-                                        tint = primaryTextColor,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                } else if (key.isNotEmpty()) {
-                                    Text(
-                                        text = key,
-                                        fontSize = 26.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        color = primaryTextColor
+/** Asks for the current passcode. Wrong guesses are counted and locked out for a while. */
+@Composable
+fun PinVerifyScreen(
+    title: String = "Enter passcode",
+    subtitle: String = "Enter your 6-digit passcode",
+    onVerified: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val context = LocalContext.current
+    var currentPin by remember { mutableStateOf("") }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+
+    val colors = MaterialTheme.colorScheme
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+
+    BackHandler(enabled = true, onBack = onCancel)
+
+    Scaffold(
+        topBar = { SettingsHeader(title = "Passcode", onBackClick = onCancel) },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .background(colors.background),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(modifier = Modifier.height(40.dp))
+            Text(text = title, fontSize = 20.sp, fontWeight = FontWeight.Medium, color = primaryTextColor)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(text = subtitle, fontSize = 14.sp, color = secondaryTextColor)
+            Spacer(modifier = Modifier.height(40.dp))
+
+            PinDots(filled = currentPin.length)
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            PinKeypad(
+                onBackspace = { if (currentPin.isNotEmpty()) currentPin = currentPin.dropLast(1) },
+                onDigit = { key ->
+                    if (currentPin.length < 6) {
+                        currentPin += key
+                        if (currentPin.length == 6) {
+                            val entered = currentPin
+                            currentPin = ""
+                            val waitMs = PasscodeStore.lockRemainingMs(context)
+                            if (waitMs > 0L) {
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar("Too many attempts. Try again in ${(waitMs + 999) / 1000} s")
+                                }
+                            } else if (PasscodeStore.verify(context, entered)) {
+                                onVerified()
+                            } else {
+                                val after = PasscodeStore.lockRemainingMs(context)
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        if (after > 0L) "Too many attempts. Try again in ${(after + 999) / 1000} s"
+                                        else "Wrong passcode"
                                     )
                                 }
                             }
                         }
                     }
                 }
-            }
+            )
         }
     }
 }

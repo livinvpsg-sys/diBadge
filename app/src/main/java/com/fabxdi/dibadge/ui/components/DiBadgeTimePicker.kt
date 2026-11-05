@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.ui.theme.disableBottomSheetDrag
 import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -48,6 +49,19 @@ fun DiBadgeTimePicker(
     val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
     val accentColor = DiBadgeTheme.colors.accent
     val dragHandleColor = DiBadgeTheme.colors.tabInactive
+
+    val chosenNow = LocalTime.of(selectedHour24.coerceIn(0, 23), selectedMinute.coerceIn(0, 59))
+    val isTimeValid = (minTime == null || !chosenNow.isBefore(minTime)) &&
+        (maxTime == null || !chosenNow.isAfter(maxTime))
+    val rangeHint = remember(minTime, maxTime, is24HourFormat) {
+        val fmt = DateTimeFormatter.ofPattern(if (is24HourFormat) "HH:mm" else "h:mm a", Locale.getDefault())
+        when {
+            minTime != null && maxTime != null -> "Choose a time from ${minTime.format(fmt)} to ${maxTime.format(fmt)}"
+            minTime != null -> "Choose a time from ${minTime.format(fmt)}"
+            maxTime != null -> "Choose a time up to ${maxTime.format(fmt)}"
+            else -> null
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -185,6 +199,16 @@ fun DiBadgeTimePicker(
                     }
                 }
 
+                if (rangeHint != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = rangeHint,
+                        fontSize = 13.sp,
+                        color = if (isTimeValid) secondaryTextColor else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Row(
@@ -203,13 +227,14 @@ fun DiBadgeTimePicker(
                             onTimeSelected(chosenTime)
                             onDismiss()
                         },
-                        modifier = Modifier.heightIn(min = 48.dp)
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        enabled = isTimeValid
                     ) {
                         Text(
                             text = "OK",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
-                            color = accentColor
+                            color = if (isTimeValid) accentColor else accentColor.copy(alpha = 0.45f)
                         )
                     }
                 }
@@ -256,10 +281,35 @@ fun WheelPicker(
         }
     }
 
+    var programmaticScroll by remember { mutableStateOf(false) }
+
     LaunchedEffect(centerIndex) {
+        if (programmaticScroll) return@LaunchedEffect
         val actualIndex = (centerIndex % itemCount + itemCount) % itemCount
         if (actualIndex in items.indices && actualIndex != selectedIndex) {
             onSelectedIndexChanged(actualIndex)
+        }
+    }
+
+    // When the value is changed from outside (for example by tapping a number), move the wheel to it
+    LaunchedEffect(selectedIndex) {
+        if (listState.isScrollInProgress) return@LaunchedEffect
+        val sel = selectedIndex.coerceIn(0, itemCount - 1)
+        val current = centerIndex
+        val currentActual = (current % itemCount + itemCount) % itemCount
+        if (currentActual == sel) return@LaunchedEffect
+        val target = if (isInfinite) {
+            var delta = ((sel - currentActual) % itemCount + itemCount) % itemCount
+            if (delta > itemCount / 2) delta -= itemCount
+            current + delta
+        } else {
+            sel
+        }
+        programmaticScroll = true
+        try {
+            listState.animateScrollToItem(target.coerceIn(0, totalCount - 1))
+        } finally {
+            programmaticScroll = false
         }
     }
 

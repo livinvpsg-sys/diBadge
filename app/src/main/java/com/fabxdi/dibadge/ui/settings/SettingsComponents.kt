@@ -6,6 +6,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -20,6 +21,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -59,7 +62,8 @@ fun SettingsHeader(
             text = title,
             fontSize = 24.sp,
             fontWeight = FontWeight.Normal,
-            color = primaryTextColor
+            color = primaryTextColor,
+            modifier = Modifier.semantics { heading() }
         )
     }
 }
@@ -118,7 +122,7 @@ fun SettingsRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 60.dp)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -184,10 +188,12 @@ fun SettingsRow(
     }
 }
 
+/** Switch with a 48 dp touch area. [label] is what a screen reader announces ("Sounds, switch, on"). */
 @Composable
 fun SettingsSwitch(
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    label: String = ""
 ) {
     val diBadgeColors = DiBadgeTheme.colors
     val colors = MaterialTheme.colorScheme
@@ -202,26 +208,31 @@ fun SettingsSwitch(
     val thumbColor = if (checked) colors.background else diBadgeColors.tabInactive
     val borderColor = if (checked) diBadgeColors.accent else diBadgeColors.tabInactive
 
-    Surface(
+    Box(
         modifier = Modifier
-            .size(width = 44.dp, height = 26.dp)
-            .clickable { onCheckedChange(!checked) }
-            .semantics { contentDescription = if (checked) "On" else "Off" },
-        shape = CircleShape,
-        color = trackColor,
-        border = BorderStroke(1.5.dp, borderColor)
+            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
+            .semantics { if (label.isNotEmpty()) contentDescription = label },
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.CenterStart
+        Surface(
+            modifier = Modifier.size(width = 44.dp, height = 26.dp),
+            shape = CircleShape,
+            color = trackColor,
+            border = BorderStroke(1.5.dp, borderColor)
         ) {
-            Surface(
-                modifier = Modifier
-                    .offset(x = thumbOffset)
-                    .size(if (checked) 20.dp else 16.dp),
-                shape = CircleShape,
-                color = thumbColor
-            ) {}
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .offset(x = thumbOffset)
+                        .size(if (checked) 20.dp else 16.dp),
+                    shape = CircleShape,
+                    color = thumbColor
+                ) {}
+            }
         }
     }
 }
@@ -280,11 +291,7 @@ fun ThemePickerSheet(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            val modes = listOf(
-                AppThemeMode.SYSTEM to "System default",
-                AppThemeMode.LIGHT to "Light",
-                AppThemeMode.DARK to "Dark"
-            )
+            val modes = AppThemeMode.entries.map { it to it.title }
 
             modes.forEach { (mode, label) ->
                 val isSelected = currentMode == mode
@@ -292,7 +299,7 @@ fun ThemePickerSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp)
-                        .clickable {
+                        .clickable(role = Role.RadioButton) {
                             onModeSelected(mode)
                             onDismiss()
                         },

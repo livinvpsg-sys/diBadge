@@ -53,17 +53,28 @@ object MediaCompressor {
         }
     }
 
+    private fun readImageSize(context: Context, uri: Uri): Pair<Int, Int>? {
+        return try {
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+            if (options.outWidth > 0 && options.outHeight > 0) options.outWidth to options.outHeight else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     suspend fun compressPhoto(context: Context, uri: Uri): PhotoCompressionResult = withContext(Dispatchers.IO) {
         val fileName = FilePickerUtils.getFileName(context, uri).lowercase()
         val isGif = fileName.endsWith(".gif") || context.contentResolver.getType(uri) == "image/gif"
 
         if (isGif) {
             val size = FilePickerUtils.getFileSizeBytes(context, uri)
+            val (gifW, gifH) = readImageSize(context, uri) ?: (480 to 480)
             return@withContext PhotoCompressionResult(
                 fullUri = uri,
                 thumbUri = uri,
-                width = 480,
-                height = 480,
+                width = gifW,
+                height = gifH,
                 fileSize = size
             )
         }
@@ -160,6 +171,12 @@ object MediaCompressor {
                 thumbBitmap.compress(Bitmap.CompressFormat.JPEG, 70, out)
             }
 
+            // Free the large bitmaps now instead of waiting for the garbage collector
+            thumbBitmap.recycle()
+            finalPhotoBitmap.recycle()
+            if (scaledBitmap !== decodedBitmap) scaledBitmap.recycle()
+            decodedBitmap.recycle()
+
             val fullUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", fullFile)
             val thumbUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", thumbFile)
 
@@ -170,15 +187,17 @@ object MediaCompressor {
                 height = targetH,
                 fileSize = fullFile.length()
             )
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // Includes OutOfMemoryError on very large photos
             e.printStackTrace()
             // Fallback to original
             val size = FilePickerUtils.getFileSizeBytes(context, uri)
+            val (origW, origH) = readImageSize(context, uri) ?: (1600 to 1200)
             PhotoCompressionResult(
                 fullUri = uri,
                 thumbUri = uri,
-                width = 1600,
-                height = 1200,
+                width = origW,
+                height = origH,
                 fileSize = size
             )
         }

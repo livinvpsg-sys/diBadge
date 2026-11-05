@@ -9,9 +9,6 @@ interface LeaveOvertimeDao {
     @Query("SELECT * FROM leave_logs")
     fun getAllLeaves(): Flow<List<LeaveEntity>>
 
-    @Query("DELETE FROM leave_logs WHERE status = 'Pending' AND ( (endDate IS NULL AND startDate < :today) OR (endDate IS NOT NULL AND endDate < :today) )")
-    suspend fun deletePastPendingLeaves(today: LocalDate)
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLeave(leave: LeaveEntity): Long
 

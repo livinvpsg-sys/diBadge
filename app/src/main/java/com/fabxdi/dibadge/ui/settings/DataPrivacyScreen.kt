@@ -22,7 +22,13 @@ import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.fabxdi.dibadge.util.SubscriptionManager
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 @Composable
@@ -36,8 +42,45 @@ fun DataPrivacyScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
-    var cacheSizeMb by remember { mutableIntStateOf(24) }
+    var cacheBytes by remember { mutableLongStateOf(0L) }
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
+    var isDeleting by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        cacheBytes = withContext(Dispatchers.IO) {
+            context.cacheDir.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
+        }
+    }
+
+    fun deleteAccount() {
+        val user = FirebaseAuth.getInstance().currentUser ?: return
+        isDeleting = true
+        // The request lets a Cloud Function remove this user's Firestore and Storage data
+        val ref = FirebaseFirestore.getInstance().collection("accountDeletionRequests").document(user.uid)
+        ref.set(mapOf("requestedAt" to FieldValue.serverTimestamp()))
+            .addOnSuccessListener {
+                user.delete()
+                    .addOnSuccessListener {
+                        isDeleting = false
+                        onDeleteAccountConfirmed()
+                    }
+                    .addOnFailureListener { e ->
+                        ref.delete()
+                        isDeleting = false
+                        coroutineScope.launch {
+                            snackbarHostState.showSnackbar(
+                                if (e is FirebaseAuthRecentLoginRequiredException)
+                                    "For your security, sign out and sign in again, then delete your account"
+                                else "Could not delete your account. Try again"
+                            )
+                        }
+                    }
+            }
+            .addOnFailureListener {
+                isDeleting = false
+                coroutineScope.launch { snackbarHostState.showSnackbar("Could not delete your account. Check your connection") }
+            }
+    }
 
     LaunchedEffect(Unit) {
         SubscriptionManager.listenToSubscription(context)
@@ -75,11 +118,13 @@ fun DataPrivacyScreen(
 
             // Card 0: Media on this phone
             SettingsCard {
-                val localMediaSize = remember {
-                    val mediaFolder = File(context.filesDir, "media")
-                    if (mediaFolder.exists()) {
-                        mediaFolder.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
-                    } else 0L
+                val localMediaSize by produceState(0L, context) {
+                    value = withContext(Dispatchers.IO) {
+                        val mediaFolder = File(context.filesDir, "media")
+                        if (mediaFolder.exists()) {
+                            mediaFolder.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
+                        } else 0L
+                    }
                 }
 
                 SettingsRow(
@@ -94,7 +139,7 @@ fun DataPrivacyScreen(
             // Storage Card for Free Users (1 GB limit thin progress bar)
             if (!subscription.isPro) {
                 val usedStr = FilePickerUtils.formatFileSize(subscription.storageUsedBytes)
-                val progress = (subscription.storageUsedBytes.toFloat() / subscription.storageLimitBytes.toFloat()).coerceIn(0f, 1f)
+                val progress = (subscription.storageUsedBytes.toFloat() / subscription.storageLimitBytes.coerceAtLeast(1L).toFloat()).coerceIn(0f, 1f)
 
                 SettingsCard {
                     Column(
@@ -143,9 +188,19 @@ fun DataPrivacyScreen(
                     subtitle = "Get a copy of your profile and activity",
                     showChevron = false,
                     onClick = {
-                        coroutineScope.launch {
-                            val targetEmail = userEmail.ifBlank { "your email" }
-                            snackbarHostState.showSnackbar("We will email your data to $targetEmail when it is ready")
+                        val uid = FirebaseAuth.getInstance().currentUser?.uid
+                        val targetEmail = userEmail.ifBlank { "your email" }
+                        if (uid == null) {
+                            coroutineScope.launch { snackbarHostState.showSnackbar("Sign in to request your data") }
+                        } else {
+                            FirebaseFirestore.getInstance().collection("dataExportRequests").document(uid)
+                                .set(mapOf("requestedAt" to FieldValue.serverTimestamp()))
+                                .addOnSuccessListener {
+                                    coroutineScope.launch { snackbarHostState.showSnackbar("Request sent. We will email your data to $targetEmail") }
+                                }
+                                .addOnFailureListener {
+                                    coroutineScope.launch { snackbarHostState.showSnackbar("Could not send the request. Try again") }
+                                }
                         }
                     }
                 )
@@ -154,11 +209,15 @@ fun DataPrivacyScreen(
 
                 SettingsRow(
                     title = "Clear cache",
-                    valueText = "$cacheSizeMb MB",
+                    valueText = FilePickerUtils.formatFileSize(cacheBytes),
                     showChevron = false,
                     onClick = {
-                        cacheSizeMb = 0
                         coroutineScope.launch {
+                            val left = withContext(Dispatchers.IO) {
+                                context.cacheDir.listFiles()?.forEach { it.deleteRecursively() }
+                                context.cacheDir.walkTopDown().filter { it.isFile }.map { it.length() }.sum()
+                            }
+                            cacheBytes = left
                             snackbarHostState.showSnackbar("Cache cleared")
                         }
                     }
@@ -216,12 +275,12 @@ fun DataPrivacyScreen(
             SettingsCard {
                 SettingsRow(
                     title = "Delete account",
-                    subtitle = "Permanently delete your account and data",
+                    subtitle = if (isDeleting) "Deleting…" else "Permanently delete your account and data",
                     iconVector = Icons.Outlined.Delete,
                     titleColor = errorColor,
                     iconTint = errorColor,
                     showChevron = false,
-                    onClick = { showDeleteAccountDialog = true }
+                    onClick = { if (!isDeleting) showDeleteAccountDialog = true }
                 )
             }
         }
@@ -249,7 +308,7 @@ fun DataPrivacyScreen(
                 TextButton(
                     onClick = {
                         showDeleteAccountDialog = false
-                        onDeleteAccountConfirmed()
+                        deleteAccount()
                     }
                 ) {
                     Text(

@@ -48,6 +48,12 @@ class InboxViewModel(application: Application) : AndroidViewModel(application) {
         val user = firebaseAuth.currentUser
         if (user != null) {
             if (currentSyncedUserId != user.uid) {
+                if (currentSyncedUserId != null) {
+                    // a different account signed in without a sign-out: drop the previous account's inbox
+                    viewModelScope.launch(Dispatchers.IO) {
+                        inboxDao.deleteAllInboxItems()
+                    }
+                }
                 setupFirestoreSync(user.uid)
             }
         } else {
@@ -177,7 +183,8 @@ class InboxViewModel(application: Application) : AndroidViewModel(application) {
                 name = userName,
                 badgeNumber = userBadgeNumber,
                 signatureUrl = userSignatureUrl,
-                actionText = actionLabel,
+                // a reject or decline keeps the reason the person typed
+                actionText = if (reason.isNotBlank()) "$actionLabel: ${reason.trim()}" else actionLabel,
                 timestampText = fullTimestampStr
             )
 
@@ -217,7 +224,7 @@ class InboxViewModel(application: Application) : AndroidViewModel(application) {
                 else -> "message"
             }
 
-            val refLabel = item.permitNumber ?: if (kindLabel == "toolbox") "TBM-0412" else "Letter"
+            val refLabel = item.permitNumber ?: if (kindLabel == "toolbox") "Toolbox talk" else "Letter"
 
             val activityLog = ActivityLogEntity(
                 id = UUID.randomUUID().toString(),

@@ -1,5 +1,7 @@
 package com.fabxdi.dibadge.ui.settings
 
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -7,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -23,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -30,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.fabxdi.dibadge.util.SubscriptionManager
+import kotlinx.coroutines.delay
 
 @Composable
 fun SubscriptionScreen(
@@ -47,9 +52,17 @@ fun SubscriptionScreen(
     var selectedPlanType by remember { mutableStateOf("Yearly") } // "Yearly" or "Monthly"
     var isPurchasing by remember { mutableStateOf(false) }
 
+    // Never leave the button spinning forever if the purchase flow does not call back
+    LaunchedEffect(isPurchasing) {
+        if (isPurchasing) {
+            delay(30_000)
+            isPurchasing = false
+        }
+    }
+
     val colors = MaterialTheme.colorScheme
     val diBadgeColors = DiBadgeTheme.colors
-    val isDark = colors.onBackground.red > 0.5f
+    val isDark = diBadgeColors.isDark
 
     val pageBgColor = colors.background
     val cardBgColor = colors.surface
@@ -89,7 +102,7 @@ fun SubscriptionScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(52.dp)
-                                .clickable(enabled = !isPurchasing) {
+                                .clickable(enabled = !isPurchasing, role = Role.Button) {
                                     isPurchasing = true
                                     SubscriptionManager.subscribeUserToPro(context, selectedPlanType) {
                                         isPurchasing = false
@@ -132,9 +145,12 @@ fun SubscriptionScreen(
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = tealAccent,
-                            modifier = Modifier.clickable {
-                                SubscriptionManager.restorePurchases(context)
-                            }
+                            modifier = Modifier
+                                .clickable(role = Role.Button) {
+                                    Toast.makeText(context, "Checking your purchases…", Toast.LENGTH_SHORT).show()
+                                    SubscriptionManager.restorePurchases(context)
+                                }
+                                .padding(vertical = 12.dp, horizontal = 16.dp)
                         )
                     }
                 }
@@ -240,6 +256,33 @@ fun SubscriptionScreen(
                             color = secondaryTextColor
                         )
                     }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Google Play requires an easy way to manage or cancel a subscription
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(role = Role.Button) {
+                            try {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/account/subscriptions"))
+                                )
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Open Google Play to manage your subscription", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                    shape = RoundedCornerShape(18.dp),
+                    color = cardBgColor
+                ) {
+                    Text(
+                        text = "Manage subscription",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = tealAccent,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
+                    )
                 }
             } else {
                 // ==================== FREE USER VIEW (Frame 1) ====================
@@ -429,7 +472,7 @@ private fun PlanCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() },
+            .selectable(selected = isSelected, role = Role.RadioButton, onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         color = cardBgColor,
         border = BorderStroke(borderWidth, borderColor)

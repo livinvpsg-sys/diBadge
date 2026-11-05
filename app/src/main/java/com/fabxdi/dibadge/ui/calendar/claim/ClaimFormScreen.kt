@@ -24,6 +24,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.data.ClaimEntity
+import com.fabxdi.dibadge.ui.calendar.rememberOrganizationName
 import com.fabxdi.dibadge.ui.components.DiBadgeDatePicker
 import com.fabxdi.dibadge.ui.calendar.AttachmentFile
 import com.fabxdi.dibadge.ui.calendar.AttachmentsSection
@@ -45,7 +46,7 @@ fun ClaimFormScreen(
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var selectedOrg by remember { mutableStateOf("diBadge Inc.") }
+    val selectedOrg = rememberOrganizationName()
     var selectedDate by remember { mutableStateOf(claimToEdit?.date ?: initialDate) }
     var amountInput by remember { mutableStateOf(claimToEdit?.let { String.format(Locale.US, "%.2f", it.amount) } ?: "") }
     var descriptionInput by remember { mutableStateOf(claimToEdit?.description ?: "") }
@@ -153,7 +154,8 @@ fun ClaimFormScreen(
         ) {
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Card 1: Organisation
+            // Card 1: Organisation (only when the profile has one)
+            if (selectedOrg.isNotBlank()) {
             SettingsCard {
                 Row(
                     modifier = Modifier
@@ -169,6 +171,7 @@ fun ClaimFormScreen(
                         Text(selectedOrg, fontSize = 16.sp, color = primaryTextColor)
                     }
                 }
+            }
             }
 
             // Section Label: Details

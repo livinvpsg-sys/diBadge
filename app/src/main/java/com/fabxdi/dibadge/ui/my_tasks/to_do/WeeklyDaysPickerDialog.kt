@@ -75,7 +75,7 @@ fun WeeklyDaysPickerDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(38.dp)
+                            .heightIn(min = 48.dp)
                             .clickable {
                                 if (isSelected) {
                                     if (selectedDays.size > 1) {

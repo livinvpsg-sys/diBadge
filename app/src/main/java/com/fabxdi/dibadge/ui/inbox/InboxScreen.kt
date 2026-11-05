@@ -134,12 +134,34 @@ fun InboxScreen(
         }
     }
 
-    fun handleAcceptRequest(item: InboxEntity) {
+    // The signer's real name and badge number come from the profile. Nothing is made up.
+    val responderName = "${profileData.firstName} ${profileData.lastName}".trim()
+
+    /** True when the profile has everything a signed response needs; otherwise tells the person why not. */
+    fun canRespond(): Boolean {
         if (profileData.signatureUrl.isBlank()) {
             showNoSignatureDialog = true
-            return
+            return false
         }
-        viewModel.updateActionStatus(item.id, "signed")
+        if (responderName.isBlank() || profileData.badgeNumber.isBlank()) {
+            coroutineScope.launch {
+                snackbarHostState.showSnackbar("Your profile is still loading. Try again in a moment.")
+            }
+            return false
+        }
+        return true
+    }
+
+    fun handleAcceptRequest(item: InboxEntity) {
+        if (!canRespond()) return
+        // Same path as the Sign button on the detail screen, so the signature stamp is added
+        viewModel.performAction(
+            item = item,
+            actionType = "signed",
+            userName = responderName,
+            userBadgeNumber = profileData.badgeNumber,
+            userSignatureUrl = profileData.signatureUrl
+        )
         coroutineScope.launch {
             snackbarHostState.showSnackbar("Signed")
         }
@@ -515,7 +537,7 @@ fun InboxScreen(
                                         handleAcceptRequest(item)
                                     },
                                     onReject = {
-                                        itemForRejectDialog = item
+                                        if (canRespond()) itemForRejectDialog = item
                                     }
                                 )
                             }
@@ -637,6 +659,10 @@ fun InboxScreen(
         }
     }
 
+    if (showNoSignatureDialog) {
+        NoSignatureDialog(onDismiss = { showNoSignatureDialog = false })
+    }
+
     if (itemForRejectDialog != null) {
         val rejectItem = itemForRejectDialog!!
         val requester = rejectItem.departmentOrRequester.ifBlank { rejectItem.senderName }
@@ -644,7 +670,14 @@ fun InboxScreen(
             requesterName = requester,
             onConfirmReject = { reason ->
                 itemForRejectDialog = null
-                viewModel.updateActionStatus(rejectItem.id, "rejected")
+                viewModel.performAction(
+                    item = rejectItem,
+                    actionType = "rejected",
+                    userName = responderName,
+                    userBadgeNumber = profileData.badgeNumber,
+                    userSignatureUrl = profileData.signatureUrl,
+                    reason = reason
+                )
                 coroutineScope.launch {
                     snackbarHostState.showSnackbar("Request rejected")
                 }
@@ -652,6 +685,16 @@ fun InboxScreen(
             onDismiss = { itemForRejectDialog = null }
         )
     }
+}
+
+@Composable
+private fun NoSignatureDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add your signature first", fontWeight = FontWeight.SemiBold) },
+        text = { Text("Add your signature in your profile to respond to requests.") },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } }
+    )
 }
 
 @Composable
@@ -791,7 +834,7 @@ fun InboxRowItem(
         }
     }
 
-    val isDark = primaryTextColor.red > 0.5f
+    val isDark = DiBadgeTheme.colors.isDark
 
     Surface(
         modifier = Modifier

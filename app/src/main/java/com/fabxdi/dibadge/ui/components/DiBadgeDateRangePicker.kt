@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -42,6 +43,7 @@ fun DiBadgeDateRangePicker(
     initialEndDate: LocalDate? = null,
     minDate: LocalDate? = null,
     maxDate: LocalDate? = null,
+    disabledDates: Set<LocalDate> = emptySet(),
     title: String = "Select dates",
     onRangeSelected: (LocalDate, LocalDate) -> Unit,
     onDismiss: () -> Unit
@@ -349,7 +351,7 @@ fun DiBadgeDateRangePicker(
 
                                                     val isBeforeMin = minDate != null && date.isBefore(minDate)
                                                     val isAfterMax = maxDate != null && date.isAfter(maxDate)
-                                                    val isDisabled = isBeforeMin || isAfterMax
+                                                    val isDisabled = isBeforeMin || isAfterMax || disabledDates.contains(date)
 
                                                     // In-Range Band Background
                                                     if (isRangeActive) {
@@ -416,13 +418,15 @@ fun DiBadgeDateRangePicker(
                                                             .clickable(
                                                                 interactionSource = remember { MutableInteractionSource() },
                                                                 indication = null,
-                                                                enabled = !isDisabled
+                                                                enabled = !isDisabled,
+                                                                role = Role.Button
                                                             ) {
                                                                 if (startDate == null || (startDate != null && endDate != null)) {
                                                                     startDate = date
                                                                     endDate = null
                                                                 } else {
-                                                                    if (date.isBefore(startDate)) {
+                                                                    // Picking an end date past a blocked day starts a new range instead
+                                                                    if (date.isBefore(startDate) || disabledDates.any { it.isAfter(startDate) && it.isBefore(date) }) {
                                                                         startDate = date
                                                                         endDate = null
                                                                     } else {

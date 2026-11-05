@@ -29,6 +29,12 @@ class ActivityLogViewModel(application: Application) : AndroidViewModel(applicat
         val user = firebaseAuth.currentUser
         if (user != null) {
             if (currentSyncedUserId != user.uid) {
+                val switched = currentSyncedUserId != null
+                if (switched) {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        activityLogDao.deleteAllActivityLogs()
+                    }
+                }
                 setupFirestoreSync(user.uid)
             }
         } else {
@@ -62,23 +68,12 @@ class ActivityLogViewModel(application: Application) : AndroidViewModel(applicat
                     .get()
                     .await()
 
-                if (snapshot.documents.isEmpty()) {
-                    val sampleLogs = createSampleActivityLogs()
-                    activityLogDao.insertAllActivityLogs(sampleLogs)
-                    for (log in sampleLogs) {
-                        firestore.collection("users")
-                            .document(userId)
-                            .collection("activity_logs")
-                            .document(log.id)
-                            .set(log.toFirestoreMap(), SetOptions.merge())
-                    }
-                } else {
-                    for (doc in snapshot.documents) {
-                        val mapData = doc.data ?: continue
-                        val item = mapData.toActivityLogEntity(doc.id)
-                        if (item != null) {
-                            activityLogDao.insertActivityLog(item)
-                        }
+                // Only mirror this account's real activity. Nothing is created here, so a new account starts empty.
+                for (doc in snapshot.documents) {
+                    val mapData = doc.data ?: continue
+                    val item = mapData.toActivityLogEntity(doc.id)
+                    if (item != null) {
+                        activityLogDao.insertActivityLog(item)
                     }
                 }
             } catch (e: Exception) {
@@ -141,45 +136,6 @@ class ActivityLogViewModel(application: Application) : AndroidViewModel(applicat
                 } catch (e: Exception) {}
             }
         }
-    }
-
-    private fun createSampleActivityLogs(): List<ActivityLogEntity> {
-        val now = System.currentTimeMillis()
-        val hourAgo = now - 3600_000L * 2
-        val yesterday = now - 3600_000L * 24
-
-        return listOf(
-            ActivityLogEntity(
-                id = "act_1",
-                result = "Approved",
-                kind = "permit",
-                title = "Hot work permit",
-                source = "Tuas Roof Works",
-                reference = "HW-149",
-                relatedId = "inbox_1",
-                timestamp = now
-            ),
-            ActivityLogEntity(
-                id = "act_2",
-                result = "Confirmed",
-                kind = "message",
-                title = "Salary Revision Letter",
-                source = "diBadge Organisation",
-                reference = "Letter",
-                relatedId = "inbox_2",
-                timestamp = hourAgo
-            ),
-            ActivityLogEntity(
-                id = "act_3",
-                result = "Signed",
-                kind = "toolbox",
-                title = "Toolbox meeting",
-                source = "Safety Committee",
-                reference = "TBM-0412",
-                relatedId = "inbox_4",
-                timestamp = yesterday
-            )
-        )
     }
 }
 

@@ -91,7 +91,9 @@ fun DocumentTypeTile(
         ) {
             Text(
                 text = theme.mark,
-                fontSize = theme.fontSize,
+                fontSize = theme.fontSize * (widthDp / 28f),
+                maxLines = 1,
+                softWrap = false,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )

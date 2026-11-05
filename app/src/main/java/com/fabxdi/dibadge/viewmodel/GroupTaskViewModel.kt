@@ -10,6 +10,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.time.LocalDate
@@ -26,6 +27,10 @@ class GroupTaskViewModel(application: Application) : AndroidViewModel(applicatio
         }
         return groupTaskDao.getTasksForGroup(groupId)
     }
+
+    /** Tasks (from any group already synced to this phone) assigned to the signed-in user. */
+    fun getTasksAssignedToMe(uid: String, name: String): Flow<List<GroupTaskEntity>> =
+        if (uid.isBlank()) flowOf(emptyList()) else groupTaskDao.getTasksAssignedToUser(uid, name)
 
     fun createScheduleTask(
         groupId: String,
@@ -184,30 +189,15 @@ class GroupTaskViewModel(application: Application) : AndroidViewModel(applicatio
                 .get()
                 .await()
 
-            if (snapshot.documents.isEmpty()) {
-                val sampleTasks = createSampleGroupTasks(groupId)
-                groupTaskDao.insertAllGroupTasks(sampleTasks)
-                for (t in sampleTasks) {
-                    firestore.collection("groups")
-                        .document(groupId)
-                        .collection("tasks")
-                        .document(t.id)
-                        .set(t.toFirestoreMap(), SetOptions.merge())
-                }
-            } else {
-                for (doc in snapshot.documents) {
-                    val mapData = doc.data ?: continue
-                    val task = mapData.toGroupTaskEntity(doc.id)
-                    if (task != null) {
-                        groupTaskDao.insertGroupTask(task)
-                    }
+            // Only mirror real tasks. Nothing is ever created here, so a new or empty group stays empty.
+            for (doc in snapshot.documents) {
+                val mapData = doc.data ?: continue
+                val task = mapData.toGroupTaskEntity(doc.id)
+                if (task != null) {
+                    groupTaskDao.insertGroupTask(task)
                 }
             }
         } catch (e: Exception) {}
-    }
-
-    private fun createSampleGroupTasks(groupId: String): List<GroupTaskEntity> {
-        return emptyList()
     }
 }
 

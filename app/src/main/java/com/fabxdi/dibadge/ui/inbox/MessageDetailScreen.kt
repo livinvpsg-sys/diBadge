@@ -1,5 +1,6 @@
 package com.fabxdi.dibadge.ui.inbox
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.Canvas
@@ -7,7 +8,11 @@ import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
+import android.text.StaticLayout
+import android.text.TextPaint
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -35,6 +40,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -88,7 +94,7 @@ fun MessageDetailScreen(
     val primaryTextColor = colors.onBackground
     val secondaryTextColor = colors.onSurfaceVariant
     val tealAccent = diBadgeColors.accent
-    val isDark = primaryTextColor.red > 0.5f
+    val isDark = diBadgeColors.isDark
 
     val isPending = item.actionStatus == "pending" && item.requiredAction != "none"
     val isComplete = !isPending && (item.signers.isEmpty() || item.signers.all { it.hasAnswered })
@@ -101,11 +107,13 @@ fun MessageDetailScreen(
     val isOrgMessage = item.type.startsWith("organisation")
     val avatarBgColor = if (isOrgMessage) cardBgColor else remember(item.senderName) { UserColorUtils.getColorForName(item.senderName) }
 
+    // Real values from the profile only. No made-up name or badge number is ever stamped.
     val userFullName = remember(profileData.firstName, profileData.lastName) {
-        "${profileData.firstName} ${profileData.lastName}".trim().ifBlank { "User" }
+        "${profileData.firstName} ${profileData.lastName}".trim()
     }
-    val userBadgeNumber = profileData.badgeNumber.ifBlank { "K7M 2X9 QD4" }
+    val userBadgeNumber = profileData.badgeNumber
     val hasUserSignature = profileData.signatureUrl.isNotBlank()
+    val profileReady = userFullName.isNotBlank() && userBadgeNumber.isNotBlank()
 
     // File Name calculation for Export
     val exportFileName = remember(item) {
@@ -407,7 +415,16 @@ fun MessageDetailScreen(
                         }
                     }
 
-                    val canPress = hasUserSignature
+                    if (hasUserSignature && !profileReady) {
+                        Text(
+                            text = "Your profile is still loading. Try again in a moment.",
+                            fontSize = 13.sp,
+                            color = secondaryTextColor,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+                    }
+
+                    val canPress = hasUserSignature && profileReady
 
                     when (item.requiredAction) {
                         "acknowledge" -> {
@@ -620,6 +637,11 @@ fun MessageDetailScreen(
                 coroutineScope.launch {
                     snackbarHostState.showSnackbar("Saved to Downloads")
                 }
+            },
+            onSaveFailed = {
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar("Couldn't save the PDF")
+                }
             }
         )
     }
@@ -719,7 +741,8 @@ fun ExportPdfBottomSheet(
     item: InboxEntity,
     context: Context,
     onDismiss: () -> Unit,
-    onSavedToDownloads: () -> Unit
+    onSavedToDownloads: () -> Unit,
+    onSaveFailed: () -> Unit = {}
 ) {
     val colors = MaterialTheme.colorScheme
     val primaryTextColor = colors.onBackground
@@ -809,13 +832,10 @@ fun ExportPdfBottomSheet(
                     .clickable {
                         onDismiss()
                         val pdfFile = generateInboxPdf(context, item, fileName)
-                        if (pdfFile != null) {
-                            try {
-                                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                                val destFile = File(downloadsDir, fileName)
-                                pdfFile.copyTo(destFile, overwrite = true)
-                                onSavedToDownloads()
-                            } catch (e: Exception) {}
+                        if (pdfFile != null && saveToDownloads(context, pdfFile, fileName)) {
+                            onSavedToDownloads()
+                        } else {
+                            onSaveFailed()
                         }
                     },
                 verticalAlignment = Alignment.CenterVertically
@@ -875,95 +895,159 @@ fun ExportPdfBottomSheet(
     }
 }
 
+/**
+ * Saves the PDF to the Downloads folder. On Android 10 and newer this goes through MediaStore,
+ * which needs no storage permission. Older versions write the file directly and need
+ * WRITE_EXTERNAL_STORAGE (maxSdkVersion 28) in the manifest.
+ */
+fun saveToDownloads(context: Context, source: File, fileName: String): Boolean {
+    return try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            }
+            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: return false
+            val out = context.contentResolver.openOutputStream(uri) ?: return false
+            out.use { stream -> source.inputStream().use { it.copyTo(stream) } }
+            true
+        } else {
+            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            source.copyTo(File(dir, fileName), overwrite = true)
+            true
+        }
+    } catch (e: Exception) {
+        false
+    }
+}
+
+private sealed class PdfItem(val height: Float) {
+    class Line(val text: String, val size: Float, val bold: Boolean, val color: Int) : PdfItem(size * 1.4f)
+    class Gap(h: Float) : PdfItem(h)
+    class Img(val bitmap: android.graphics.Bitmap, val w: Float, val h: Float) : PdfItem(h + 4f)
+}
+
+/** A4 PDF with wrapped text, page breaks, "Page n of N" and the signature images. */
 fun generateInboxPdf(context: Context, item: InboxEntity, fileName: String): File? {
     return try {
-        val pdfDocument = PdfDocument()
-        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create() // A4 size in points
-        val page = pdfDocument.startPage(pageInfo)
-        val canvas: Canvas = page.canvas
+        val pageW = 595
+        val pageH = 842
+        val margin = 40f
+        val top = 50f
+        val bottomLimit = pageH - 60f
+        val contentW = (pageW - 2 * margin).toInt()
 
-        val paint = Paint().apply {
-            isAntiAlias = true
-            color = android.graphics.Color.BLACK
-        }
+        val grey = android.graphics.Color.GRAY
+        val black = android.graphics.Color.BLACK
+        val teal = android.graphics.Color.parseColor("#1B6F69")
 
-        var y = 50f
+        val items = mutableListOf<PdfItem>()
 
-        // Sender Name
-        paint.textSize = 12f
-        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        canvas.drawText(item.senderName, 40f, y, paint)
-        y += 18f
-
-        // Department / Requester
-        paint.textSize = 10f
-        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-        paint.color = android.graphics.Color.GRAY
-        val dateText = Instant.ofEpochMilli(item.timestamp).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a", Locale.getDefault()))
-        canvas.drawText("${item.departmentOrRequester} · $dateText", 40f, y, paint)
-        y += 28f
-
-        // Subject
-        paint.textSize = 14f
-        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        paint.color = android.graphics.Color.BLACK
-        canvas.drawText(item.subject, 40f, y, paint)
-        y += 24f
-
-        // Body
-        paint.textSize = 10f
-        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-        val lines = item.body.split("\n")
-        for (line in lines) {
-            canvas.drawText(line, 40f, y, paint)
-            y += 16f
-        }
-
-        y += 20f
-
-        // Stamps / Approvals Section
-        if (item.stamps.isNotEmpty()) {
-            paint.textSize = 11f
-            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            canvas.drawText("Approvals ${item.stamps.size}", 40f, y, paint)
-            y += 20f
-
-            for (stamp in item.stamps) {
-                paint.textSize = 10f
-                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                paint.color = android.graphics.Color.parseColor("#1B6F69")
-                canvas.drawText(stamp.actionText, 40f, y, paint)
-                y += 14f
-
-                paint.color = android.graphics.Color.BLACK
-                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-                canvas.drawText(stamp.name, 40f, y, paint)
-                y += 14f
-
-                if (stamp.badgeNumber.isNotBlank()) {
-                    canvas.drawText(stamp.badgeNumber, 40f, y, paint)
-                    y += 14f
+        fun addText(text: String, size: Float, bold: Boolean, color: Int) {
+            val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+                textSize = size
+                typeface = Typeface.create(Typeface.DEFAULT, if (bold) Typeface.BOLD else Typeface.NORMAL)
+            }
+            text.split("\n").forEach { paragraph ->
+                if (paragraph.isBlank()) {
+                    items.add(PdfItem.Gap(size * 1.4f))
+                } else {
+                    val layout = StaticLayout.Builder.obtain(paragraph, 0, paragraph.length, tp, contentW).build()
+                    for (i in 0 until layout.lineCount) {
+                        val line = paragraph.substring(layout.getLineStart(i), layout.getLineEnd(i)).trimEnd()
+                        items.add(PdfItem.Line(line, size, bold, color))
+                    }
                 }
-
-                paint.color = android.graphics.Color.GRAY
-                canvas.drawText(stamp.timestampText, 40f, y, paint)
-                y += 24f
             }
         }
 
-        // Footer
-        paint.color = android.graphics.Color.GRAY
-        paint.textSize = 9f
-        canvas.drawText("diBadge", 40f, 810f, paint)
-        canvas.drawText("Page 1 of 1", 500f, 810f, paint)
+        val dateText = Instant.ofEpochMilli(item.timestamp).atZone(ZoneId.systemDefault())
+            .format(DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a", Locale.getDefault()))
 
-        pdfDocument.finishPage(page)
+        addText(item.senderName, 12f, true, black)
+        addText("${item.departmentOrRequester} \u00B7 $dateText", 10f, false, grey)
+        items.add(PdfItem.Gap(10f))
+        addText(item.subject, 14f, true, black)
+        items.add(PdfItem.Gap(8f))
+        addText(item.body, 10f, false, black)
+        items.add(PdfItem.Gap(20f))
+
+        if (item.stamps.isNotEmpty()) {
+            addText("Approvals ${item.stamps.size}", 11f, true, black)
+            items.add(PdfItem.Gap(6f))
+            for (stamp in item.stamps) {
+                addText(stamp.actionText, 10f, true, teal)
+                if (stamp.signatureUrl.isNotBlank()) {
+                    val bmp = try { parseSignatureImageBitmap(stamp.signatureUrl)?.asAndroidBitmap() } catch (e: Exception) { null }
+                    if (bmp != null && bmp.width > 0 && bmp.height > 0) {
+                        val scale = minOf(130f / bmp.width, 66f / bmp.height)
+                        items.add(PdfItem.Img(bmp, bmp.width * scale, bmp.height * scale))
+                    }
+                }
+                addText(stamp.name, 10f, false, black)
+                if (stamp.badgeNumber.isNotBlank()) addText(stamp.badgeNumber, 10f, false, black)
+                addText(stamp.timestampText, 10f, false, grey)
+                items.add(PdfItem.Gap(14f))
+            }
+        }
+
+        // Split the items into pages
+        val pages = mutableListOf<MutableList<PdfItem>>(mutableListOf())
+        var y = top
+        for (it in items) {
+            val current = pages.last()
+            if (y + it.height > bottomLimit && current.isNotEmpty()) {
+                pages.add(mutableListOf())
+                y = top
+            }
+            // a gap at the top of a fresh page would only waste space
+            if (it is PdfItem.Gap && pages.last().isEmpty()) continue
+            pages.last().add(it)
+            y += it.height
+        }
+
+        val pdfDocument = PdfDocument()
+        val linePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        val imgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            colorFilter = android.graphics.PorterDuffColorFilter(black, android.graphics.PorterDuff.Mode.SRC_IN)
+        }
+
+        pages.forEachIndexed { index, pageItems ->
+            val page = pdfDocument.startPage(PdfDocument.PageInfo.Builder(pageW, pageH, index + 1).create())
+            val canvas: Canvas = page.canvas
+            var py = top
+            for (pi in pageItems) {
+                when (pi) {
+                    is PdfItem.Line -> {
+                        linePaint.textSize = pi.size
+                        linePaint.typeface = Typeface.create(Typeface.DEFAULT, if (pi.bold) Typeface.BOLD else Typeface.NORMAL)
+                        linePaint.color = pi.color
+                        canvas.drawText(pi.text, margin, py + pi.size, linePaint)
+                    }
+                    is PdfItem.Img -> {
+                        canvas.drawBitmap(
+                            pi.bitmap, null,
+                            android.graphics.RectF(margin, py, margin + pi.w, py + pi.h), imgPaint
+                        )
+                    }
+                    is PdfItem.Gap -> {}
+                }
+                py += pi.height
+            }
+
+            linePaint.color = grey
+            linePaint.textSize = 9f
+            linePaint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            canvas.drawText("diBadge", margin, 810f, linePaint)
+            canvas.drawText("Page ${index + 1} of ${pages.size}", 500f, 810f, linePaint)
+            pdfDocument.finishPage(page)
+        }
 
         val tempFile = File(context.cacheDir, fileName)
-        val outputStream = FileOutputStream(tempFile)
-        pdfDocument.writeTo(outputStream)
+        FileOutputStream(tempFile).use { pdfDocument.writeTo(it) }
         pdfDocument.close()
-        outputStream.close()
         tempFile
     } catch (e: Exception) {
         null

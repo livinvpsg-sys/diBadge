@@ -46,6 +46,7 @@ fun RemindMePickerSheet(
     initialDate: LocalDate? = null,
     dueDate: LocalDate? = null,
     isRepeating: Boolean = false,
+    validate: (LocalTime, LocalDate?) -> String? = { _, _ -> null },
     onConfirm: (LocalTime, LocalDate?) -> Unit,
     onResetCustomDate: () -> Unit = {},
     onDismiss: () -> Unit
@@ -64,6 +65,10 @@ fun RemindMePickerSheet(
 
     val effectiveDate = currentRemindDate ?: defaultDate
     val isCustomDate = currentRemindDate != null
+    val timeError = validate(
+        LocalTime.of(selectedHour24.coerceIn(0, 23), selectedMinute.coerceIn(0, 59)),
+        currentRemindDate
+    )
 
     val surfaceColor = MaterialTheme.colorScheme.surface
     val outlineColor = MaterialTheme.colorScheme.outline
@@ -279,6 +284,16 @@ fun RemindMePickerSheet(
 
                             Spacer(modifier = Modifier.height(16.dp))
 
+                            if (timeError != null) {
+                                Text(
+                                    text = timeError,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.error,
+                                    textAlign = TextAlign.End,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+
                             // OK Button
                             Row(
                                 modifier = Modifier
@@ -296,6 +311,7 @@ fun RemindMePickerSheet(
                                         onConfirm(chosenTime, currentRemindDate)
                                         onDismiss()
                                     },
+                                    enabled = timeError == null,
                                     modifier = Modifier.heightIn(min = 48.dp)
                                 ) {
                                     Text("OK", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = accentColor)
@@ -397,6 +413,16 @@ fun RemindMePickerSheet(
 
                             Spacer(modifier = Modifier.height(16.dp))
 
+                            if (timeError != null) {
+                                Text(
+                                    text = timeError,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.error,
+                                    textAlign = TextAlign.End,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+
                             // OK Button
                             Row(
                                 modifier = Modifier
@@ -414,6 +440,7 @@ fun RemindMePickerSheet(
                                         onConfirm(chosenTime, currentRemindDate)
                                         onDismiss()
                                     },
+                                    enabled = timeError == null,
                                     modifier = Modifier.heightIn(min = 48.dp)
                                 ) {
                                     Text("OK", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = accentColor)

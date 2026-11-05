@@ -4,7 +4,6 @@ import android.content.Context
 import android.media.MediaRecorder
 import android.os.Build
 import java.io.File
-import java.io.FileOutputStream
 
 class AudioRecorder(private val context: Context) {
 
@@ -19,39 +18,55 @@ class AudioRecorder(private val context: Context) {
         }
     }
 
-    fun start(outputFile: File) {
-        stop() // Ensure previous session is released
-        createRecorder().apply {
-            setAudioSource(MediaRecorder.AudioSource.MIC)
-            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            setOutputFile(FileOutputStream(outputFile).fd)
-
-            prepare()
-            start()
-
-            recorder = this
+    /** Returns false if recording could not start (microphone busy, permission missing, ...). */
+    fun start(outputFile: File): Boolean {
+        stop()
+        val r = createRecorder()
+        return try {
+            r.setAudioSource(MediaRecorder.AudioSource.MIC)
+            r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            r.setAudioChannels(1)
+            r.setAudioSamplingRate(44_100)
+            r.setAudioEncodingBitRate(96_000)
+            // A path (not a FileDescriptor) so nothing can close the file under the recorder
+            r.setOutputFile(outputFile.absolutePath)
+            r.prepare()
+            r.start()
+            recorder = r
+            true
+        } catch (e: Exception) {
+            try { r.reset() } catch (_: Exception) {}
+            try { r.release() } catch (_: Exception) {}
+            outputFile.delete()
+            false
         }
     }
 
-    fun stop() {
-        try {
-            recorder?.stop()
-        } catch (e: Exception) {}
-        recorder?.reset()
-        recorder?.release()
+    /** Returns false when the recording was too short or failed, so the file may be unusable. */
+    fun stop(): Boolean {
+        val r = recorder ?: return true
         recorder = null
+        var ok = true
+        try {
+            r.stop()
+        } catch (e: Exception) {
+            ok = false
+        }
+        try { r.reset() } catch (_: Exception) {}
+        try { r.release() } catch (_: Exception) {}
+        return ok
     }
 
     fun pause() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            recorder?.pause()
+            try { recorder?.pause() } catch (_: Exception) {}
         }
     }
 
     fun resume() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            recorder?.resume()
+            try { recorder?.resume() } catch (_: Exception) {}
         }
     }
 

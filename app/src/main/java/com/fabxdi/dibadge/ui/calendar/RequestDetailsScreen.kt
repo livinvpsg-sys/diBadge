@@ -25,7 +25,9 @@ import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.data.ClaimEntity
 import com.fabxdi.dibadge.data.LeaveEntity
 import com.fabxdi.dibadge.data.OvertimeEntity
+import androidx.compose.ui.platform.LocalContext
 import com.fabxdi.dibadge.ui.settings.SettingsCard
+import com.fabxdi.dibadge.util.FilePickerUtils
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import java.time.Duration
 import java.time.format.DateTimeFormatter
@@ -44,6 +46,9 @@ fun RequestDetailsScreen(
     var showCancelConfirmDialog by remember { mutableStateOf(false) }
 
     BackHandler(enabled = true, onBack = onBack)
+
+    val context = LocalContext.current
+    val orgName = rememberOrganizationName()
 
     val colors = MaterialTheme.colorScheme
     val diBadgeColors = DiBadgeTheme.colors
@@ -75,10 +80,18 @@ fun RequestDetailsScreen(
         else -> "Pending"
     }
 
-    val appliedDateStr = when (requestItem) {
+    // Claims do not store a submitted time, so nothing is shown for them
+    val appliedDateStr: String? = when (requestItem) {
         is LeaveEntity -> requestItem.appliedDateTime.format(dateTimeFormatter)
         is OvertimeEntity -> requestItem.appliedDateTime.format(dateTimeFormatter)
-        else -> "22 Oct 2026, 9:42 AM"
+        else -> null
+    }
+
+    // Only a recorded decision date is shown; nothing is made up
+    val decisionDateStr: String? = when (requestItem) {
+        is LeaveEntity -> requestItem.approvedDate?.format(dateFormatter)
+        is OvertimeEntity -> requestItem.approvedDate?.format(dateFormatter)
+        else -> null
     }
 
     val isPending = statusText.equals("Pending", ignoreCase = true)
@@ -150,20 +163,24 @@ fun RequestDetailsScreen(
                 HorizontalDivider(thickness = 1.dp, color = outlineColor)
 
                 // Row 2: Submitted
-                DetailValueRow(
-                    label = "Submitted",
-                    value = appliedDateStr,
-                    primaryTextColor = primaryTextColor,
-                    secondaryTextColor = secondaryTextColor
-                )
+                if (appliedDateStr != null) {
+                    DetailValueRow(
+                        label = "Submitted",
+                        value = appliedDateStr,
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor
+                    )
 
-                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+                    HorizontalDivider(thickness = 1.dp, color = outlineColor)
+                }
 
                 // Row 3+: Form specific fields
                 when (requestItem) {
                     is LeaveEntity -> {
-                        DetailValueRow("Organisation", "diBadge Inc.", primaryTextColor, secondaryTextColor)
-                        HorizontalDivider(thickness = 1.dp, color = outlineColor)
+                        if (orgName.isNotBlank()) {
+                            DetailValueRow("Organisation", orgName, primaryTextColor, secondaryTextColor)
+                            HorizontalDivider(thickness = 1.dp, color = outlineColor)
+                        }
 
                         DetailValueRow("Leave type", requestItem.leaveType, primaryTextColor, secondaryTextColor)
                         HorizontalDivider(thickness = 1.dp, color = outlineColor)
@@ -185,8 +202,10 @@ fun RequestDetailsScreen(
                     }
 
                     is OvertimeEntity -> {
-                        DetailValueRow("Organisation", "diBadge Inc.", primaryTextColor, secondaryTextColor)
-                        HorizontalDivider(thickness = 1.dp, color = outlineColor)
+                        if (orgName.isNotBlank()) {
+                            DetailValueRow("Organisation", orgName, primaryTextColor, secondaryTextColor)
+                            HorizontalDivider(thickness = 1.dp, color = outlineColor)
+                        }
 
                         DetailValueRow("Date", requestItem.date.format(dateFormatter), primaryTextColor, secondaryTextColor)
                         HorizontalDivider(thickness = 1.dp, color = outlineColor)
@@ -208,8 +227,10 @@ fun RequestDetailsScreen(
                     }
 
                     is ClaimEntity -> {
-                        DetailValueRow("Organisation", "diBadge Inc.", primaryTextColor, secondaryTextColor)
-                        HorizontalDivider(thickness = 1.dp, color = outlineColor)
+                        if (orgName.isNotBlank()) {
+                            DetailValueRow("Organisation", orgName, primaryTextColor, secondaryTextColor)
+                            HorizontalDivider(thickness = 1.dp, color = outlineColor)
+                        }
 
                         DetailValueRow("Date", requestItem.date.format(dateFormatter), primaryTextColor, secondaryTextColor)
                         HorizontalDivider(thickness = 1.dp, color = outlineColor)
@@ -224,8 +245,8 @@ fun RequestDetailsScreen(
                 }
             }
 
-            // Card 2: Decision (Only for Approved or Rejected)
-            if (isApproved || isRejected) {
+            // Card 2: Decision (only when a decision date was recorded)
+            if ((isApproved || isRejected) && decisionDateStr != null) {
                 Text(
                     text = "Decision",
                     fontSize = 12.sp,
@@ -235,17 +256,12 @@ fun RequestDetailsScreen(
                 )
 
                 SettingsCard {
-                    val decisionBy = if (isApproved) "Approved by" else "Rejected by"
-                    DetailValueRow(decisionBy, "HR Manager", primaryTextColor, secondaryTextColor)
-
-                    HorizontalDivider(thickness = 1.dp, color = outlineColor)
-
-                    val decisionTimeStr = when (requestItem) {
-                        is LeaveEntity -> requestItem.approvedDate?.format(dateFormatter) ?: "22 Oct 2026, 10:15 AM"
-                        is OvertimeEntity -> requestItem.approvedDate?.format(dateFormatter) ?: "22 Oct 2026, 10:15 AM"
-                        else -> "22 Oct 2026, 10:15 AM"
-                    }
-                    DetailValueRow("On", decisionTimeStr, primaryTextColor, secondaryTextColor)
+                    DetailValueRow(
+                        if (isApproved) "Approved on" else "Rejected on",
+                        decisionDateStr,
+                        primaryTextColor,
+                        secondaryTextColor
+                    )
                 }
             }
 
@@ -266,7 +282,12 @@ fun RequestDetailsScreen(
 
                 SettingsCard {
                     attachmentsList.forEachIndexed { index, fileUri ->
-                        val isPdf = fileUri.endsWith(".pdf", ignoreCase = true)
+                        val parsedUri = android.net.Uri.parse(fileUri)
+                        val fileName = remember(fileUri) {
+                            try { FilePickerUtils.getFileName(context, parsedUri) } catch (e: Exception) { "Attachment ${index + 1}" }
+                        }
+                        val isPdf = fileName.endsWith(".pdf", ignoreCase = true) ||
+                            context.contentResolver.getType(parsedUri) == "application/pdf"
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -293,12 +314,13 @@ fun RequestDetailsScreen(
 
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Attachment_${index + 1}${if (isPdf) ".pdf" else ".jpg"}",
+                                    text = fileName,
                                     fontSize = 15.sp,
-                                    color = primaryTextColor
+                                    color = primaryTextColor,
+                                    maxLines = 1
                                 )
                                 Text(
-                                    text = if (isPdf) "PDF · 240 KB" else "Photo · 1.2 MB",
+                                    text = if (isPdf) "PDF" else "Photo",
                                     fontSize = 12.sp,
                                     color = secondaryTextColor
                                 )

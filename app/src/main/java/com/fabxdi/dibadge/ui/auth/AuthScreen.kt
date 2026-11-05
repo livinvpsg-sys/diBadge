@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -101,6 +102,8 @@ fun AuthScreen(
     val signupVerifyState by viewModel.signupVerifyState.collectAsState()
 
     var isSignUpMode by remember { mutableStateOf(false) }
+    // false = welcome step (Google / email choice), true = email form
+    var showForm by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
@@ -123,6 +126,12 @@ fun AuthScreen(
 
     val isLoading = uiState is AuthUiState.Loading
 
+    // Back from the email form returns to the welcome step first
+    BackHandler(enabled = showForm && !isLoading) {
+        showForm = false
+        viewModel.clearError()
+    }
+
     val pageBgColor = colors.background
     val cardBgColor = colors.surface
     val outlineColor = colors.outline
@@ -131,6 +140,8 @@ fun AuthScreen(
     val tabInactiveColor = diBadgeColors.tabInactive
     val tealAccent = diBadgeColors.accent
     val errorColor = colors.error
+    // Text/spinner colour on the teal buttons
+    val onTealColor = if (isDarkTheme) Color(0xFF06201D) else Color.White
 
     fun triggerGoogleSignIn() {
         coroutineScope.launch {
@@ -200,6 +211,169 @@ fun AuthScreen(
             .background(pageBgColor)
             .windowInsetsPadding(WindowInsets.systemBars)
     ) {
+      if (!showForm) {
+        // ==================== WELCOME STEP ====================
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .widthIn(max = 420.dp)
+                .fillMaxSize()
+                .padding(horizontal = 24.dp)
+                .alpha(if (isLoading) 0.5f else 1.0f)
+        ) {
+            Spacer(modifier = Modifier.height(96.dp))
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.semantics(mergeDescendants = true) {}
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.ic_dibadge_mark),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(width = 34.dp, height = 41.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "diBadge",
+                    fontSize = 38.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.8).sp,
+                    color = primaryTextColor
+                )
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            Text(
+                text = "Get things done,\ntogether.",
+                fontSize = 32.sp,
+                lineHeight = 38.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.5).sp,
+                color = primaryTextColor
+            )
+
+            Spacer(modifier = Modifier.height(28.dp))
+
+            // Google
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp)
+                    .clickable(enabled = !isLoading) { triggerGoogleSignIn() },
+                shape = RoundedCornerShape(27.dp),
+                color = if (isDarkTheme) primaryTextColor else cardBgColor,
+                border = if (isDarkTheme) null else BorderStroke(1.dp, outlineColor)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_google_logo),
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "Continue with Google",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDarkTheme) pageBgColor else primaryTextColor
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Email
+            Button(
+                onClick = {
+                    isSignUpMode = false
+                    viewModel.clearError()
+                    showForm = true
+                },
+                enabled = !isLoading,
+                shape = RoundedCornerShape(27.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = tealAccent,
+                    contentColor = onTealColor
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp)
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        color = onTealColor,
+                        strokeWidth = 2.6.dp,
+                        modifier = Modifier.size(20.dp)
+                    )
+                } else {
+                    Text(
+                        text = "Continue with email",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = onTealColor
+                    )
+                }
+            }
+
+            if (uiState is AuthUiState.Error) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = (uiState as AuthUiState.Error).message,
+                    fontSize = 12.sp,
+                    color = errorColor,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .clickable(enabled = !isLoading) {
+                        isSignUpMode = true
+                        viewModel.clearError()
+                        showForm = true
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.semantics(mergeDescendants = true) {}
+                ) {
+                    Text(text = "New here?", fontSize = 15.sp, color = secondaryTextColor)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(text = "Sign up", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = tealAccent)
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(40.dp)
+                    .clickable(enabled = !isLoading) {
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(TERMS_URL)))
+                        } catch (e: Exception) {}
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Terms of Use",
+                    fontSize = 12.sp,
+                    textDecoration = TextDecoration.Underline,
+                    color = tabInactiveColor
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+      } else {
+        // ==================== EMAIL FORM STEP ====================
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -214,35 +388,38 @@ fun AuthScreen(
                     .padding(horizontal = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // 1. Brand Row: Logo Mark + "diBadge" side-by-side (Centered in 240dp top band)
+                // 1. Back + title
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 160.dp)
-                        .height(240.dp),
-                    contentAlignment = Alignment.Center
+                        .padding(top = 8.dp)
+                        .height(48.dp),
+                    contentAlignment = Alignment.CenterStart
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                        modifier = Modifier.semantics(mergeDescendants = true) {}
+                    IconButton(
+                        onClick = {
+                            showForm = false
+                            viewModel.clearError()
+                        },
+                        enabled = !isLoading
                     ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.ic_dibadge_mark),
-                            contentDescription = null,
-                            contentScale = ContentScale.Fit,
-                            modifier = Modifier.size(width = 34.dp, height = 41.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "diBadge",
-                            fontSize = 38.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = (-0.8).sp,
-                            color = primaryTextColor
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = primaryTextColor
                         )
                     }
                 }
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = if (isSignUpMode) "Create account" else "Log in",
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = (-0.5).sp,
+                    color = primaryTextColor,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(28.dp))
 
                 // 2. Form Block (Starts at 240dp)
                 Column(
@@ -326,29 +503,29 @@ fun AuthScreen(
                         Button(
                             onClick = { performSignupValidationAndCheck() },
                             enabled = !isLoading,
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(27.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = primaryTextColor,
-                                contentColor = pageBgColor,
-                                disabledContainerColor = primaryTextColor.copy(alpha = 0.38f),
-                                disabledContentColor = pageBgColor.copy(alpha = 0.38f)
+                                containerColor = tealAccent,
+                                contentColor = onTealColor,
+                                disabledContainerColor = tealAccent.copy(alpha = 0.38f),
+                                disabledContentColor = onTealColor.copy(alpha = 0.38f)
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(52.dp)
+                                .height(54.dp)
                         ) {
                             if (isLoading) {
                                 CircularProgressIndicator(
-                                    color = pageBgColor,
+                                    color = onTealColor,
                                     strokeWidth = 2.6.dp,
                                     modifier = Modifier.size(20.dp)
                                 )
                             } else {
                                 Text(
-                                    text = "Sign up",
+                                    text = "Create account",
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = pageBgColor
+                                    color = onTealColor
                                 )
                             }
                         }
@@ -414,8 +591,8 @@ fun AuthScreen(
                             Text(
                                 text = "Forgot password?",
                                 fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = secondaryTextColor,
+                                fontWeight = FontWeight.SemiBold,
+                                color = tealAccent,
                                 modifier = Modifier.clickable(enabled = !isLoading) { showForgotPasswordDialog = true }
                             )
                         }
@@ -433,29 +610,29 @@ fun AuthScreen(
                                 }
                             },
                             enabled = !isLoading,
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(27.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = primaryTextColor,
-                                contentColor = pageBgColor,
-                                disabledContainerColor = primaryTextColor.copy(alpha = 0.38f),
-                                disabledContentColor = pageBgColor.copy(alpha = 0.38f)
+                                containerColor = tealAccent,
+                                contentColor = onTealColor,
+                                disabledContainerColor = tealAccent.copy(alpha = 0.38f),
+                                disabledContentColor = onTealColor.copy(alpha = 0.38f)
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(52.dp)
+                                .height(54.dp)
                         ) {
                             if (isLoading) {
                                 CircularProgressIndicator(
-                                    color = pageBgColor,
+                                    color = onTealColor,
                                     strokeWidth = 2.6.dp,
                                     modifier = Modifier.size(20.dp)
                                 )
                             } else {
                                 Text(
-                                    text = "Login",
+                                    text = "Log in",
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = pageBgColor
+                                    color = onTealColor
                                 )
                             }
                         }
@@ -470,64 +647,6 @@ fun AuthScreen(
                             fontWeight = FontWeight.Normal,
                             color = errorColor
                         )
-                    }
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    // "Or continue with" Divider
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        HorizontalDivider(
-                            modifier = Modifier.weight(1f),
-                            thickness = 1.dp,
-                            color = outlineColor
-                        )
-                        Text(
-                            text = "Or continue with",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Normal,
-                            color = secondaryTextColor,
-                            modifier = Modifier.padding(horizontal = 12.dp)
-                        )
-                        HorizontalDivider(
-                            modifier = Modifier.weight(1f),
-                            thickness = 1.dp,
-                            color = outlineColor
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    // Google Tile
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                            .clickable(enabled = !isLoading) { triggerGoogleSignIn() },
-                        shape = RoundedCornerShape(14.dp),
-                        color = cardBgColor,
-                        border = BorderStroke(1.dp, outlineColor)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.ic_google_logo),
-                                contentDescription = "Google Logo",
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = "Google",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = primaryTextColor
-                            )
-                        }
                     }
 
                     Spacer(modifier = Modifier.height(32.dp))
@@ -577,7 +696,7 @@ fun AuthScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (isSignUpMode) "Login" else "Sign up",
+                            text = if (isSignUpMode) "Log in" else "Sign up",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             color = tealAccent
@@ -608,6 +727,7 @@ fun AuthScreen(
                 }
             }
         }
+      }
     }
 
     // Signup Verification Code Sheet

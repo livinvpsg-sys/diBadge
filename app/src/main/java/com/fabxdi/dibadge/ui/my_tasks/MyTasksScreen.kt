@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -37,11 +38,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.fabxdi.dibadge.data.GroupTaskEntity
 import com.fabxdi.dibadge.data.ReminderEntity
 import com.fabxdi.dibadge.ui.components.DiBadgeFab
 import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import com.fabxdi.dibadge.viewmodel.GroupTaskViewModel
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
+import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -60,10 +65,18 @@ fun MyTasksScreen(
     openSnoozeTimePicker: Boolean = false,
     initialSnoozeReminder: ReminderEntity? = null,
     onSnoozeHandled: () -> Unit = {},
-    reminderViewModel: ReminderViewModel = viewModel()
+    reminderViewModel: ReminderViewModel = viewModel(),
+    groupTaskViewModel: GroupTaskViewModel = viewModel()
 ) {
     val coroutineScope = rememberCoroutineScope()
-    val today = remember { LocalDate.now() }
+    var today by remember { mutableStateOf(LocalDate.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000)
+            val now = LocalDate.now()
+            if (now != today) today = now
+        }
+    }
 
     var currentYearMonth by remember { mutableStateOf(YearMonth.now()) }
     var selectedFilter by remember { mutableStateOf("All") } // "All" or "Assigned to me"
@@ -71,14 +84,20 @@ fun MyTasksScreen(
 
     val allReminders by reminderViewModel.allReminders.collectAsState(initial = emptyList())
 
+    val currentUser = remember { FirebaseAuth.getInstance().currentUser }
+    val myUid = currentUser?.uid.orEmpty()
+    val myName = currentUser?.displayName.orEmpty()
+    val assignedTasks by remember(myUid, myName) { groupTaskViewModel.getTasksAssignedToMe(myUid, myName) }
+        .collectAsState(initial = emptyList())
+
     val listState = rememberLazyListState()
 
-    // Scroll to today's card on open or return
-    LaunchedEffect(Unit) {
-        if (currentYearMonth == YearMonth.now()) {
-            val todayIndex = (today.dayOfMonth - 1).coerceIn(0, currentYearMonth.lengthOfMonth() - 1)
-            listState.scrollToItem(todayIndex)
-        }
+    // On open or whenever the month changes: today's card for this month, otherwise the top
+    LaunchedEffect(currentYearMonth) {
+        val idx = if (currentYearMonth == YearMonth.now()) {
+            (LocalDate.now().dayOfMonth - 1).coerceIn(0, currentYearMonth.lengthOfMonth() - 1)
+        } else 0
+        listState.scrollToItem(idx)
     }
 
     BackHandler(enabled = true) {
@@ -181,20 +200,22 @@ fun MyTasksScreen(
         }
     }
 
-    // Filter reminders for each day based on selectedFilter
-    val dayTasksMap = remember(allReminders, monthDays, selectedFilter) {
+    val showAssigned = selectedFilter == "Assigned to me"
+
+    val dayTasksMap = remember(allReminders, monthDays, showAssigned) {
         monthDays.associateWith { date ->
-            val dayReminders = allReminders.filter { isReminderOnDate(it, date) }
-            val filtered = if (selectedFilter == "Assigned to me") {
-                emptyList()
-            } else {
-                dayReminders
-            }
-            sortTasksByTime(filtered)
+            if (showAssigned) emptyList()
+            else sortTasksByTime(allReminders.filter { isReminderOnDate(it, date) })
         }
     }
 
-    var lastSwipeTime by remember { mutableLongStateOf(0L) }
+    // Group tasks assigned to me, shown on every day from their start to their end (or due) date
+    val assignedMap = remember(assignedTasks, monthDays, showAssigned) {
+        monthDays.associateWith { date ->
+            if (!showAssigned) emptyList()
+            else assignedTasks.filter { it.coversDate(date) }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -297,18 +318,17 @@ fun MyTasksScreen(
                 .padding(innerPadding)
                 .background(pageBgColor)
                 .pointerInput(currentYearMonth) {
-                    detectHorizontalDragGestures { _, dragAmount ->
-                        val nowTime = System.currentTimeMillis()
-                        if (nowTime - lastSwipeTime > 350L) {
-                            if (dragAmount < -30f) {
-                                lastSwipeTime = nowTime
-                                currentYearMonth = currentYearMonth.plusMonths(1)
-                            } else if (dragAmount > 30f) {
-                                lastSwipeTime = nowTime
-                                currentYearMonth = currentYearMonth.minusMonths(1)
-                            }
-                        }
-                    }
+                    var total = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { total = 0f },
+                        onDragCancel = { total = 0f },
+                        onDragEnd = {
+                            if (total < -120f) currentYearMonth = currentYearMonth.plusMonths(1)
+                            else if (total > 120f) currentYearMonth = currentYearMonth.minusMonths(1)
+                            total = 0f
+                        },
+                        onHorizontalDrag = { _, amount -> total += amount }
+                    )
                 }
         ) {
             LazyColumn(
@@ -319,17 +339,30 @@ fun MyTasksScreen(
             ) {
                 itemsIndexed(monthDays, key = { _, date -> date.toString() }) { index, date ->
                     val tasksForDate = dayTasksMap[date] ?: emptyList()
-                    val hasTasks = tasksForDate.isNotEmpty()
+                    val assignedForDate = assignedMap[date] ?: emptyList()
+                    val hasTasks = tasksForDate.isNotEmpty() || assignedForDate.isNotEmpty()
                     val isToday = date.isEqual(today)
 
                     val nextDate = monthDays.getOrNull(index + 1)
-                    val nextHasTasks = nextDate != null && (dayTasksMap[nextDate]?.isNotEmpty() == true)
+                    val nextHasTasks = nextDate != null &&
+                        (dayTasksMap[nextDate]?.isNotEmpty() == true || assignedMap[nextDate]?.isNotEmpty() == true)
                     val showBottomDivider = !hasTasks && nextDate != null && !nextHasTasks
 
                     AgendaDayRow(
                         date = date,
                         isToday = isToday,
                         tasks = tasksForDate,
+                        assignedTasks = assignedForDate,
+                        onAssignedToggle = { task ->
+                            groupTaskViewModel.updateTaskCompletion(
+                                groupId = task.groupId,
+                                taskId = task.id,
+                                isCompleted = !task.isCompleted,
+                                userName = myName.ifBlank { "Me" },
+                                userUid = myUid,
+                                onUpdated = {}
+                            )
+                        },
                         showBottomDivider = showBottomDivider,
                         cardBgColor = cardBgColor,
                         outlineColor = outlineColor,
@@ -370,12 +403,12 @@ fun CalendarHeaderIcon(
 ) {
     Box(
         modifier = Modifier
-            .size(32.dp)
-            .clickable(onClick = onClick)
+            .size(48.dp)
+            .clickable(onClick = onClick, role = Role.Button)
             .semantics { contentDescription = "Jump to today" },
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
+        Canvas(modifier = Modifier.size(32.dp)) {
             val strokeWidthPx = 1.5.dp.toPx()
             val cornerRadiusPx = 6.dp.toPx()
             val headerLineYPx = 10.dp.toPx()
@@ -436,14 +469,16 @@ fun AgendaDayRow(
     tealAccent: Color,
     errorColor: Color,
     onTaskToggleDone: (ReminderEntity) -> Unit,
-    onTaskClick: (ReminderEntity) -> Unit
+    onTaskClick: (ReminderEntity) -> Unit,
+    assignedTasks: List<GroupTaskEntity> = emptyList(),
+    onAssignedToggle: (GroupTaskEntity) -> Unit = {}
 ) {
-    val hasTasks = tasks.isNotEmpty()
+    val hasTasks = tasks.isNotEmpty() || assignedTasks.isNotEmpty()
     val isWeekend = date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY
     val dayNameStr = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())
 
     val dateStr = date.toString()
-    val isDarkTheme = primaryTextColor.red > 0.5f
+    val isDarkTheme = DiBadgeTheme.colors.isDark
 
     Column(modifier = Modifier.fillMaxWidth()) {
         if (hasTasks) {
@@ -545,6 +580,26 @@ fun AgendaDayRow(
                                     modifier = Modifier.padding(vertical = 6.dp)
                                 )
                             }
+                        }
+
+                        assignedTasks.forEachIndexed { index, task ->
+                            if (index > 0 || tasks.isNotEmpty()) {
+                                HorizontalDivider(
+                                    thickness = 1.dp,
+                                    color = outlineColor.copy(alpha = 0.4f),
+                                    modifier = Modifier.padding(vertical = 6.dp)
+                                )
+                            }
+                            AssignedTaskRow(
+                                task = task,
+                                date = date,
+                                tealAccent = tealAccent,
+                                primaryTextColor = primaryTextColor,
+                                secondaryTextColor = secondaryTextColor,
+                                errorColor = errorColor,
+                                isDarkTheme = isDarkTheme,
+                                onToggleDone = { onAssignedToggle(task) }
+                            )
                         }
                     }
                 }
@@ -665,16 +720,20 @@ fun AgendaTaskRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() }
-            .padding(vertical = 6.dp),
+            .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Left Completion Circle 20dp
+        // Completion circle: 20dp visual, 48dp touch target
         Box(
             modifier = Modifier
-                .size(20.dp)
-                .clickable { onToggleDone() },
+                .size(48.dp)
+                .clickable(role = Role.Checkbox) { onToggleDone() }
+                .semantics {
+                    contentDescription = if (isCompleted) "Mark as not done" else "Mark as done"
+                },
             contentAlignment = Alignment.Center
         ) {
+          Box(modifier = Modifier.size(20.dp)) {
             if (isCompleted) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -684,7 +743,7 @@ fun AgendaTaskRow(
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.Check,
-                            contentDescription = "Completed",
+                            contentDescription = null,
                             tint = if (isDarkTheme) Color(0xFF0E1114) else Color.White,
                             modifier = Modifier.size(13.dp)
                         )
@@ -698,9 +757,10 @@ fun AgendaTaskRow(
                     border = BorderStroke(1.5.dp, tealAccent)
                 ) {}
             }
+          }
         }
 
-        Spacer(modifier = Modifier.width(10.dp))
+        Spacer(modifier = Modifier.width(4.dp))
 
         // Title and Time Subline
         Column(modifier = Modifier.weight(1f)) {
@@ -719,7 +779,7 @@ fun AgendaTaskRow(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = Icons.Outlined.AccessTime,
-                        contentDescription = "Time",
+                        contentDescription = null,
                         tint = timeDisplayColor,
                         modifier = Modifier.size(13.dp)
                     )
@@ -732,6 +792,93 @@ fun AgendaTaskRow(
                     )
                 }
             }
+        }
+    }
+}
+
+/** A group task is shown from its start date to its end date, or on its due date if it has no range. */
+fun GroupTaskEntity.coversDate(date: LocalDate): Boolean {
+    val start = startDate ?: dueDate ?: return false
+    val end = endDate ?: dueDate ?: start
+    return !date.isBefore(start) && !date.isAfter(end)
+}
+
+@Composable
+fun AssignedTaskRow(
+    task: GroupTaskEntity,
+    date: LocalDate,
+    tealAccent: Color,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    errorColor: Color,
+    isDarkTheme: Boolean,
+    onToggleDone: () -> Unit
+) {
+    val isOverdue = !task.isCompleted && date.isBefore(LocalDate.now())
+    val subline = buildString {
+        append("From ${task.assignedBy}")
+        if (!task.dueTime.isNullOrBlank()) append(" · ${task.dueTime}")
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clickable(role = Role.Checkbox) { onToggleDone() }
+                .semantics {
+                    contentDescription = if (task.isCompleted) "Mark as not done" else "Mark as done"
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Box(modifier = Modifier.size(20.dp)) {
+                if (task.isCompleted) {
+                    Surface(modifier = Modifier.fillMaxSize(), shape = CircleShape, color = tealAccent) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = if (isDarkTheme) Color(0xFF0E1114) else Color.White,
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+                    }
+                } else {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        shape = CircleShape,
+                        color = Color.Transparent,
+                        border = BorderStroke(1.5.dp, tealAccent)
+                    ) {}
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.width(4.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = task.title,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Normal,
+                color = if (task.isCompleted) secondaryTextColor.copy(alpha = 0.5f) else primaryTextColor,
+                textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subline,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Normal,
+                color = if (isOverdue) errorColor else secondaryTextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

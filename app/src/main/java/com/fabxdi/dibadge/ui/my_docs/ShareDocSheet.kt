@@ -2,7 +2,6 @@ package com.fabxdi.dibadge.ui.my_docs
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -15,27 +14,33 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.FileProvider
 import com.fabxdi.dibadge.data.DocEntity
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
-import java.io.File
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+/**
+ * [organisations] are the organisations this account really belongs to. When it is empty the
+ * "Share with organisation" row is shown disabled.
+ * [onShareWithOrg] is called before [onDismiss], so the caller can still read what was being shared.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShareDocSheet(
-    doc: DocEntity,
+    docs: List<DocEntity>,
     context: Context,
+    organisations: List<String>,
     onShareWithOrg: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var showOrgChoiceSheet by remember { mutableStateOf(false) }
-    var selectedOrg by remember { mutableStateOf("diBadge Inc.") }
+    var selectedOrg by remember(organisations) { mutableStateOf(organisations.firstOrNull() ?: "") }
 
     val colors = MaterialTheme.colorScheme
     val diBadgeColors = DiBadgeTheme.colors
@@ -46,6 +51,9 @@ fun ShareDocSheet(
     val outlineColor = colors.outline
     val tealAccent = diBadgeColors.accent
     val tabInactiveColor = diBadgeColors.tabInactive
+
+    val hasOrg = organisations.isNotEmpty()
+    val countLabel = if (docs.size == 1) "document" else "${docs.size} documents"
 
     if (showOrgChoiceSheet) {
         ModalBottomSheet(
@@ -94,14 +102,13 @@ fun ShareDocSheet(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                val orgs = listOf("diBadge Inc.", "Tuas Roof Works")
-                orgs.forEach { org ->
+                organisations.forEach { org ->
                     val isSelected = selectedOrg == org
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(52.dp)
-                            .clickable { selectedOrg = org },
+                            .clickable(role = Role.RadioButton) { selectedOrg = org },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Surface(
@@ -139,31 +146,41 @@ fun ShareDocSheet(
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Cancel",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = secondaryTextColor,
+                    Box(
                         modifier = Modifier
-                            .clickable { showOrgChoiceSheet = false }
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    )
+                            .heightIn(min = 48.dp)
+                            .clickable(role = Role.Button) { showOrgChoiceSheet = false }
+                            .padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Cancel",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = secondaryTextColor
+                        )
+                    }
 
-                    Spacer(modifier = Modifier.width(28.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
 
-                    Text(
-                        text = "Share",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = tealAccent,
+                    Box(
                         modifier = Modifier
-                            .clickable {
+                            .heightIn(min = 48.dp)
+                            .clickable(role = Role.Button, enabled = selectedOrg.isNotBlank()) {
                                 showOrgChoiceSheet = false
-                                onDismiss()
                                 onShareWithOrg(selectedOrg)
+                                onDismiss()
                             }
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    )
+                            .padding(horizontal = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Share",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (selectedOrg.isNotBlank()) tealAccent else tabInactiveColor
+                        )
+                    }
                 }
             }
         }
@@ -199,7 +216,7 @@ fun ShareDocSheet(
                 .padding(bottom = 28.dp)
         ) {
             Text(
-                text = "Share document",
+                text = if (docs.size == 1) "Share document" else "Share ${docs.size} documents",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Medium,
                 color = primaryTextColor,
@@ -213,7 +230,8 @@ fun ShareDocSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(64.dp)
-                    .clickable {
+                    .alpha(if (hasOrg) 1f else 0.45f)
+                    .clickable(enabled = hasOrg, role = Role.Button) {
                         showOrgChoiceSheet = true
                     },
                 verticalAlignment = Alignment.CenterVertically
@@ -232,7 +250,7 @@ fun ShareDocSheet(
                         color = primaryTextColor
                     )
                     Text(
-                        text = "Send a copy to your organisation account",
+                        text = if (hasOrg) "Send a copy to your organisation account" else "No organisation linked to your account",
                         fontSize = 13.sp,
                         color = secondaryTextColor
                     )
@@ -246,18 +264,9 @@ fun ShareDocSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(64.dp)
-                    .clickable {
+                    .clickable(role = Role.Button) {
                         onDismiss()
-                        val expiryStr = if (!doc.noExpiry && doc.expiryDate != null) ", expires ${doc.expiryDate.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault()))}" else ""
-                        val shareText = "${doc.name}$expiryStr"
-
-                        try {
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "*/*"
-                                putExtra(Intent.EXTRA_TEXT, shareText)
-                            }
-                            context.startActivity(Intent.createChooser(intent, "Share Document"))
-                        } catch (e: Exception) {}
+                        shareWithOtherApp(context, docs)
                     },
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -275,12 +284,42 @@ fun ShareDocSheet(
                         color = primaryTextColor
                     )
                     Text(
-                        text = "Send the files with any app",
+                        text = "Send the $countLabel with any app",
                         fontSize = 13.sp,
                         color = secondaryTextColor
                     )
                 }
             }
         }
+    }
+}
+
+/** Sends the files (and a short text with name and expiry) to the app the user picks. */
+private fun shareWithOtherApp(context: Context, docs: List<DocEntity>) {
+    val formatter = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault())
+    val text = docs.joinToString("\n") { doc ->
+        val expiry = doc.expiryDate
+        if (!doc.noExpiry && expiry != null) "${doc.name}, expires ${expiry.format(formatter)}" else doc.name
+    }
+    val uris = docs.flatMap { it.files }.mapNotNull { DocFileUtils.toShareUri(context, it) }
+
+    val intent = if (uris.isEmpty()) {
+        Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+    } else {
+        Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = "*/*"
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+            putExtra(Intent.EXTRA_TEXT, text)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    }
+
+    try {
+        context.startActivity(Intent.createChooser(intent, "Share").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (e: Exception) {
+        e.printStackTrace()
     }
 }

@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.data.LeaveEntity
 import com.fabxdi.dibadge.data.OvertimeEntity
+import com.fabxdi.dibadge.ui.calendar.rememberOrganizationName
 import com.fabxdi.dibadge.ui.components.DiBadgeDatePicker
 import com.fabxdi.dibadge.ui.components.DiBadgeTimePicker
 import com.fabxdi.dibadge.ui.settings.SettingsCard
@@ -49,7 +50,7 @@ fun ExtraHoursFormScreen(
 ) {
     val isEditing = overtimeToEdit != null
 
-    var selectedOrg by remember { mutableStateOf("diBadge Inc.") }
+    val selectedOrg = rememberOrganizationName()
     var selectedDate by remember { mutableStateOf(overtimeToEdit?.date ?: initialDate) }
     var startTime by remember { mutableStateOf<LocalTime?>(overtimeToEdit?.startTime ?: LocalTime.of(18, 0)) }
     var endTime by remember { mutableStateOf<LocalTime?>(overtimeToEdit?.endTime ?: LocalTime.of(21, 0)) }
@@ -168,7 +169,8 @@ fun ExtraHoursFormScreen(
         ) {
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Card 1: Organisation
+            // Card 1: Organisation (only when the profile has one)
+            if (selectedOrg.isNotBlank()) {
             SettingsCard {
                 Row(
                     modifier = Modifier
@@ -184,6 +186,7 @@ fun ExtraHoursFormScreen(
                         Text(selectedOrg, fontSize = 16.sp, color = primaryTextColor)
                     }
                 }
+            }
             }
 
             // Section Label: Date and time

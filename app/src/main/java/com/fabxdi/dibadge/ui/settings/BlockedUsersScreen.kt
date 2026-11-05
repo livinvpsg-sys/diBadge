@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -29,48 +30,57 @@ data class BlockedUserItem(
     val id: String,
     val name: String,
     val nickname: String = "",
-    val organization: String = ""
+    val organization: String = "",
+    /** The whole stored record, so Undo can put it back exactly as it was. */
+    val rawData: Map<String, Any?> = emptyMap()
 )
 
 @Composable
 fun BlockedUsersScreen(
     onBack: () -> Unit
 ) {
-    val currentUid = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
-    var blockedUsers by remember { mutableStateOf(emptyList<BlockedUserItem>()) }
+    // Read every time so a different signed-in account is never shown the previous account's list
+    val currentUid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
+    var blocked by remember(currentUid) { mutableStateOf(emptyList<BlockedUserItem>()) }
+    var nicknames by remember(currentUid) { mutableStateOf(emptyMap<String, String>()) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
-    LaunchedEffect(currentUid) {
-        if (currentUid.isNotBlank()) {
-            val db = FirebaseFirestore.getInstance()
-            db.collection("blockedUsers").document(currentUid)
-                .collection("blocked")
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null || snapshot == null) return@addSnapshotListener
-                    val items = snapshot.documents.mapNotNull { doc ->
-                        val uid = doc.id
-                        val name = doc.getString("name") ?: "User"
-                        val org = doc.getString("organization") ?: ""
-                        BlockedUserItem(id = uid, name = name, organization = org)
-                    }
+    // One listener for the blocked list and one for all private nicknames, both removed on exit
+    DisposableEffect(currentUid) {
+        if (currentUid.isBlank()) return@DisposableEffect onDispose { }
+        val db = FirebaseFirestore.getInstance()
 
-                    blockedUsers = items
-
-                    // Listen to private nicknames given by current user
-                    items.forEach { item ->
-                        db.collection("users").document(currentUid)
-                            .collection("nicknames").document(item.id)
-                            .addSnapshotListener { nickSnap, _ ->
-                                val nick = if (nickSnap != null && nickSnap.exists()) nickSnap.getString("nickname") ?: "" else ""
-                                blockedUsers = blockedUsers.map { u ->
-                                    if (u.id == item.id) u.copy(nickname = nick) else u
-                                }
-                            }
-                    }
+        val blockedReg = db.collection("blockedUsers").document(currentUid)
+            .collection("blocked")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) return@addSnapshotListener
+                blocked = snapshot.documents.map { doc ->
+                    BlockedUserItem(
+                        id = doc.id,
+                        name = doc.getString("name") ?: "User",
+                        organization = doc.getString("organization") ?: "",
+                        rawData = doc.data ?: emptyMap()
+                    )
                 }
+            }
+
+        val nickReg = db.collection("users").document(currentUid)
+            .collection("nicknames")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) return@addSnapshotListener
+                nicknames = snapshot.documents.associate { it.id to (it.getString("nickname") ?: "") }
+            }
+
+        onDispose {
+            blockedReg.remove()
+            nickReg.remove()
         }
+    }
+
+    val blockedUsers = remember(blocked, nicknames) {
+        blocked.map { it.copy(nickname = nicknames[it.id].orEmpty()) }
     }
 
     BackHandler(enabled = true, onBack = onBack)
@@ -99,7 +109,6 @@ fun BlockedUsersScreen(
                 .background(colors.background)
         ) {
             if (blockedUsers.isEmpty()) {
-                // Empty State
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -147,7 +156,7 @@ fun BlockedUsersScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(64.dp)
+                                .heightIn(min = 64.dp)
                                 .padding(vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
@@ -173,7 +182,7 @@ fun BlockedUsersScreen(
 
                                 Spacer(modifier = Modifier.width(14.dp))
 
-                                Column {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = user.name,
                                         fontSize = 16.sp,
@@ -196,26 +205,38 @@ fun BlockedUsersScreen(
                                 }
                             }
 
-                            Text(
-                                text = "Unblock",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = tealAccent,
+                            Box(
                                 modifier = Modifier
-                                    .clickable {
-                                        val targetName = user.name
+                                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                                    .clickable(role = Role.Button) {
+                                        if (currentUid.isBlank()) return@clickable
                                         val db = FirebaseFirestore.getInstance()
-                                        if (currentUid.isNotBlank()) {
-                                            db.collection("blockedUsers").document(currentUid)
-                                                .collection("blocked").document(user.id)
-                                                .delete()
-                                            coroutineScope.launch {
-                                                snackbarHostState.showSnackbar("Unblocked $targetName")
+                                        val ref = db.collection("blockedUsers").document(currentUid)
+                                            .collection("blocked").document(user.id)
+                                        ref.delete()
+                                        coroutineScope.launch {
+                                            val result = snackbarHostState.showSnackbar(
+                                                message = "Unblocked ${user.name}",
+                                                actionLabel = "Undo",
+                                                duration = SnackbarDuration.Short
+                                            )
+                                            if (result == SnackbarResult.ActionPerformed) {
+                                                ref.set(user.rawData.ifEmpty {
+                                                    mapOf("name" to user.name, "organization" to user.organization)
+                                                })
                                             }
                                         }
                                     }
-                                    .padding(horizontal = 8.dp, vertical = 8.dp)
-                            )
+                                    .padding(horizontal = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "Unblock",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = tealAccent
+                                )
+                            }
                         }
                     }
                 }

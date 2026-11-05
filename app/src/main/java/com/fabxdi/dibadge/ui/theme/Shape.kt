@@ -7,7 +7,7 @@ import androidx.compose.ui.unit.dp
 // Matches diBadge-design-spec.md:
 // medium (14dp)      cards, grouped lists, + button
 // extraLarge (20dp)  dialogs, top corners of bottom sheets
-val Shapes = Shapes(
+val DiBadgeShapes = Shapes(
     extraSmall = RoundedCornerShape(4.dp),
     small = RoundedCornerShape(8.dp),
     medium = RoundedCornerShape(14.dp),

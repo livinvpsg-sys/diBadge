@@ -276,7 +276,7 @@ fun MyTasksDatePicker(
                                                 if (date != null) {
                                                     val isSelected = date.isEqual(tempSelectedDate)
                                                     val isToday = date.isEqual(LocalDate.now())
-                                                    val hasTask = hasTasksOnDate(allReminders, date)
+                                                    val hasTask = remember(allReminders, date) { hasTasksOnDate(allReminders, date) }
 
                                                     val isBeforeMin = minDate != null && date.isBefore(minDate)
                                                     val isAfterMax = maxDate != null && date.isAfter(maxDate)

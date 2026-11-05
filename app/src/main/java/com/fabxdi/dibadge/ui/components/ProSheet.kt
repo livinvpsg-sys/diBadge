@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -79,30 +80,40 @@ fun ProSheet(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Cancel",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = secondaryTextColor,
+                Box(
                     modifier = Modifier
-                        .clickable { onDismiss() }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                )
+                        .heightIn(min = 48.dp)
+                        .clickable(role = Role.Button) { onDismiss() }
+                        .padding(horizontal = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Cancel",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = secondaryTextColor
+                    )
+                }
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                Text(
-                    text = "See plans",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = tealAccent,
+                Box(
                     modifier = Modifier
-                        .clickable {
+                        .heightIn(min = 48.dp)
+                        .clickable(role = Role.Button) {
                             onDismiss()
                             onSeePlans()
                         }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                )
+                        .padding(horizontal = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "See plans",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = tealAccent
+                    )
+                }
             }
         }
     }

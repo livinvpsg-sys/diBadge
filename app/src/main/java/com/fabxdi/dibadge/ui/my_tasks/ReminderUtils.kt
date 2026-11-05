@@ -77,9 +77,14 @@ fun isReminderOnDate(reminder: ReminderEntity, targetDate: LocalDate): Boolean {
             } else {
                 baseStart.month to baseStart.dayOfMonth
             }
-            targetDate.month == targetMonth && targetDate.dayOfMonth == targetDayOfMonth
+            // 29 Feb falls back to the last day of February in non-leap years
+            val effectiveDay = targetDayOfMonth.coerceAtMost(targetMonth.length(targetDate.isLeapYear))
+            targetDate.month == targetMonth && targetDate.dayOfMonth == effectiveDay
         }
-        repeat == "custom" -> true
+        repeat.startsWith("custom") -> {
+            val range = parseCustomRange(reminder.repeatType)
+            range != null && !targetDate.isBefore(range.first) && !targetDate.isAfter(range.second)
+        }
         else -> false
     }
 }
@@ -103,4 +108,21 @@ fun parseReminderTime(timeStr: String?): LocalTime {
         } catch (_: Exception) {}
     }
     return LocalTime.MAX
+}
+
+/** Stored form of a custom repeat range, e.g. "custom:2026-11-07/2026-11-20". */
+fun customRepeatValue(start: LocalDate, end: LocalDate): String = "custom:$start/$end"
+
+/** Returns the (start, end) of a custom repeat, or null for other or legacy values. */
+fun parseCustomRange(repeatType: String?): Pair<LocalDate, LocalDate>? {
+    if (repeatType == null || !repeatType.startsWith("custom:")) return null
+    val parts = repeatType.substringAfter("custom:").split("/")
+    if (parts.size != 2) return null
+    return try {
+        val s = LocalDate.parse(parts[0].trim())
+        val e = LocalDate.parse(parts[1].trim())
+        if (e.isBefore(s)) null else s to e
+    } catch (_: Exception) {
+        null
+    }
 }

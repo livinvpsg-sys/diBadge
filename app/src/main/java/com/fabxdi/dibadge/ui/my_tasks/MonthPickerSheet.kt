@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -103,7 +104,7 @@ fun MonthPickerSheet(
             Spacer(modifier = Modifier.height(16.dp))
 
             // 12 Months in a 4x3 Grid
-            val months = Month.values()
+            val months = Month.entries
             val chunkedMonths = remember(months) { months.toList().chunked(4) }
 
             chunkedMonths.forEach { rowMonths ->
@@ -121,7 +122,7 @@ fun MonthPickerSheet(
                             modifier = Modifier
                                 .weight(1f)
                                 .height(48.dp)
-                                .clickable {
+                                .clickable(role = Role.Button) {
                                     onMonthSelected(YearMonth.of(displayYear, monthObj))
                                     onDismiss()
                                 },

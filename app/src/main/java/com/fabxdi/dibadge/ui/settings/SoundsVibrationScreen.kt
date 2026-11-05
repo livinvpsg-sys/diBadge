@@ -1,10 +1,10 @@
 package com.fabxdi.dibadge.ui.settings
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.media.RingtoneManager
 import android.net.Uri
-import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,7 +20,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.IntentCompat
 
+/**
+ * Saved keys: sounds_enabled, vibration_enabled, notification_tone_name / _uri, alarm_tone_name / _uri.
+ * An empty *_uri means "Silent". A missing *_uri means the phone's default.
+ * Note: on Android 8+ the notification sound belongs to the notification channel. A new tone only
+ * takes effect if the app creates the channel with that URI (a new channel id is needed to change it).
+ */
 @Composable
 fun SoundsVibrationScreen(
     onBack: () -> Unit
@@ -35,29 +42,46 @@ fun SoundsVibrationScreen(
 
     BackHandler(enabled = true, onBack = onBack)
 
-    val notificationRingtoneLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val uri = result.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
-        if (uri != null) {
-            val ringtone = RingtoneManager.getRingtone(context, uri)
-            val name = ringtone.getTitle(context) ?: "Default"
-            notificationToneName = name
-            prefs.edit().putString("notification_tone_name", name).putString("notification_tone_uri", uri.toString()).apply()
+    // Saves the picked tone. "Silent" comes back as RESULT_OK with no URI.
+    fun saveTone(result: androidx.activity.result.ActivityResult, nameKey: String, uriKey: String, setName: (String) -> Unit) {
+        if (result.resultCode != Activity.RESULT_OK) return
+        val uri = result.data?.let {
+            IntentCompat.getParcelableExtra(it, RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
+        }
+        if (uri == null) {
+            setName("Silent")
+            prefs.edit().putString(nameKey, "Silent").putString(uriKey, "").apply()
+        } else {
+            val name = try {
+                RingtoneManager.getRingtone(context, uri)?.getTitle(context)
+            } catch (e: Exception) {
+                null
+            } ?: "Default"
+            setName(name)
+            prefs.edit().putString(nameKey, name).putString(uriKey, uri.toString()).apply()
         }
     }
 
+    fun pickerIntent(type: Int, title: String, uriKey: String): Intent =
+        Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+            putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, type)
+            putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, title)
+            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
+            // Preselect the tone that is saved now
+            val saved = prefs.getString(uriKey, null)
+            if (saved != null) {
+                putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, if (saved.isEmpty()) null else Uri.parse(saved))
+            }
+        }
+
+    val notificationRingtoneLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result -> saveTone(result, "notification_tone_name", "notification_tone_uri") { notificationToneName = it } }
+
     val alarmRingtoneLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val uri = result.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
-        if (uri != null) {
-            val ringtone = RingtoneManager.getRingtone(context, uri)
-            val name = ringtone.getTitle(context) ?: "Default"
-            alarmToneName = name
-            prefs.edit().putString("alarm_tone_name", name).putString("alarm_tone_uri", uri.toString()).apply()
-        }
-    }
+    ) { result -> saveTone(result, "alarm_tone_name", "alarm_tone_uri") { alarmToneName = it } }
 
     val colors = MaterialTheme.colorScheme
 
@@ -79,19 +103,23 @@ fun SoundsVibrationScreen(
         ) {
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Card 1: In-App Sounds & Vibration Switches
             SettingsCard {
                 SettingsRow(
                     title = "Sounds",
                     subtitle = "Play sounds inside the app",
                     showChevron = false,
+                    onClick = {
+                        isSoundsEnabled = !isSoundsEnabled
+                        prefs.edit().putBoolean("sounds_enabled", isSoundsEnabled).apply()
+                    },
                     trailingContent = {
                         SettingsSwitch(
                             checked = isSoundsEnabled,
                             onCheckedChange = {
                                 isSoundsEnabled = it
                                 prefs.edit().putBoolean("sounds_enabled", it).apply()
-                            }
+                            },
+                            label = "Sounds"
                         )
                     }
                 )
@@ -102,19 +130,23 @@ fun SoundsVibrationScreen(
                     title = "Vibration",
                     subtitle = "Vibrate for alerts and actions",
                     showChevron = false,
+                    onClick = {
+                        isVibrationEnabled = !isVibrationEnabled
+                        prefs.edit().putBoolean("vibration_enabled", isVibrationEnabled).apply()
+                    },
                     trailingContent = {
                         SettingsSwitch(
                             checked = isVibrationEnabled,
                             onCheckedChange = {
                                 isVibrationEnabled = it
                                 prefs.edit().putBoolean("vibration_enabled", it).apply()
-                            }
+                            },
+                            label = "Vibration"
                         )
                     }
                 )
             }
 
-            // Tones Section
             SettingsSectionLabel("Tones")
 
             SettingsCard {
@@ -123,13 +155,9 @@ fun SoundsVibrationScreen(
                     iconVector = Icons.Outlined.Notifications,
                     valueText = notificationToneName,
                     onClick = {
-                        val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-                            putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_NOTIFICATION)
-                            putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Notification Tone")
-                            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
-                            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
-                        }
-                        notificationRingtoneLauncher.launch(intent)
+                        notificationRingtoneLauncher.launch(
+                            pickerIntent(RingtoneManager.TYPE_NOTIFICATION, "Notification Tone", "notification_tone_uri")
+                        )
                     }
                 )
 
@@ -140,13 +168,9 @@ fun SoundsVibrationScreen(
                     iconVector = Icons.Outlined.Alarm,
                     valueText = alarmToneName,
                     onClick = {
-                        val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-                            putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
-                            putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Alarm Sound")
-                            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
-                            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
-                        }
-                        alarmRingtoneLauncher.launch(intent)
+                        alarmRingtoneLauncher.launch(
+                            pickerIntent(RingtoneManager.TYPE_ALARM, "Alarm Sound", "alarm_tone_uri")
+                        )
                     }
                 )
             }

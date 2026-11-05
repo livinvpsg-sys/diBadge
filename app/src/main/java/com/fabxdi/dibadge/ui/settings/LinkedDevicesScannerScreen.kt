@@ -43,11 +43,25 @@ import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
+
+private val SESSION_ID_REGEX = Regex("^[A-Za-z0-9_-]{16,64}$")
+
+/** Only "dibadge-web:<id>" or "SESS_<id>" are accepted. Anything else is not a login code. */
+private fun parseSessionId(code: String): String? {
+    val id = when {
+        code.startsWith("dibadge-web:") -> code.removePrefix("dibadge-web:")
+        code.startsWith("SESS_") -> code
+        else -> return null
+    }
+    return id.takeIf { SESSION_ID_REGEX.matches(it) }
+}
 
 @Composable
 fun LinkedDevicesScannerScreen(
@@ -63,12 +77,35 @@ fun LinkedDevicesScannerScreen(
     var isProcessingScan by remember { mutableStateOf(false) }
 
     var pendingSessionId by remember { mutableStateOf<String?>(null) }
-    var pendingDeviceName by remember { mutableStateOf("Chrome on Windows") }
-    var pendingCity by remember { mutableStateOf("Singapore") }
+    var pendingDeviceName by remember { mutableStateOf("") }
+    var pendingCity by remember { mutableStateOf("") }
     var showLinkConfirmationDialog by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
     BackHandler(enabled = true, onBack = onBack)
+
+    // One scanner and one worker thread for the whole screen, released when it closes
+    val scanner = remember {
+        BarcodeScanning.getClient(
+            BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
+        )
+    }
+    val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
+    DisposableEffect(Unit) {
+        onDispose {
+            cameraControl?.enableTorch(false)
+            scanner.close()
+            analysisExecutor.shutdown()
+        }
+    }
+
+    val rejectScan: (String) -> Unit = { message ->
+        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        coroutineScope.launch {
+            delay(2000)
+            isProcessingScan = false
+        }
+    }
 
     val colors = MaterialTheme.colorScheme
     val diBadgeColors = DiBadgeTheme.colors
@@ -100,41 +137,52 @@ fun LinkedDevicesScannerScreen(
                             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                             .build()
 
-                        val executor = Executors.newSingleThreadExecutor()
-                        imageAnalysis.setAnalyzer(executor) { imageProxy ->
+                        imageAnalysis.setAnalyzer(analysisExecutor) { imageProxy ->
                             @OptIn(ExperimentalGetImage::class)
                             val mediaImage = imageProxy.image
                             if (mediaImage != null && !isProcessingScan && !showLinkConfirmationDialog) {
                                 val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-                                val scanner = BarcodeScanning.getClient()
                                 scanner.process(image)
                                     .addOnSuccessListener { barcodes ->
                                         val code = barcodes.firstOrNull()?.rawValue
                                         if (!code.isNullOrBlank() && !isProcessingScan && !showLinkConfirmationDialog) {
                                             isProcessingScan = true
-
-                                            // Vibrate lightly
-                                            val vibrator = ctx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-                                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                                vibrator?.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+                                            val sessionId = parseSessionId(code)
+                                            if (sessionId == null) {
+                                                rejectScan("This is not a diBadge web login code")
                                             } else {
-                                                vibrator?.vibrate(50)
-                                            }
-
-                                            // Validate QR format
-                                            val isValidQr = code.startsWith("dibadge-web:") || code.startsWith("SESS_") || code.contains("sessionId")
-                                            if (isValidQr) {
-                                                val parsedSessionId = code.substringAfter("dibadge-web:").substringAfter("SESS_").take(40)
-                                                pendingSessionId = parsedSessionId
-                                                pendingDeviceName = "Chrome on Windows"
-                                                pendingCity = "Singapore"
-                                                showLinkConfirmationDialog = true
-                                            } else {
-                                                Toast.makeText(ctx, "This QR code is no longer valid. Refresh it on the web and try again", Toast.LENGTH_SHORT).show()
-                                                coroutineScope.launch {
-                                                    delay(2000)
-                                                    isProcessingScan = false
+                                                // Vibrate lightly
+                                                val vibrator = ctx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                                    vibrator?.vibrate(VibrationEffect.createOneShot(50, VibrationEffect.DEFAULT_AMPLITUDE))
+                                                } else {
+                                                    @Suppress("DEPRECATION")
+                                                    vibrator?.vibrate(50)
                                                 }
+
+                                                // Ask the server what this login request really is before showing it
+                                                FirebaseFirestore.getInstance().collection("webLogins").document(sessionId).get()
+                                                    .addOnSuccessListener { doc ->
+                                                        val now = System.currentTimeMillis()
+                                                        val created = doc.getTimestamp("createdAt")?.toDate()?.time
+                                                        val expires = doc.getTimestamp("expiresAt")?.toDate()?.time
+                                                        val expired = (expires != null && expires < now) ||
+                                                            (expires == null && created != null && now - created > 5 * 60_000L)
+                                                        when {
+                                                            !doc.exists() -> rejectScan("This QR code is no longer valid. Refresh it on the web and try again")
+                                                            doc.getBoolean("approved") == true -> rejectScan("This QR code was already used")
+                                                            expired -> rejectScan("This QR code has expired. Refresh it on the web and try again")
+                                                            else -> {
+                                                                pendingSessionId = sessionId
+                                                                pendingDeviceName = doc.getString("deviceName") ?: doc.getString("browser") ?: "Unknown browser"
+                                                                pendingCity = doc.getString("city") ?: doc.getString("location") ?: "Unknown location"
+                                                                showLinkConfirmationDialog = true
+                                                            }
+                                                        }
+                                                    }
+                                                    .addOnFailureListener {
+                                                        rejectScan("Could not check this QR code. Check your connection")
+                                                    }
                                             }
                                         }
                                     }
@@ -281,19 +329,16 @@ fun LinkedDevicesScannerScreen(
                     TextButton(
                         onClick = {
                             showLinkConfirmationDialog = false
-                            val sessId = pendingSessionId.orEmpty().ifBlank { "SESS_${System.currentTimeMillis()}" }
+                            val sessId = pendingSessionId
+                            if (sessId.isNullOrBlank()) {
+                                isProcessingScan = false
+                                return@TextButton
+                            }
                             val db = FirebaseFirestore.getInstance()
+                            val deviceRef = db.collection("users").document(userUid)
+                                .collection("linkedDevices").document(sessId)
 
-                            // 1. Approval doc for web page
-                            val webApprovalData = mapOf(
-                                "approved" to true,
-                                "uid" to userUid,
-                                "approvedAt" to FieldValue.serverTimestamp()
-                            )
-                            db.collection("webLogins").document(sessId)
-                                .set(webApprovalData, SetOptions.merge())
-
-                            // 2. Linked Device record under user
+                            // 1. Record the device first, so an approved session is never untracked
                             val linkedDevData = mapOf(
                                 "id" to sessId,
                                 "deviceName" to pendingDeviceName,
@@ -301,12 +346,30 @@ fun LinkedDevicesScannerScreen(
                                 "linkedAt" to FieldValue.serverTimestamp(),
                                 "lastActiveAt" to FieldValue.serverTimestamp()
                             )
-                            db.collection("users").document(userUid)
-                                .collection("linkedDevices").document(sessId)
-                                .set(linkedDevData, SetOptions.merge())
-
-                            Toast.makeText(context, "New device linked", Toast.LENGTH_SHORT).show()
-                            onDeviceLinkedSuccessfully()
+                            deviceRef.set(linkedDevData, SetOptions.merge())
+                                .addOnSuccessListener {
+                                    // 2. Approve the web session
+                                    val webApprovalData = mapOf(
+                                        "approved" to true,
+                                        "uid" to userUid,
+                                        "approvedAt" to FieldValue.serverTimestamp()
+                                    )
+                                    db.collection("webLogins").document(sessId)
+                                        .set(webApprovalData, SetOptions.merge())
+                                        .addOnSuccessListener {
+                                            Toast.makeText(context, "New device linked", Toast.LENGTH_SHORT).show()
+                                            onDeviceLinkedSuccessfully()
+                                        }
+                                        .addOnFailureListener {
+                                            deviceRef.delete()
+                                            isProcessingScan = false
+                                            Toast.makeText(context, "Could not link the device. Try again", Toast.LENGTH_SHORT).show()
+                                        }
+                                }
+                                .addOnFailureListener {
+                                    isProcessingScan = false
+                                    Toast.makeText(context, "Could not link the device. Try again", Toast.LENGTH_SHORT).show()
+                                }
                         }
                     ) {
                         Text(

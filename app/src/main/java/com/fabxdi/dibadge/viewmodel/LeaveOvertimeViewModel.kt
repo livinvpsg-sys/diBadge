@@ -20,12 +20,6 @@ class LeaveOvertimeViewModel(application: Application) : AndroidViewModel(applic
     val allOvertime: Flow<List<OvertimeEntity>> = leaveOvertimeDao.getAllOvertime()
     val allClaims: Flow<List<ClaimEntity>> = leaveOvertimeDao.getAllClaims()
 
-    init {
-        viewModelScope.launch {
-            leaveOvertimeDao.deletePastPendingLeaves(LocalDate.now())
-        }
-    }
-
     fun saveOvertime(
         date: LocalDate,
         startTime: LocalTime,

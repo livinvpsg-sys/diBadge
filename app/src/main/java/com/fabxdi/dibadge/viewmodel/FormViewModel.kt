@@ -31,10 +31,28 @@ class FormViewModel(application: Application) : AndroidViewModel(application) {
 
     val allUserForms: Flow<List<FormEntity>> = formDao.getAllUserForms()
 
-    init {
-        viewModelScope.launch(Dispatchers.IO) {
-            syncUserFormsFromFirestore()
+    private var syncedUid: String? = null
+
+    // Load the signed-in account's forms, and again whenever a different account signs in
+    private val authStateListener = FirebaseAuth.AuthStateListener { fa ->
+        val uid = fa.currentUser?.uid
+        if (uid != null && uid != syncedUid) {
+            syncedUid = uid
+            viewModelScope.launch(Dispatchers.IO) {
+                syncUserFormsFromFirestore()
+            }
+        } else if (uid == null) {
+            syncedUid = null
         }
+    }
+
+    init {
+        auth.addAuthStateListener(authStateListener)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        auth.removeAuthStateListener(authStateListener)
     }
 
     fun getFormsForGroup(groupId: String): Flow<List<GroupFormEntity>> {

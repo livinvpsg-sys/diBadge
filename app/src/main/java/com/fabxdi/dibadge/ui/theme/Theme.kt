@@ -34,7 +34,13 @@ data class DiBadgeColors(
     val well: Color,
     val fabContainer: Color,
     val fabIcon: Color,
-    val isDark: Boolean
+    val isDark: Boolean,
+    /** Border of chips, buttons and inputs. Strong enough to see (3:1), unlike the divider colour. */
+    val controlBorder: Color,
+    /** Readable status colours for the current theme. */
+    val approved: Color,
+    val pending: Color,
+    val info: Color
 )
 
 val LocalSpacing = staticCompositionLocalOf { DiBadgeSpacing() }
@@ -46,7 +52,11 @@ val LocalDiBadgeColors = staticCompositionLocalOf {
         well = Color(0xFF12161A),
         fabContainer = Color(0xFFF2F5F7),
         fabIcon = Color(0xFF0E1114),
-        isDark = true
+        isDark = true,
+        controlBorder = DarkControlBorder,
+        approved = ApprovedGreen,
+        pending = PendingBlue,
+        info = InfoBlue
     )
 }
 
@@ -79,8 +89,19 @@ private val DarkScheme = darkColorScheme(
     inverseSurface = DarkOnBackground,
     inverseOnSurface = DarkBackground,
     inversePrimary = LightAccent,
+    primaryContainer = DarkContainer,
+    onPrimaryContainer = DarkOnBackground,
+    secondaryContainer = DarkContainer,
+    onSecondaryContainer = DarkOnBackground,
+    tertiaryContainer = DarkContainer,
+    onTertiaryContainer = DarkOnBackground,
     error = DarkError,
     onError = DarkBackground,
+    errorContainer = DarkErrorContainer,
+    onErrorContainer = DarkError,
+    scrim = Color.Black,
+    surfaceDim = DarkBackground,
+    surfaceBright = DarkSurface,
     outline = DarkOutline,
     outlineVariant = DarkOutline,
     surfaceContainerLowest = DarkSurface,
@@ -107,8 +128,19 @@ private val LightScheme = lightColorScheme(
     inverseSurface = LightOnBackground,
     inverseOnSurface = LightBackground,
     inversePrimary = DarkAccent,
+    primaryContainer = LightContainer,
+    onPrimaryContainer = LightOnBackground,
+    secondaryContainer = LightContainer,
+    onSecondaryContainer = LightOnBackground,
+    tertiaryContainer = LightContainer,
+    onTertiaryContainer = LightOnBackground,
     error = LightError,
     onError = Color.White,
+    errorContainer = LightErrorContainer,
+    onErrorContainer = LightOnErrorContainer,
+    scrim = Color.Black,
+    surfaceDim = LightBackground,
+    surfaceBright = LightSurface,
     outline = LightOutline,
     outlineVariant = LightOutline,
     surfaceContainerLowest = LightSurface,
@@ -124,7 +156,11 @@ private val DarkDiBadgeColors = DiBadgeColors(
     well = Color(0xFF12161A),
     fabContainer = Color(0xFFF2F5F7),
     fabIcon = Color(0xFF0E1114),
-    isDark = true
+    isDark = true,
+    controlBorder = DarkControlBorder,
+    approved = ApprovedGreen,
+    pending = PendingBlue,
+    info = InfoBlue
 )
 
 private val LightDiBadgeColors = DiBadgeColors(
@@ -133,7 +169,11 @@ private val LightDiBadgeColors = DiBadgeColors(
     well = Color(0xFFECEFF2),
     fabContainer = Color(0xFF14181C),
     fabIcon = Color(0xFFFFFFFF),
-    isDark = false
+    isDark = false,
+    controlBorder = LightControlBorder,
+    approved = LightApprovedGreen,
+    pending = LightPendingBlue,
+    info = LightPendingBlue
 )
 
 @Composable
@@ -167,8 +207,8 @@ fun DiBadgeTheme(
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
-            typography = Typography,
-            shapes = Shapes,
+            typography = DiBadgeTypography,
+            shapes = DiBadgeShapes,
             content = content
         )
     }

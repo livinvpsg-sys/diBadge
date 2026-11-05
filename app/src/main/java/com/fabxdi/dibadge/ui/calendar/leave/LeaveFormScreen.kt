@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.data.LeaveEntity
+import com.fabxdi.dibadge.ui.calendar.rememberOrganizationName
 import com.fabxdi.dibadge.ui.components.DiBadgeDatePicker
 import com.fabxdi.dibadge.ui.calendar.AttachmentFile
 import com.fabxdi.dibadge.ui.calendar.AttachmentsSection
@@ -48,7 +49,7 @@ fun LeaveFormScreen(
 ) {
     val isEditing = leaveToEdit != null
 
-    var selectedOrg by remember { mutableStateOf("diBadge Inc.") }
+    val selectedOrg = rememberOrganizationName()
     var selectedLeaveType by remember { mutableStateOf(leaveToEdit?.leaveType ?: "") }
     var fromDate by remember { mutableStateOf(leaveToEdit?.startDate ?: initialDate) }
     var toDate by remember { mutableStateOf(leaveToEdit?.endDate ?: leaveToEdit?.startDate ?: initialDate) }
@@ -188,7 +189,8 @@ fun LeaveFormScreen(
 
             // Card 1: Organisation & Leave Type
             SettingsCard {
-                // Row 1: Organisation
+                // Row 1: Organisation (only when the profile has one)
+                if (selectedOrg.isNotBlank()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -205,6 +207,7 @@ fun LeaveFormScreen(
                 }
 
                 HorizontalDivider(thickness = 1.dp, color = outlineColor)
+                }
 
                 // Row 2: Leave type (Required)
                 Row(

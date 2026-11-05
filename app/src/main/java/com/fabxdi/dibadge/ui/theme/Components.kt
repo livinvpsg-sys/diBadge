@@ -20,7 +20,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -70,7 +74,7 @@ fun DiBadgeButton(
 ) {
     val colors = MaterialTheme.colorScheme
 
-    val borderColor = if (isSelected) colors.onBackground else colors.outline
+    val borderColor = if (isSelected) colors.onBackground else DiBadgeTheme.colors.controlBorder
     val contentColor = if (isSelected) colors.onBackground else colors.onSurfaceVariant
     val alpha = if (isEnabled) 1f else DISABLED_ALPHA
 
@@ -80,7 +84,7 @@ fun DiBadgeButton(
         shape = MaterialTheme.shapes.small,
         color = Color.Transparent,
         border = BorderStroke(width = 1.dp, color = borderColor.copy(alpha = alpha)),
-        modifier = modifier
+        modifier = modifier.semantics { selected = isSelected }
     ) {
         Text(
             text = text,
@@ -108,7 +112,7 @@ fun DiBadgeChip(
     onClick: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
-    val borderColor = if (selected) colors.onBackground else colors.outline
+    val borderColor = if (selected) colors.onBackground else DiBadgeTheme.colors.controlBorder
     val contentColor = if (selected) colors.onBackground else colors.onSurfaceVariant
     val base = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp, letterSpacing = 0.sp)
 
@@ -117,7 +121,11 @@ fun DiBadgeChip(
         shape = RoundedCornerShape(16.dp),
         color = Color.Transparent,
         border = BorderStroke(1.dp, borderColor),
-        modifier = modifier.height(32.dp)
+        // Compose already extends the touch area of small clickables to 48 dp, so only the semantics are added
+        modifier = modifier.height(32.dp).semantics {
+            role = Role.Tab
+            this.selected = selected
+        }
     ) {
         Box(
             contentAlignment = Alignment.Center,
@@ -138,7 +146,7 @@ fun DiBadgeChip(
                 color = contentColor,
                 maxLines = 1,
                 softWrap = false,
-                overflow = TextOverflow.Clip
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -149,8 +157,8 @@ fun DiBadgeInfoMessage(
     message: String,
     modifier: Modifier = Modifier
 ) {
-    // Accessibility: keeps blue dark enough on light backgrounds.
-    val infoColor = if (DiBadgeTheme.colors.isDark) InfoBlue else PendingBlue
+    // Accessibility: the theme supplies a blue that is readable in both modes.
+    val infoColor = DiBadgeTheme.colors.info
 
     Text(
         text = message,
@@ -164,6 +172,7 @@ fun DiBadgeInfoMessage(
  * Disables swipe-down dismissal on the modified content by consuming
  * all unhandled vertical drag gestures and nested scroll post-scrolls.
  * Used for bottom sheets so they can only be dragged from their handle/header.
+ * On material3 1.3+ prefer ModalBottomSheet(sheetGesturesEnabled = false) where the sheet allows it.
  */
 fun Modifier.disableBottomSheetDrag(): Modifier = this.then(
     Modifier

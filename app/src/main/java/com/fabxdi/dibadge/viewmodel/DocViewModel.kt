@@ -1,16 +1,20 @@
 package com.fabxdi.dibadge.viewmodel
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fabxdi.dibadge.data.AppDatabase
 import com.fabxdi.dibadge.data.DocEntity
+import com.fabxdi.dibadge.ui.my_docs.DocFileUtils
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.time.LocalDate
@@ -26,6 +30,9 @@ class DocViewModel(application: Application) : AndroidViewModel(application) {
     private var firestoreListener: ListenerRegistration? = null
     private var currentSyncedUserId: String? = null
 
+    // Which account the documents in the local database belong to
+    private val sessionPrefs = application.getSharedPreferences("dibadge_session", Context.MODE_PRIVATE)
+
     val allDocuments: Flow<List<DocEntity>> = docDao.getAllDocuments()
 
     private val authStateListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
@@ -37,7 +44,8 @@ class DocViewModel(application: Application) : AndroidViewModel(application) {
         } else {
             removeFirestoreSync()
             viewModelScope.launch(Dispatchers.IO) {
-                docDao.deleteAllDocuments()
+                clearLocalDocuments()
+                sessionPrefs.edit().remove("docs_owner").apply()
             }
         }
     }
@@ -53,11 +61,31 @@ class DocViewModel(application: Application) : AndroidViewModel(application) {
         removeFirestoreSync()
     }
 
+    /** Removes every local document and its stored files. */
+    private suspend fun clearLocalDocuments() {
+        try {
+            val app = getApplication<Application>()
+            docDao.getAllDocuments().first().forEach { doc ->
+                doc.files.forEach { DocFileUtils.deleteStored(app, it) }
+            }
+            docDao.deleteAllDocuments()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     private fun setupFirestoreSync(userId: String) {
         removeFirestoreSync()
         currentSyncedUserId = userId
 
         viewModelScope.launch(Dispatchers.IO) {
+            // The local documents belong to whoever used the app last. Another account must not see them.
+            val owner = sessionPrefs.getString("docs_owner", null)
+            if (owner != null && owner != userId) {
+                clearLocalDocuments()
+            }
+            sessionPrefs.edit().putString("docs_owner", userId).apply()
+
             try {
                 val snapshot = firestore.collection("users")
                     .document(userId)
@@ -65,28 +93,19 @@ class DocViewModel(application: Application) : AndroidViewModel(application) {
                     .get()
                     .await()
 
-                if (snapshot.documents.isEmpty()) {
-                    val sampleDocs = createSampleDocuments()
-                    docDao.insertAllDocuments(sampleDocs)
-                    for (doc in sampleDocs) {
-                        firestore.collection("users")
-                            .document(userId)
-                            .collection("documents")
-                            .document(doc.id)
-                            .set(doc.toFirestoreMap(), SetOptions.merge())
-                    }
-                } else {
-                    for (doc in snapshot.documents) {
-                        val mapData = doc.data ?: continue
-                        val item = mapData.toDocEntity(doc.id)
-                        if (item != null) {
-                            docDao.insertDocument(item)
-                        }
+                for (doc in snapshot.documents) {
+                    val mapData = doc.data ?: continue
+                    val item = mapData.toDocEntity(doc.id)
+                    if (item != null) {
+                        docDao.insertDocument(item)
                     }
                 }
             } catch (e: Exception) {
                 // Offline or firestore error
             }
+
+            // Signed out or switched account while loading: do not start a listener for the old one
+            if (currentSyncedUserId != userId) return@launch
 
             firestoreListener = firestore.collection("users")
                 .document(userId)
@@ -94,9 +113,14 @@ class DocViewModel(application: Application) : AndroidViewModel(application) {
                 .addSnapshotListener { snapshot, e ->
                     if (e != null || snapshot == null) return@addSnapshotListener
                     viewModelScope.launch(Dispatchers.IO) {
-                        for (doc in snapshot.documents) {
-                            val mapData = doc.data ?: continue
-                            val item = mapData.toDocEntity(doc.id)
+                        if (currentSyncedUserId != userId) return@launch
+                        for (change in snapshot.documentChanges) {
+                            if (change.type == DocumentChange.Type.REMOVED) {
+                                docDao.deleteDocumentsByIds(listOf(change.document.id))
+                                continue
+                            }
+                            val mapData = change.document.data
+                            val item = mapData.toDocEntity(change.document.id)
                             if (item != null) {
                                 docDao.insertDocument(item)
                             }
@@ -123,6 +147,7 @@ class DocViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteDocument(doc: DocEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             docDao.deleteDocument(doc)
+            doc.files.forEach { DocFileUtils.deleteStored(getApplication(), it) }
             val userId = auth.currentUser?.uid ?: return@launch
             try {
                 firestore.collection("users")
@@ -138,6 +163,7 @@ class DocViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val ids = docs.map { it.id }
             docDao.deleteDocumentsByIds(ids)
+            docs.forEach { d -> d.files.forEach { DocFileUtils.deleteStored(getApplication(), it) } }
             val userId = auth.currentUser?.uid ?: return@launch
             for (id in ids) {
                 try {
@@ -154,12 +180,24 @@ class DocViewModel(application: Application) : AndroidViewModel(application) {
     fun shareDocumentWithOrg(doc: DocEntity, orgName: String) {
         viewModelScope.launch(Dispatchers.IO) {
             val dateStr = LocalDate.now().format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault()))
-            val updatedOrgs = doc.sharedOrganisations + orgName
-            val updatedDates = doc.sharedDates + "Shared on $dateStr"
+            val label = "Shared on $dateStr"
+
+            // Sharing again with the same organisation updates its date instead of adding a second entry
+            val orgs = doc.sharedOrganisations.toMutableList()
+            val dates = doc.sharedDates.toMutableList()
+            val existing = orgs.indexOf(orgName)
+            if (existing >= 0) {
+                while (dates.size <= existing) dates.add("Shared")
+                dates[existing] = label
+            } else {
+                orgs.add(orgName)
+                while (dates.size < orgs.size - 1) dates.add("Shared")
+                dates.add(label)
+            }
 
             val updatedDoc = doc.copy(
-                sharedOrganisations = updatedOrgs,
-                sharedDates = updatedDates,
+                sharedOrganisations = orgs,
+                sharedDates = dates,
                 updatedAt = System.currentTimeMillis()
             )
 
@@ -177,56 +215,6 @@ class DocViewModel(application: Application) : AndroidViewModel(application) {
                 .document(doc.id)
                 .set(doc.toFirestoreMap(), SetOptions.merge())
         } catch (e: Exception) {}
-    }
-
-    private fun createSampleDocuments(): List<DocEntity> {
-        val today = LocalDate.now()
-        val now = System.currentTimeMillis()
-
-        return listOf(
-            DocEntity(
-                id = "doc_1",
-                name = "National Registration ID",
-                type = "id",
-                number = "S9876543A",
-                expiryDate = null,
-                noExpiry = true,
-                files = listOf("sample_id_front.jpg"),
-                fileNames = listOf("NRIC_Front.jpg"),
-                fileSizes = listOf(1_200_000L),
-                fileIsPdf = listOf(false),
-                createdAt = now,
-                updatedAt = now
-            ),
-            DocEntity(
-                id = "doc_2",
-                name = "Solar Installation Licence",
-                type = "licence",
-                number = "LIC-2026-098",
-                expiryDate = today.plusDays(10),
-                noExpiry = false,
-                files = listOf("sample_licence.pdf"),
-                fileNames = listOf("Solar_Licence.pdf"),
-                fileSizes = listOf(240_000L),
-                fileIsPdf = listOf(true),
-                createdAt = now - 3600_000L * 24,
-                updatedAt = now - 3600_000L * 24
-            ),
-            DocEntity(
-                id = "doc_3",
-                name = "Workplace Safety Certificate",
-                type = "certificate",
-                number = "CERT-8841",
-                expiryDate = today.plusMonths(12),
-                noExpiry = false,
-                files = listOf("sample_cert.pdf"),
-                fileNames = listOf("Safety_Cert.pdf"),
-                fileSizes = listOf(350_000L),
-                fileIsPdf = listOf(true),
-                createdAt = now - 3600_000L * 48,
-                updatedAt = now - 3600_000L * 48
-            )
-        )
     }
 }
 
@@ -275,6 +263,8 @@ fun Map<String, Any?>.toDocEntity(documentId: String): DocEntity? {
         fileSizes = fileSizesVal,
         fileIsPdf = fileIsPdfVal,
         sharedOrganisations = sharedOrgsVal,
-        sharedDates = sharedDatesVal
+        sharedDates = sharedDatesVal,
+        createdAt = (this["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis(),
+        updatedAt = (this["updatedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
     )
 }

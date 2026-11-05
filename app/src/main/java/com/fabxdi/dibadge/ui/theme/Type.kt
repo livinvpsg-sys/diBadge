@@ -8,33 +8,39 @@ import androidx.compose.ui.unit.sp
 // Bold is reserved for selected items, section labels and screen emphasis.
 // Row titles and labels are regular. Apply FontWeight.Bold at the call site
 // when an item is selected or is a section label.
-val Typography = Typography(
+val DiBadgeTypography = Typography(
     bodySmall = TextStyle(
         fontSize = 12.sp,
+        lineHeight = 16.sp,
         fontWeight = FontWeight.Normal,
         letterSpacing = 0.4.sp
     ),
     bodyMedium = TextStyle(
         fontSize = 14.sp,
+        lineHeight = 20.sp,
         fontWeight = FontWeight.Normal,
         letterSpacing = 0.25.sp
     ),
     bodyLarge = TextStyle(
         fontSize = 16.sp,
+        lineHeight = 24.sp,
         fontWeight = FontWeight.Normal,
         letterSpacing = 0.5.sp
     ),
     titleLarge = TextStyle(
         fontSize = 22.sp,
+        lineHeight = 28.sp,
         fontWeight = FontWeight.SemiBold
     ),
     labelMedium = TextStyle(
         fontSize = 12.sp,
+        lineHeight = 16.sp,
         fontWeight = FontWeight.Medium,
         letterSpacing = 0.5.sp
     ),
     displayLarge = TextStyle(
         fontSize = 28.sp,
+        lineHeight = 36.sp,
         fontWeight = FontWeight.Bold
     )
 )

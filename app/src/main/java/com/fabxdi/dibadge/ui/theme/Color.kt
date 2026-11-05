@@ -17,16 +17,23 @@ val DarkOnSurfaceVariant = Color(0xFF8A9199)
 val DarkTabInactive      = Color(0xFF6E757C)
 val DarkAccent           = Color(0xFF58B5AC)
 val DarkError            = Color(0xFFE8837A)
+val DarkContainer        = Color(0xFF232A31) // selected chips, nav indicators, picker highlights
+val DarkErrorContainer   = Color(0xFF3A1F1D)
+val DarkControlBorder    = Color(0xFF5E656D) // outlines of chips/buttons/inputs: 3:1 against the page
 
 // Light theme
 val LightBackground       = Color(0xFFE8ECEF)
 val LightSurface          = Color(0xFFF5F7F9) // bottom bar, cards, sheets, dialogs, + button
 val LightOutline          = Color(0xFFD3D9DF)
 val LightOnBackground     = Color(0xFF11161A)
-val LightOnSurfaceVariant = Color(0xFF65707A)
-val LightTabInactive      = Color(0xFF8A929A)
+val LightOnSurfaceVariant = Color(0xFF5A646D) // 5:1 on the page background (was 4.2:1)
+val LightTabInactive      = Color(0xFF6F7780) // 3.8:1 (was 2.7:1)
 val LightAccent           = Color(0xFF1B6F69)
 val LightError            = Color(0xFFC4433A)
+val LightContainer        = Color(0xFFDDE2E7)
+val LightErrorContainer   = Color(0xFFF6DAD7)
+val LightOnErrorContainer = Color(0xFF7A1F19)
+val LightControlBorder    = Color(0xFF7E868E) // 3.1:1 against the page
 
 // Status colours (unchanged)
 val InfoBlue      = Color(0xFF05C1F5)
@@ -34,6 +41,11 @@ val BadgeRed      = Color(0xFFDE0000)
 val PendingBlue   = Color(0xFF2986CC)
 val ApprovedGreen = Color(0xFF70CC66)
 val TealGreen     = Color(0xFF008080)
+
+// Status text/icons on LIGHT backgrounds need darker shades to be readable (4.5:1).
+// In screens use DiBadgeTheme.colors.approved / pending / info, not the raw values above.
+val LightApprovedGreen = Color(0xFF2E7D32)
+val LightPendingBlue   = Color(0xFF1A6AA8)
 
 // ---------------------------------------------------------------------------
 // Legacy names. Old values kept so nothing changes silently. Every use is a

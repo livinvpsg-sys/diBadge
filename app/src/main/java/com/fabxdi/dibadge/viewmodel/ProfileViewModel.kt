@@ -2,9 +2,11 @@ package com.fabxdi.dibadge.viewmodel
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkRequest
+import android.net.Uri
 import android.util.Base64
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,7 +20,6 @@ import com.fabxdi.dibadge.util.validateUsernameFormat
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.UserProfileChangeRequest
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.Dispatchers
@@ -29,7 +30,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withTimeout
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
@@ -126,23 +126,35 @@ class ProfileViewModel : ViewModel() {
     private var resendTimerJob: Job? = null
     private var usernameCheckJob: Job? = null
     private var networkCallbackRegistered = false
-    private var orgListener: ListenerRegistration? = null
-    private var connectivityManager: ConnectivityManager? = null
-    private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    private var verifyLockedUntil = 0L
 
-    override fun onCleared() {
-        orgListener?.remove()
-        orgListener = null
-        try {
-            networkCallback?.let { connectivityManager?.unregisterNetworkCallback(it) }
-        } catch (e: Exception) {}
-        networkCallback = null
-        super.onCleared()
+    private var orgListener: com.google.firebase.firestore.ListenerRegistration? = null
+    private var loadedForUid: String? = null
+
+    private val authListener = FirebaseAuth.AuthStateListener { fa ->
+        val uid = fa.currentUser?.uid
+        if (uid != loadedForUid) {
+            // account changed or signed out: drop the previous account's profile immediately
+            orgListener?.remove()
+            orgListener = null
+            _profileData.value = UserProfileData()
+            _verifiedOrganization.value = null
+            initialProfileData = UserProfileData()
+            _uiState.value = ProfileUiState.Loading
+            loadedForUid = uid
+            if (uid != null) loadUserProfile()
+        }
     }
 
     init {
+        loadedForUid = auth.currentUser?.uid
+        auth.addAuthStateListener(authListener)
         loadUserProfile()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        auth.removeAuthStateListener(authListener)
+        orgListener?.remove()
     }
 
     fun loadUserProfile() {
@@ -153,7 +165,7 @@ class ProfileViewModel : ViewModel() {
 
         var previousOrgName: String? = null
 
-        // Listen to verifiedOrganization (replace any earlier listener so it cannot leak)
+        // Listen to verifiedOrganization
         orgListener?.remove()
         orgListener = firestore.collection("users").document(user.uid)
             .collection("verifiedOrganizations")
@@ -332,19 +344,19 @@ class ProfileViewModel : ViewModel() {
 
     fun observeNetworkAndAutoRetry(context: Context) {
         if (networkCallbackRegistered) return
-        // applicationContext so the callback never holds on to an Activity
-        val cm = context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
         try {
-            val callback = object : ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(network: Network) {
-                    if (_usernameAvailability.value is UsernameAvailabilityState.CantCheck) {
-                        retryUsernameCheck()
+            val builder = NetworkRequest.Builder()
+            cm.registerNetworkCallback(
+                builder.build(),
+                object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) {
+                        if (_usernameAvailability.value is UsernameAvailabilityState.CantCheck) {
+                            retryUsernameCheck()
+                        }
                     }
                 }
-            }
-            cm.registerNetworkCallback(NetworkRequest.Builder().build(), callback)
-            connectivityManager = cm
-            networkCallback = callback
+            )
             networkCallbackRegistered = true
         } catch (e: Exception) {}
     }
@@ -514,13 +526,6 @@ class ProfileViewModel : ViewModel() {
             return
         }
 
-        val lockLeftMs = verifyLockedUntil - System.currentTimeMillis()
-        if (lockLeftMs > 0) {
-            val mins = ((lockLeftMs + 59_999) / 60_000).toInt()
-            onError("Too many wrong codes. Try again in $mins ${if (mins == 1) "minute" else "minutes"}.")
-            return
-        }
-
         val generatedCode = String.format("%06d", (100000..999999).random())
         val challengeId = UUID.randomUUID().toString()
 
@@ -596,8 +601,7 @@ class ProfileViewModel : ViewModel() {
             } else {
                 val newTriesLeft = state.triesLeft - 1
                 if (newTriesLeft <= 0) {
-                    verifyLockedUntil = System.currentTimeMillis() + 10 * 60 * 1000
-                    _emailVerifyState.value = _emailVerifyState.value.copy(
+                    _emailVerifyState.value = state.copy(
                         isVerifying = false,
                         triesLeft = 0,
                         isLocked = true,
@@ -605,7 +609,7 @@ class ProfileViewModel : ViewModel() {
                     )
                 } else {
                     val triesMsg = if (newTriesLeft == 1) "1 try left." else "$newTriesLeft tries left."
-                    _emailVerifyState.value = _emailVerifyState.value.copy(
+                    _emailVerifyState.value = state.copy(
                         isVerifying = false,
                         triesLeft = newTriesLeft,
                         errorMessage = "That code is not right. $triesMsg"
@@ -651,7 +655,6 @@ class ProfileViewModel : ViewModel() {
         _isUploadingPhoto.value = true
 
         viewModelScope.launch(Dispatchers.IO) {
-            var data: ByteArray? = null
             try {
                 val scaledBitmap = if (bitmap.width > 512 || bitmap.height > 512) {
                     Bitmap.createScaledBitmap(bitmap, 512, 512, true)
@@ -661,49 +664,37 @@ class ProfileViewModel : ViewModel() {
 
                 val baos = ByteArrayOutputStream()
                 scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 85, baos)
-                val bytes = baos.toByteArray()
-                data = bytes
+                val data = baos.toByteArray()
 
                 val localFile = File(context.filesDir, "profile_photo.jpg")
-                localFile.writeBytes(bytes)
+                localFile.writeBytes(data)
                 val localUriStr = "file://${localFile.absolutePath}?v=${System.currentTimeMillis()}"
 
-                // Show the new picture straight away. initialProfileData is left alone on purpose:
-                // until the upload succeeds the photo counts as an unsaved change, so Save appears
-                // and saveProfileInternal() will try the upload again.
                 _profileData.value = _profileData.value.copy(photoUrl = localUriStr)
+                initialProfileData = initialProfileData.copy(photoUrl = localUriStr)
+
+                // The local file path is kept on this phone only. Firestore gets the photo link
+                // only after the upload succeeds, so other people never receive a path they cannot open.
+                _isUploadingPhoto.value = false
+                onComplete(true, localUriStr)
+
+                try {
+                    val storageRef = storage.reference.child("users/${user.uid}/profile_photo.jpg")
+                    storageRef.putBytes(data).await()
+                    val rawUrl = storageRef.downloadUrl.await().toString()
+                    val cloudUrl = "$rawUrl?v=${System.currentTimeMillis()}"
+
+                    firestore.collection("users")
+                        .document(user.uid)
+                        .set(mapOf("photoUrl" to cloudUrl, "updatedAt" to System.currentTimeMillis()), SetOptions.merge())
+                        .await()
+
+                    _profileData.value = _profileData.value.copy(photoUrl = cloudUrl)
+                    initialProfileData = initialProfileData.copy(photoUrl = cloudUrl)
+                } catch (e: Exception) {}
             } catch (e: Exception) {
                 _isUploadingPhoto.value = false
                 onComplete(false, e.localizedMessage ?: "Couldn't update the photo. Try again.")
-                return@launch
-            }
-
-            try {
-                val bytes = data ?: throw IOException("No photo data")
-                val cloudUrl = withTimeout(30_000) {
-                    val storageRef = storage.reference.child("users/${user.uid}/profile_photo.jpg")
-                    storageRef.putBytes(bytes).await()
-                    val rawUrl = storageRef.downloadUrl.await().toString()
-                    val url = "$rawUrl?v=${System.currentTimeMillis()}"
-                    firestore.collection("users")
-                        .document(user.uid)
-                        .set(mapOf("photoUrl" to url, "updatedAt" to System.currentTimeMillis()), SetOptions.merge())
-                        .await()
-                    url
-                }
-                _profileData.value = _profileData.value.copy(photoUrl = cloudUrl)
-                initialProfileData = initialProfileData.copy(photoUrl = cloudUrl)
-                _isUploadingPhoto.value = false
-                onComplete(true, cloudUrl)
-            } catch (e: Exception) {
-                _isUploadingPhoto.value = false
-                val denied = e.message?.contains("PERMISSION_DENIED") == true ||
-                        e.message?.contains("not authorized", ignoreCase = true) == true
-                onComplete(
-                    false,
-                    if (denied) "Couldn't upload the photo: not allowed. Check that the latest Storage rules are published."
-                    else "Photo not uploaded yet. Tap Save to try again."
-                )
             }
         }
     }
@@ -722,18 +713,13 @@ class ProfileViewModel : ViewModel() {
                 if (localFile.exists()) localFile.delete()
 
                 try {
-                    withTimeout(15_000) {
-                        storage.reference.child("users/${user.uid}/profile_photo.jpg").delete().await()
-                    }
+                    storage.reference.child("users/${user.uid}/profile_photo.jpg").delete().await()
                 } catch (e: Exception) {}
 
-                // Without a timeout this waits forever when the phone is offline
-                withTimeout(15_000) {
-                    firestore.collection("users")
-                        .document(user.uid)
-                        .set(mapOf("photoUrl" to "", "updatedAt" to System.currentTimeMillis()), SetOptions.merge())
-                        .await()
-                }
+                firestore.collection("users")
+                    .document(user.uid)
+                    .set(mapOf("photoUrl" to "", "updatedAt" to System.currentTimeMillis()), SetOptions.merge())
+                    .await()
 
                 _profileData.value = _profileData.value.copy(photoUrl = "")
                 initialProfileData = initialProfileData.copy(photoUrl = "")

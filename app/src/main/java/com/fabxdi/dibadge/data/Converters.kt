@@ -21,7 +21,7 @@ class Converters {
     @TypeConverter
     fun toLocalDate(value: String?): LocalDate? {
         return value?.let {
-            LocalDate.parse(it, formatter)
+            try { LocalDate.parse(it, formatter) } catch (e: Exception) { null }
         }
     }
 
@@ -33,7 +33,7 @@ class Converters {
     @TypeConverter
     fun toLocalTime(value: String?): LocalTime? {
         return value?.let {
-            LocalTime.parse(it, timeFormatter)
+            try { LocalTime.parse(it, timeFormatter) } catch (e: Exception) { null }
         }
     }
 
@@ -45,18 +45,31 @@ class Converters {
     @TypeConverter
     fun toLocalDateTime(value: String?): LocalDateTime? {
         return value?.let {
-            LocalDateTime.parse(it, dateTimeFormatter)
+            try { LocalDateTime.parse(it, dateTimeFormatter) } catch (e: Exception) { null }
         }
     }
 
     @TypeConverter
     fun fromStringList(value: List<String>): String {
-        return value.joinToString(",")
+        // Saved as JSON so a comma inside an item (a file name, an organisation) cannot split it
+        val array = JSONArray()
+        value.forEach { array.put(it) }
+        return array.toString()
     }
 
     @TypeConverter
     fun toStringList(value: String): List<String> {
-        return if (value.isBlank()) emptyList() else value.split(",")
+        if (value.isBlank()) return emptyList()
+        if (value.startsWith("[")) {
+            try {
+                val array = JSONArray(value)
+                return List(array.length()) { array.getString(it) }
+            } catch (e: Exception) {
+                // not JSON: fall through to the older format
+            }
+        }
+        // Rows saved before this change were joined with commas
+        return value.split(",")
     }
 
     @TypeConverter

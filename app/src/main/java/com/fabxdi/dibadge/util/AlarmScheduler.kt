@@ -35,7 +35,8 @@ class AlarmScheduler(private val context: Context) {
         return null
     }
 
-    fun schedule(reminder: ReminderEntity) {
+    /** [skipIfPast] = true is used after a restart so reminders whose time already passed today are not fired at once. */
+    fun schedule(reminder: ReminderEntity, skipIfPast: Boolean = false) {
         if (reminder.time.isNullOrBlank()) return
 
         val localTime = parseFlexibleTime(reminder.time) ?: return
@@ -48,7 +49,7 @@ class AlarmScheduler(private val context: Context) {
         val currentMillis = System.currentTimeMillis()
         val triggerAtMillis = if (targetMillis <= currentMillis) {
             // If the date is in the past (yesterday/earlier), don't schedule
-            if (targetDate.isBefore(LocalDate.now())) return
+            if (skipIfPast || targetDate.isBefore(LocalDate.now())) return
             currentMillis + 2000L // 2 seconds from now
         } else {
             targetMillis
