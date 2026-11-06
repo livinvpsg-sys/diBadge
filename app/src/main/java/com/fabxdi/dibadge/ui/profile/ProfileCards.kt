@@ -42,7 +42,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.fabxdi.dibadge.util.CountryData
-import com.fabxdi.dibadge.util.avatarColorFor
+import com.fabxdi.dibadge.util.currentUserAvatarColor
+import com.google.firebase.auth.FirebaseAuth
 import com.fabxdi.dibadge.util.capitalizeWords
 import com.fabxdi.dibadge.util.formatBadgeNumber
 import com.fabxdi.dibadge.util.isValidName
@@ -81,9 +82,7 @@ fun ProfileAvatarSection(
             }
         } else {
             val avatarInitial = profileData.firstName.trim().take(1).ifBlank { "U" }.uppercase()
-            val solidBgColor = remember(profileData.firstName, profileData.username) {
-                avatarColorFor(profileData.firstName.ifBlank { profileData.username })
-            }
+            val solidBgColor = remember(FirebaseAuth.getInstance().currentUser?.uid) { currentUserAvatarColor() }
             Surface(
                 modifier = Modifier.size(88.dp),
                 shape = CircleShape,

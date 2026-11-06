@@ -221,6 +221,11 @@ class ConnectionsViewModel : ViewModel() {
                 for (doc in snapshot.documents) {
                     val id = doc.id
                     val targetUid = doc.getString("uid") ?: id
+                    if (targetUid == user.uid || id == user.uid) {
+                        // A request to yourself can never be valid: remove it and do not show it
+                        doc.reference.delete()
+                        continue
+                    }
                     val name = doc.getString("name") ?: doc.getString("displayName") ?: "User"
                     val org = doc.getString("organization") ?: doc.getString("company") ?: ""
                     val role = doc.getString("role") ?: ""
@@ -307,7 +312,7 @@ class ConnectionsViewModel : ViewModel() {
                     // one failing query should not hide the others
                 }
             }
-            val visible = withoutBlocked(me, found.values)
+            val visible = withoutBlocked(me, found.values).filter { it.uid != me }
             if (seq == searchSeq) {
                 _searchResults.value = visible.sortedBy { it.name.lowercase() }
                 _searching.value = false
@@ -348,7 +353,7 @@ class ConnectionsViewModel : ViewModel() {
             } catch (e: Exception) {
                 // suggestions are optional - ignore
             }
-            _suggestions.value = withoutBlocked(me, found.values)
+            _suggestions.value = withoutBlocked(me, found.values).filter { it.uid != me }
         }
     }
 
@@ -364,6 +369,17 @@ class ConnectionsViewModel : ViewModel() {
     fun sendInvite(item: ConnectionItem) {
         val me = auth.currentUser ?: return
         val target = item.uid
+        if (target.isBlank() || target == me.uid) {
+            _message.tryEmit("You can't send a connection request to yourself")
+            return
+        }
+        if (_connections.value.any { it.uid == target } ||
+            _sentRequests.value.any { it.uid == target } ||
+            _receivedRequests.value.any { it.uid == target }
+        ) {
+            _message.tryEmit("Already connected or a request is pending")
+            return
+        }
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             try {
@@ -408,6 +424,10 @@ class ConnectionsViewModel : ViewModel() {
 
     fun acceptRequest(item: ConnectionItem) {
         val me = auth.currentUser ?: return
+        if (item.uid == me.uid) {
+            declineRequest(item)
+            return
+        }
         viewModelScope.launch {
             try {
                 myConnections()?.document(item.id)?.update("status", "connected")?.await()
@@ -437,7 +457,22 @@ class ConnectionsViewModel : ViewModel() {
         declineRequest(item)
     }
 
+    /** Ends an accepted connection on both sides. The other person is not notified. */
     fun removeConnection(item: ConnectionItem) {
-        declineRequest(item)
+        val me = auth.currentUser ?: return
+        viewModelScope.launch {
+            try {
+                myConnections()?.document(item.id)?.delete()?.await()
+            } catch (e: Exception) {
+                reportFailure("disconnect", e)
+                return@launch
+            }
+            try {
+                theirConnections(item.uid).document(me.uid).delete().await()
+            } catch (e: Exception) {
+                // Their side could not be reached; this side is already removed
+            }
+            _message.tryEmit("Disconnected from ${item.name}")
+        }
     }
 }

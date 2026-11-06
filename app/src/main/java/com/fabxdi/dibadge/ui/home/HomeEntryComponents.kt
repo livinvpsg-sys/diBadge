@@ -69,6 +69,13 @@ fun buildSearchAnnotatedString(
     }
 }
 
+/**
+ * "Direct", "Chat" and "One-to-one" are saved in a chat's subtitle only to mark it as a
+ * one-to-one chat (other screens rely on that). They are not text for people to read.
+ */
+private fun isChatTypeLabel(subtitle: String): Boolean =
+    subtitle.trim().lowercase() in listOf("direct", "chat", "one-to-one")
+
 @Composable
 fun HomeSearchRow(
     title: String,
@@ -123,7 +130,7 @@ fun HomeSearchRow(
                 overflow = TextOverflow.Ellipsis
             )
 
-            if (subtitle.isNotBlank()) {
+            if (subtitle.isNotBlank() && !isChatTypeLabel(subtitle)) {
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = annotatedSubtitle,
@@ -197,7 +204,7 @@ fun HomeEntryCard(
                     val sub = entry.subtitle.trim().lowercase()
                     sub.endsWith("member") || sub.endsWith("members")
                 }
-                if (entry.subtitle.isNotBlank() && !isMemberCount) {
+                if (entry.subtitle.isNotBlank() && !isMemberCount && !isChatTypeLabel(entry.subtitle)) {
                     Spacer(modifier = Modifier.height(3.dp))
                     Text(
                         text = entry.subtitle,

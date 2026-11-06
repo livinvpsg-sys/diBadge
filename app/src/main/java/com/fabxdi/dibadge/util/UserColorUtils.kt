@@ -1,8 +1,8 @@
 package com.fabxdi.dibadge.util
 
 import androidx.compose.ui.graphics.Color
+import com.google.firebase.auth.FirebaseAuth
 import java.util.Locale
-import kotlin.math.abs
 
 object UserColorUtils {
     // Non-teal identity palette (dark / light)
@@ -31,7 +31,7 @@ object UserColorUtils {
         cleanKey.forEachIndexed { i, char ->
             hash = 31 * hash + char.code + i
         }
-        val index = abs(hash) % darkIdentityColors.size
+        val index = Math.floorMod(hash, darkIdentityColors.size)
         return if (isDark) darkIdentityColors[index] else lightIdentityColors[index]
     }
 
@@ -72,7 +72,12 @@ fun fullName(firstName: String?, middleName: String?, lastName: String?): String
 fun isValidName(name: String): Boolean {
     val trimmed = name.trim()
     if (trimmed.length > 40) return false
-    return trimmed.all { it.isLetter() || it.isWhitespace() || it == '\'' || it == '-' || it == '.' }
+    return trimmed.all { c ->
+        c.isLetter() || c.isWhitespace() || c == '\'' || c == '-' || c == '.' ||
+            // vowel signs, viramas and joiners used in Malayalam, Tamil, Hindi, Thai, ...
+            Character.getType(c).let { it == Character.NON_SPACING_MARK.toInt() || it == Character.COMBINING_SPACING_MARK.toInt() } ||
+            c == '\u200C' || c == '\u200D'
+    }
 }
 
 fun maskEmail(email: String): String {
@@ -101,6 +106,14 @@ fun avatarColorFor(name: String): Color {
     if (clean.isEmpty()) return avatarColors[0]
     var hash = 0
     clean.forEachIndexed { i, char -> hash = 31 * hash + char.code + i }
-    val index = abs(hash) % avatarColors.size
+    val index = Math.floorMod(hash, avatarColors.size)
     return avatarColors[index]
 }
+
+/**
+ * The signed-in user's own avatar colour. The side menu and the Profile screen BOTH use this, so
+ * they always match. It depends only on the account id, so it does not change when the name,
+ * nickname or photo is edited, or between sessions and devices.
+ */
+fun currentUserAvatarColor(): Color =
+    avatarColorFor(FirebaseAuth.getInstance().currentUser?.uid.orEmpty().ifBlank { "User" })

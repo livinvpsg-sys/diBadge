@@ -33,7 +33,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.fabxdi.dibadge.R
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
-import com.fabxdi.dibadge.util.avatarColorFor
+import com.fabxdi.dibadge.util.currentUserAvatarColor
+import com.google.firebase.auth.FirebaseAuth
 import com.fabxdi.dibadge.util.capitalizeWords
 
 data class MenuRowData(
@@ -75,9 +76,7 @@ fun HomeMenu(
         raw.capitalizeWords()
     }
     val avatarInitial = displayFullName.trim().take(1).uppercase()
-    val avatarBgColor = remember(firstName, fullName) {
-        avatarColorFor(firstName.ifBlank { fullName.ifBlank { "User" } })
-    }
+    val avatarBgColor = remember(FirebaseAuth.getInstance().currentUser?.uid) { currentUserAvatarColor() }
 
     val topNavGroup = listOf(
         MenuRowData("Profile", "Profile", iconVector = Icons.Outlined.Person),

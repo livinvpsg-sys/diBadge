@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.WorkOutline
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -64,6 +65,7 @@ fun ConnectionsScreen(
     var expandedConnectionId by remember { mutableStateOf<String?>(null) }
     val blockedPeople by viewModel.blockedPeople.collectAsState()
     var blockTarget by remember { mutableStateOf<ConnectionItem?>(null) }
+    var disconnectTarget by remember { mutableStateOf<ConnectionItem?>(null) }
     var showBlockedList by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
@@ -255,6 +257,7 @@ fun ConnectionsScreen(
                                         expandedConnectionId = if (expandedConnectionId == item.id) null else item.id
                                     },
                                     onBlock = { blockTarget = item },
+                                    onDisconnect = { disconnectTarget = item },
                                     onChatClick = { onOpenChat(item) }
                                 )
                             }
@@ -466,6 +469,7 @@ fun ConnectionsScreen(
                                                 expandedConnectionId = if (expandedConnectionId == item.id) null else item.id
                                             },
                                             onBlock = { blockTarget = item },
+                                    onDisconnect = { disconnectTarget = item },
                                             onChatClick = { onOpenChat(item) }
                                         )
                                     }
@@ -535,6 +539,47 @@ fun ConnectionsScreen(
                 }
             }
         }
+    }
+
+    // Confirm before disconnecting
+    disconnectTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { disconnectTarget = null },
+            containerColor = cardBgColor,
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Text(
+                    text = "Disconnect from ${target.name}?",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryTextColor
+                )
+            },
+            text = {
+                Text(
+                    text = "You will no longer appear in each other's connections. Your chat history stays on your phone and ${target.name} is not notified. You can send a new request later.",
+                    fontSize = 14.sp,
+                    color = secondaryTextColor
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val t = target
+                        disconnectTarget = null
+                        expandedConnectionId = null
+                        viewModel.removeConnection(t)
+                    }
+                ) {
+                    Text("Disconnect", fontWeight = FontWeight.Bold, color = errorColor)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { disconnectTarget = null }) {
+                    Text("Cancel", color = secondaryTextColor)
+                }
+            }
+        )
     }
 
     // Confirm before blocking
@@ -657,6 +702,7 @@ fun ConnectionRow(
     errorColor: Color,
     onClick: () -> Unit,
     onBlock: () -> Unit,
+    onDisconnect: () -> Unit = {},
     onChatClick: () -> Unit = {}
 ) {
     val avatarBgColor = remember(item.id) { UserColorUtils.getColorForName(item.id) }
@@ -787,8 +833,25 @@ fun ConnectionRow(
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // Below the details: remove this person from my connections
+                        TextButton(onClick = onDisconnect, modifier = Modifier.heightIn(min = 48.dp)) {
+                            Icon(
+                                imageVector = Icons.Outlined.PersonRemove,
+                                contentDescription = null,
+                                tint = errorColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Disconnect",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = errorColor
+                            )
+                        }
                         IconButton(onClick = onClick) {
                             Icon(
                                 imageVector = Icons.Default.KeyboardArrowUp,
