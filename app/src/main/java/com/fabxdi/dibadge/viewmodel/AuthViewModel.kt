@@ -316,6 +316,7 @@ class AuthViewModel : ViewModel() {
                         // Create initial user document in Firestore with emailOtp: true
                         val signUpFields = mutableMapOf<String, Any>(
                             "email" to (user.email ?: email.trim()),
+                            "emailLower" to (user.email ?: email.trim()).trim().lowercase(),
                             "emailOtp" to true,
                             "createdAt" to System.currentTimeMillis()
                         )
@@ -344,6 +345,13 @@ class AuthViewModel : ViewModel() {
                     val user = auth.currentUser
                     val isNewUser = task.result?.additionalUserInfo?.isNewUser == true
                     if (user != null) {
+                        // Keep the lower-case email on the user record so exact-email search finds Google accounts too.
+                        user.email?.takeIf { it.isNotBlank() }?.let { em ->
+                            firestore.collection("users").document(user.uid).set(
+                                mapOf("email" to em, "emailLower" to em.trim().lowercase()),
+                                SetOptions.merge()
+                            )
+                        }
                         if (isNewUser && !user.email.isNullOrBlank()) {
                             requestSignupCodeInternal(
                                 email = user.email!!,

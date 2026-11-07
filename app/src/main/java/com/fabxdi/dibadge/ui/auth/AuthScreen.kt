@@ -17,7 +17,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -42,6 +41,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -65,6 +65,7 @@ import java.util.Locale
 
 const val TERMS_URL = "https://example.com/terms"
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AuthScreen(
     viewModel: AuthViewModel,
@@ -126,11 +127,6 @@ fun AuthScreen(
 
     val isLoading = uiState is AuthUiState.Loading
 
-    // Back from the email form returns to the welcome step first
-    BackHandler(enabled = showForm && !isLoading) {
-        showForm = false
-        viewModel.clearError()
-    }
 
     val pageBgColor = colors.background
     val cardBgColor = colors.surface
@@ -211,7 +207,6 @@ fun AuthScreen(
             .background(pageBgColor)
             .windowInsetsPadding(WindowInsets.systemBars)
     ) {
-      if (!showForm) {
         // ==================== WELCOME STEP ====================
         Column(
             modifier = Modifier
@@ -221,38 +216,44 @@ fun AuthScreen(
                 .padding(horizontal = 24.dp)
                 .alpha(if (isLoading) 0.5f else 1.0f)
         ) {
-            Spacer(modifier = Modifier.height(96.dp))
+            Spacer(modifier = Modifier.weight(1f))
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.semantics(mergeDescendants = true) {}
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Image(
-                    painter = painterResource(id = R.drawable.ic_dibadge_mark),
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.size(width = 34.dp, height = 41.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.semantics(mergeDescendants = true) {}
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_dibadge_mark),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.size(width = 34.dp, height = 41.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "diBadge",
+                        fontSize = 38.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.8).sp,
+                        color = primaryTextColor
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
                 Text(
-                    text = "diBadge",
-                    fontSize = 38.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.8).sp,
-                    color = primaryTextColor
+                    text = "Get things done, together.",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Normal,
+                    textAlign = TextAlign.Center,
+                    color = secondaryTextColor
                 )
             }
 
             Spacer(modifier = Modifier.weight(1f))
-
-            Text(
-                text = "Get things done,\ntogether.",
-                fontSize = 32.sp,
-                lineHeight = 38.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.5).sp,
-                color = primaryTextColor
-            )
 
             Spacer(modifier = Modifier.height(28.dp))
 
@@ -260,9 +261,9 @@ fun AuthScreen(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(54.dp)
+                    .height(60.dp)
                     .clickable(enabled = !isLoading) { triggerGoogleSignIn() },
-                shape = RoundedCornerShape(27.dp),
+                shape = RoundedCornerShape(30.dp),
                 color = if (isDarkTheme) primaryTextColor else cardBgColor,
                 border = if (isDarkTheme) null else BorderStroke(1.dp, outlineColor)
             ) {
@@ -296,14 +297,14 @@ fun AuthScreen(
                     showForm = true
                 },
                 enabled = !isLoading,
-                shape = RoundedCornerShape(27.dp),
+                shape = RoundedCornerShape(30.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = tealAccent,
                     contentColor = onTealColor
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(54.dp)
+                    .height(60.dp)
             ) {
                 if (isLoading) {
                     CircularProgressIndicator(
@@ -372,56 +373,44 @@ fun AuthScreen(
             }
             Spacer(modifier = Modifier.height(12.dp))
         }
-      } else {
-        // ==================== EMAIL FORM STEP ====================
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .imePadding()
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally
+    }
+
+    // ==================== LOGIN / SIGN-UP BOTTOM SHEET ====================
+    if (showForm) {
+        val authSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = {
+                if (!isLoading) {
+                    showForm = false
+                    viewModel.clearError()
+                }
+            },
+            sheetState = authSheetState,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            containerColor = pageBgColor,
+            scrimColor = Color.Black.copy(alpha = 0.55f),
+            tonalElevation = 0.dp
         ) {
             Column(
                 modifier = Modifier
-                    .widthIn(max = 420.dp)
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp),
+                    .imePadding()
+                    .navigationBarsPadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // 1. Back + title
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                        .height(48.dp),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    IconButton(
-                        onClick = {
-                            showForm = false
-                            viewModel.clearError()
-                        },
-                        enabled = !isLoading
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = primaryTextColor
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(24.dp))
                 Text(
                     text = if (isSignUpMode) "Create account" else "Log in",
-                    fontSize = 32.sp,
+                    fontSize = 26.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.5).sp,
+                    letterSpacing = (-0.3).sp,
                     color = primaryTextColor,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(modifier = Modifier.height(28.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
-                // 2. Form Block (Starts at 240dp)
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -503,16 +492,17 @@ fun AuthScreen(
                         Button(
                             onClick = { performSignupValidationAndCheck() },
                             enabled = !isLoading,
-                            shape = RoundedCornerShape(27.dp),
+                            shape = RoundedCornerShape(28.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = tealAccent,
                                 contentColor = onTealColor,
                                 disabledContainerColor = tealAccent.copy(alpha = 0.38f),
                                 disabledContentColor = onTealColor.copy(alpha = 0.38f)
                             ),
+                            contentPadding = PaddingValues(horizontal = 40.dp),
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(54.dp)
+                                .widthIn(min = 160.dp)
+                                .height(56.dp)
                         ) {
                             if (isLoading) {
                                 CircularProgressIndicator(
@@ -610,16 +600,17 @@ fun AuthScreen(
                                 }
                             },
                             enabled = !isLoading,
-                            shape = RoundedCornerShape(27.dp),
+                            shape = RoundedCornerShape(28.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = tealAccent,
                                 contentColor = onTealColor,
                                 disabledContainerColor = tealAccent.copy(alpha = 0.38f),
                                 disabledContentColor = onTealColor.copy(alpha = 0.38f)
                             ),
+                            contentPadding = PaddingValues(horizontal = 40.dp),
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(54.dp)
+                                .widthIn(min = 160.dp)
+                                .height(56.dp)
                         ) {
                             if (isLoading) {
                                 CircularProgressIndicator(
@@ -649,30 +640,63 @@ fun AuthScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(32.dp))
-                }
-            }
-        }
+                    Spacer(modifier = Modifier.height(24.dp))
 
-        // 3. Bottom Row
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 28.dp, start = 24.dp, end = 24.dp)
-                .navigationBarsPadding(),
-            contentAlignment = Alignment.Center
-        ) {
-            Row(
-                modifier = Modifier
-                    .widthIn(max = 420.dp)
-                    .fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Two-Tone Link
+                    // "or" divider
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        HorizontalDivider(modifier = Modifier.weight(1f), thickness = 1.dp, color = outlineColor)
+                        Text(
+                            text = "Or continue with",
+                            fontSize = 13.sp,
+                            color = secondaryTextColor,
+                            modifier = Modifier.padding(horizontal = 14.dp)
+                        )
+                        HorizontalDivider(modifier = Modifier.weight(1f), thickness = 1.dp, color = outlineColor)
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    // Google
+                    Surface(
+                        modifier = Modifier
+                            .height(56.dp)
+                            .clickable(enabled = !isLoading) { triggerGoogleSignIn() },
+                        shape = RoundedCornerShape(28.dp),
+                        color = cardBgColor,
+                        border = BorderStroke(1.dp, outlineColor)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .padding(horizontal = 28.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_google_logo),
+                                contentDescription = null,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "Google",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = primaryTextColor
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+
+                // Switch between login and sign-up inside the same sheet
                 Box(
                     modifier = Modifier
+                        .fillMaxWidth()
                         .height(48.dp)
                         .alpha(if (isLoading) 0.5f else 1.0f)
                         .clickable(enabled = !isLoading) {
@@ -682,7 +706,7 @@ fun AuthScreen(
                             confirmPasswordError = null
                             viewModel.clearError()
                         },
-                    contentAlignment = Alignment.CenterStart
+                    contentAlignment = Alignment.Center
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -691,7 +715,6 @@ fun AuthScreen(
                         Text(
                             text = if (isSignUpMode) "Have an account?" else "New here?",
                             fontSize = 14.sp,
-                            fontWeight = FontWeight.Normal,
                             color = secondaryTextColor
                         )
                         Spacer(modifier = Modifier.width(6.dp))
@@ -703,31 +726,8 @@ fun AuthScreen(
                         )
                     }
                 }
-
-                // Right Link ("Terms of Use")
-                Box(
-                    modifier = Modifier
-                        .height(48.dp)
-                        .alpha(if (isLoading) 0.5f else 1.0f)
-                        .clickable(enabled = !isLoading) {
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(TERMS_URL))
-                                context.startActivity(intent)
-                            } catch (e: Exception) {}
-                        },
-                    contentAlignment = Alignment.CenterEnd
-                ) {
-                    Text(
-                        text = "Terms of Use",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Normal,
-                        textDecoration = TextDecoration.Underline,
-                        color = tabInactiveColor
-                    )
-                }
             }
         }
-      }
     }
 
     // Signup Verification Code Sheet

@@ -15,6 +15,7 @@ import com.fabxdi.dibadge.ui.home.home_entry.chat.PollOptionItem
 import com.fabxdi.dibadge.ui.home.home_entry.chat.stripGroupMention
 import com.fabxdi.dibadge.util.AlarmReceiver
 import com.fabxdi.dibadge.util.FilePickerUtils
+import com.fabxdi.dibadge.util.MediaCloud
 import com.fabxdi.dibadge.util.MediaCompressor
 import com.fabxdi.dibadge.ui.home.home_entry.chat.AttachmentCategory
 import com.fabxdi.dibadge.ui.home.home_entry.chat.getAttachmentCategory
@@ -420,6 +421,51 @@ class ChatViewModel : ViewModel() {
             }
     }
 
+    private class UploadedFile(val url: String, val thumbUrl: String?, val durationMs: Long)
+
+    /**
+     * Shrinks a photo or video, then sends the file (and a small preview picture) to cloud storage.
+     * Throws if the file itself cannot be uploaded; a failed preview picture is ignored.
+     */
+    private suspend fun uploadAttachment(
+        context: Context,
+        groupId: String,
+        msgId: String,
+        uri: Uri
+    ): UploadedFile {
+        val category = getAttachmentCategory(context, uri)
+        val fileName = FilePickerUtils.getFileName(context, uri).ifBlank { UUID.randomUUID().toString() }
+
+        var uploadUri: Uri = uri
+        var thumbUri: Uri? = null
+        var durationMs = 0L
+        var mime: String? = null
+
+        if (category == AttachmentCategory.IMAGE) {
+            val comp = MediaCompressor.compressPhoto(context, uri)
+            uploadUri = comp.fullUri
+            thumbUri = comp.thumbUri
+            mime = "image/jpeg"
+        } else if (category == AttachmentCategory.VIDEO) {
+            val comp = MediaCompressor.compressVideo(context, uri)
+            uploadUri = comp.fullUri
+            thumbUri = comp.thumbUri
+            durationMs = comp.durationMs
+            mime = "video/mp4"
+        }
+
+        val url = MediaCloud.upload(context, uploadUri, groupId, msgId, fileName, mime)
+        val thumbUrl = thumbUri?.let {
+            try {
+                MediaCloud.upload(context, it, groupId, msgId, "thumb_$fileName", "image/jpeg")
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+        return UploadedFile(url, thumbUrl, durationMs)
+    }
+
     fun sendMessage(
         context: Context,
         groupId: String,
@@ -467,52 +513,21 @@ class ChatViewModel : ViewModel() {
 
                 val uploadedUrls = mutableListOf<String>()
                 val uploadedDurationsMap = mutableMapOf<String, Long>()
+                val uploadedThumbs = mutableMapOf<String, String>()
 
+                // If any file cannot be uploaded the whole message is marked as failed (and can be
+                // resent). Sending a message that points at a file nobody else can open is worse.
                 for (uri in attachmentUris) {
                     val uriString = uri.toString()
                     if (uriString.startsWith("http://") || uriString.startsWith("https://")) {
                         uploadedUrls.add(uriString)
                         durationsMap[uriString]?.let { uploadedDurationsMap[uriString] = it }
                     } else {
-                        try {
-                            val category = getAttachmentCategory(context, uri)
-                            val fileName = FilePickerUtils.getFileName(context, uri).ifBlank { "${UUID.randomUUID()}" }
-
-                            val uploadUri: Uri
-                            if (category == AttachmentCategory.IMAGE) {
-                                val compResult = MediaCompressor.compressPhoto(context, uri)
-                                uploadUri = compResult.fullUri
-                                try {
-                                    val thumbRef = storage.reference.child("personalGroups/$groupId/chat_attachments/${msgId}_thumb_${fileName}")
-                                    thumbRef.putFile(compResult.thumbUri).await()
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
-                            } else if (category == AttachmentCategory.VIDEO) {
-                                val compResult = MediaCompressor.compressVideo(context, uri)
-                                uploadUri = compResult.fullUri
-                                if (compResult.durationMs > 0L) {
-                                    uploadedDurationsMap[uriString] = compResult.durationMs
-                                }
-                                try {
-                                    val thumbRef = storage.reference.child("personalGroups/$groupId/chat_attachments/${msgId}_thumb_${fileName}")
-                                    thumbRef.putFile(compResult.thumbUri).await()
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
-                            } else {
-                                uploadUri = uri
-                            }
-
-                            val storageRef = storage.reference.child("personalGroups/$groupId/chat_attachments/$fileName")
-                            storageRef.putFile(uploadUri).await()
-                            val downloadUrl = storageRef.downloadUrl.await().toString()
-                            uploadedUrls.add(downloadUrl)
-                            durationsMap[uriString]?.let { uploadedDurationsMap[downloadUrl] = it }
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                            uploadedUrls.add(uriString)
-                        }
+                        val file = uploadAttachment(context, groupId, msgId, uri)
+                        uploadedUrls.add(file.url)
+                        file.thumbUrl?.let { uploadedThumbs[file.url] = it }
+                        val knownDuration = durationsMap[uriString] ?: file.durationMs.takeIf { it > 0L }
+                        knownDuration?.let { uploadedDurationsMap[file.url] = it }
                     }
                 }
 
@@ -523,6 +538,7 @@ class ChatViewModel : ViewModel() {
                     "senderUid" to senderUid,
                     "attachments" to uploadedUrls,
                     "attachmentDurations" to uploadedDurationsMap,
+                    "attachmentThumbs" to uploadedUrls.map { uploadedThumbs[it].orEmpty() },
                     "timestamp" to ts,
                     "isEdited" to false
                 )
@@ -586,7 +602,12 @@ class ChatViewModel : ViewModel() {
             dao.insertChatMessage(sendingEntity)
 
             try {
-                val attachmentsList = if (sendingEntity.attachmentsJson.isBlank()) emptyList() else sendingEntity.attachmentsJson.split("|||")
+                val storedAttachments = if (sendingEntity.attachmentsJson.isBlank()) emptyList() else sendingEntity.attachmentsJson.split("|||")
+                // Files that never reached the server are uploaded now
+                val attachmentsList = storedAttachments.map { item ->
+                    if (item.startsWith("http://") || item.startsWith("https://")) item
+                    else uploadAttachment(context, groupId, messageId, Uri.parse(item)).url
+                }
                 val currentUid = auth.currentUser?.uid ?: ""
 
                 val docData = mutableMapOf<String, Any>(
@@ -606,7 +627,12 @@ class ChatViewModel : ViewModel() {
                     .set(docData)
                     .await()
 
-                dao.insertChatMessage(sendingEntity.copy(sendStatus = "SENT"))
+                dao.insertChatMessage(
+                    sendingEntity.copy(
+                        sendStatus = "SENT",
+                        attachmentsJson = attachmentsList.joinToString("|||")
+                    )
+                )
             } catch (e: Exception) {
                 e.printStackTrace()
                 dao.insertChatMessage(sendingEntity.copy(sendStatus = "FAILED"))
@@ -661,6 +687,14 @@ class ChatViewModel : ViewModel() {
                         .collection("messages").document(msgId)
                         .update(updates)
                         .await()
+
+                    // The message is gone for everyone: free the storage used by its files.
+                    // Only files this account uploaded can be removed; others are skipped quietly.
+                    original?.attachmentsJson
+                        ?.takeIf { it.isNotBlank() }
+                        ?.split("|||")
+                        ?.filter { MediaCloud.isOurs(it) }
+                        ?.forEach { MediaCloud.delete(it) }
                 } catch (e: Exception) {
                     e.printStackTrace()
                     failed = true

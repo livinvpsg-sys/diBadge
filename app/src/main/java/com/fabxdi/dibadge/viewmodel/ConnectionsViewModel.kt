@@ -263,6 +263,15 @@ class ConnectionsViewModel : ViewModel() {
 
     // ---------------------------------------------------------------- Search
 
+    /** True when this user document is the signed-in account (same id, or same email on a duplicate document). */
+    private fun DocumentSnapshot.isSignedInAccount(me: String): Boolean {
+        if (id == me) return true
+        val myEmail = auth.currentUser?.email?.trim()?.lowercase().orEmpty()
+        if (myEmail.isBlank()) return false
+        val theirs = (getString("emailLower") ?: getString("email") ?: "").trim().lowercase()
+        return theirs == myEmail
+    }
+
     private fun DocumentSnapshot.toPerson(): ConnectionItem = ConnectionItem(
         id = id,
         uid = id,
@@ -304,7 +313,7 @@ class ConnectionsViewModel : ViewModel() {
                 try {
                     val snap = query.limit(20).get().await()
                     for (doc in snap.documents) {
-                        if (doc.id == me) continue
+                        if (doc.isSignedInAccount(me)) continue
                         if (doc.getBoolean("hideFromSearch") == true) continue
                         if (!found.containsKey(doc.id)) found[doc.id] = doc.toPerson()
                     }
@@ -329,7 +338,7 @@ class ConnectionsViewModel : ViewModel() {
 
             fun add(docs: List<DocumentSnapshot>) {
                 for (doc in docs) {
-                    if (doc.id == me) continue
+                    if (doc.isSignedInAccount(me)) continue
                     if (doc.getBoolean("hideFromSearch") == true) continue
                     if (doc.getString("displayName").isNullOrBlank()) continue
                     if (!found.containsKey(doc.id)) found[doc.id] = doc.toPerson()
