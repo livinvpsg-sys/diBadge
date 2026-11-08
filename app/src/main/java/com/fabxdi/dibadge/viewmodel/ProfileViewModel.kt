@@ -10,6 +10,7 @@ import android.net.Uri
 import android.util.Base64
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fabxdi.dibadge.util.LiveProfilePhoto
 import com.fabxdi.dibadge.util.UsernameFormatResult
 import com.fabxdi.dibadge.util.cleanAndFormatUsernameInput
 import com.fabxdi.dibadge.util.fullName
@@ -645,6 +646,8 @@ class ProfileViewModel : ViewModel() {
 
                 _profileData.value = _profileData.value.copy(photoUrl = localUriStr)
                 initialProfileData = initialProfileData.copy(photoUrl = localUriStr)
+                // the side menu shows the new photo straight away
+                LiveProfilePhoto.url.value = localUriStr
 
                 // The local file path is kept on this phone only. Firestore gets the photo link
                 // only after the upload succeeds, so other people never receive a path they cannot open.
@@ -664,6 +667,7 @@ class ProfileViewModel : ViewModel() {
 
                     _profileData.value = _profileData.value.copy(photoUrl = cloudUrl)
                     initialProfileData = initialProfileData.copy(photoUrl = cloudUrl)
+                    LiveProfilePhoto.url.value = cloudUrl
                 } catch (e: Exception) {}
             } catch (e: Exception) {
                 _isUploadingPhoto.value = false
@@ -696,6 +700,7 @@ class ProfileViewModel : ViewModel() {
 
                 _profileData.value = _profileData.value.copy(photoUrl = "")
                 initialProfileData = initialProfileData.copy(photoUrl = "")
+                LiveProfilePhoto.url.value = ""
                 _isUploadingPhoto.value = false
                 onComplete(true)
             } catch (e: Exception) {

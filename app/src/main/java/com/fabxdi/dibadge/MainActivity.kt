@@ -33,6 +33,7 @@ import com.fabxdi.dibadge.ui.home.MainDashboard
 import com.fabxdi.dibadge.ui.settings.SettingsDialog
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.AlarmSoundManager
+import com.fabxdi.dibadge.util.LiveProfilePhoto
 import com.fabxdi.dibadge.viewmodel.AuthViewModel
 import com.fabxdi.dibadge.viewmodel.LeaveOvertimeViewModel
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
@@ -113,8 +114,12 @@ class MainActivity : ComponentActivity() {
                     var userLastName by remember { mutableStateOf("") }
                     var userPhotoUrl by remember { mutableStateOf("") }
 
+                    // The photo as the Profile screen has it right now (null = use the saved one)
+                    val livePhoto by LiveProfilePhoto.url.collectAsState()
+
                     DisposableEffect(user?.uid) {
                         val uid = user?.uid
+                        LiveProfilePhoto.url.value = null
                         val listener = if (uid != null) {
                             FirebaseFirestore.getInstance()
                                 .collection("users")
@@ -195,7 +200,7 @@ class MainActivity : ComponentActivity() {
                             nickname = userNickname,
                             fullName = computedFullName,
                             email = user?.email ?: "",
-                            photoUrl = userPhotoUrl,
+                            photoUrl = livePhoto ?: userPhotoUrl,
                             onSettingsClick = { showSettingsDialog = true },
                             onSignOut = {
                                 themeViewModel.resetToSystem()
