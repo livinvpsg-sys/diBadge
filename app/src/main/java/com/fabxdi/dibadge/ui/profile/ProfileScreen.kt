@@ -35,6 +35,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.ui.components.DiBadgeDatePicker
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import com.fabxdi.dibadge.viewmodel.ExperienceViewModel
 import com.fabxdi.dibadge.viewmodel.ProfileUiState
 import com.fabxdi.dibadge.viewmodel.ProfileViewModel
 import java.io.File
@@ -46,7 +47,8 @@ import java.util.Locale
 @Composable
 fun ProfileScreen(
     onBackClick: () -> Unit,
-    viewModel: ProfileViewModel = viewModel()
+    viewModel: ProfileViewModel = viewModel(),
+    experienceViewModel: ExperienceViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -75,15 +77,6 @@ fun ProfileScreen(
     var savedStrokes by remember { mutableStateOf<List<List<Offset>>>(emptyList()) }
 
     var snackbarMessage by remember { mutableStateOf<String?>(null) }
-    val snackbarHostState = remember { SnackbarHostState() }
-
-    LaunchedEffect(snackbarMessage) {
-        val msg = snackbarMessage
-        if (!msg.isNullOrBlank()) {
-            snackbarHostState.showSnackbar(msg)
-            snackbarMessage = null
-        }
-    }
 
     val hasChanges = viewModel.hasChanges()
     val isSaving = uiState is ProfileUiState.Saving
@@ -97,9 +90,6 @@ fun ProfileScreen(
     }
 
     BackHandler(onBack = handleBack)
-    // Registered after the screen-level handler, so these win while the viewer / crop is open
-    BackHandler(enabled = showPhotoViewer) { showPhotoViewer = false }
-    BackHandler(enabled = cropImageUri != null) { cropImageUri = null }
 
     val takePhotoLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture(),
@@ -197,8 +187,6 @@ fun ProfileScreen(
         }
     }
 
-    // Box so the photo viewer and crop screen sit ON TOP of the page, whatever the parent is
-    Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -357,6 +345,21 @@ fun ProfileScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
+                    // Experience (saves on its own, not with the Save button)
+                    ProfileExperienceCard(
+                        viewModel = experienceViewModel,
+                        cardBgColor = cardBgColor,
+                        dividerColor = dividerColor,
+                        primaryTextColor = primaryTextColor,
+                        secondaryTextColor = secondaryTextColor,
+                        tabInactiveColor = tabInactiveColor,
+                        tealAccent = tealAccent,
+                        errorColor = errorColor,
+                        onShowToast = { msg -> snackbarMessage = msg }
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
                     // CARD 4: Contact (Email, Phone, Country, Birthday)
                     ProfileContactCard(
                         profileData = profileData,
@@ -399,14 +402,6 @@ fun ProfileScreen(
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
-
-            SnackbarHost(
-                hostState = snackbarHostState,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .imePadding()
-                    .padding(16.dp)
-            )
         }
     }
 
@@ -536,9 +531,6 @@ fun ProfileScreen(
             onCountrySelected = { country ->
                 viewModel.updateCountry(country.isoCode)
             },
-            onClearCountryClick = {
-                viewModel.updateCountry("")
-            },
             onDismiss = { showCountryPickerSheet = false }
         )
     }
@@ -595,7 +587,6 @@ fun ProfileScreen(
             onCancelClick = { cropImageUri = null },
             onDoneCrop = { croppedBitmap ->
                 cropImageUri = null
-                showPhotoViewer = false
                 viewModel.saveCroppedPhoto(context, croppedBitmap) { success, msg ->
                     if (success) {
                         snackbarMessage = "Photo updated"
@@ -653,7 +644,7 @@ fun ProfileScreen(
     if (showDatePickerDialog) {
         val initialBirthday = try {
             if (profileData.birthday.isNotBlank()) {
-                LocalDate.parse(profileData.birthday, DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.ENGLISH))
+                LocalDate.parse(profileData.birthday, DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.getDefault()))
             } else null
         } catch (e: Exception) { null }
 
@@ -664,7 +655,7 @@ fun ProfileScreen(
             title = "Select Birthday",
             onDateSelected = { chosenDate ->
                 showDatePickerDialog = false
-                val formatted = chosenDate.format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.ENGLISH))
+                val formatted = chosenDate.format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.getDefault()))
                 viewModel.updateBirthday(formatted)
             },
             onDismiss = { showDatePickerDialog = false }
@@ -714,5 +705,4 @@ fun ProfileScreen(
             onDismiss = { viewModel.dismissEmailVerifySheet() }
         )
     }
-    } // end of root Box
 }

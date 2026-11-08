@@ -1,9 +1,11 @@
 package com.fabxdi.dibadge.ui.my_credentials
 
+import android.app.Activity
 import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -27,6 +29,7 @@ import androidx.compose.material.icons.outlined.CardMembership
 import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.DocumentScanner
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Share
@@ -49,6 +52,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.data.DocEntity
 import com.fabxdi.dibadge.ui.calendar.AttachmentFile
 import com.fabxdi.dibadge.ui.calendar.rememberOrganizationName
+import com.fabxdi.dibadge.ui.home.home_entry.chat.launchDocumentScanner
+import com.fabxdi.dibadge.util.ScanNameValidator
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.MyCredentialViewModel
 import kotlinx.coroutines.Dispatchers
@@ -147,6 +153,31 @@ fun MyCredentialsScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         if (uri != null) handlePickedFile(uri, true)
+    }
+
+    // Scan Document Launcher (same scanner as the chat attachment menu)
+    val docScannerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+            val pdfUri = GmsDocumentScanningResult.fromActivityResultIntent(result.data)?.pdf?.uri
+            if (pdfUri != null) {
+                coroutineScope.launch {
+                    val imported = withContext(Dispatchers.IO) { MyCredentialFileUtils.importPicked(context, pdfUri, true) }
+                    when {
+                        imported == null -> snackbarHostState.showSnackbar("Couldn't add that scan")
+                        imported.sizeBytes > MyCredentialFileUtils.MAX_FILE_BYTES -> {
+                            MyCredentialFileUtils.discard(context, imported)
+                            snackbarHostState.showSnackbar("File is larger than 5 MB")
+                        }
+                        else -> {
+                            initialFileForNewDoc = imported.copy(name = ScanNameValidator.generateDefaultScanName())
+                            showNewDocForm = true
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Filter & Sort Documents by Urgency
@@ -538,8 +569,6 @@ fun MyCredentialsScreen(
                     Text("Choose photo", fontSize = 16.sp, color = primaryTextColor)
                 }
 
-                HorizontalDivider(thickness = 1.dp, color = outlineColor)
-
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -553,6 +582,21 @@ fun MyCredentialsScreen(
                     Icon(Icons.Outlined.Description, contentDescription = null, tint = secondaryTextColor, modifier = Modifier.size(22.dp))
                     Spacer(modifier = Modifier.width(16.dp))
                     Text("Choose file (PDF)", fontSize = 16.sp, color = primaryTextColor)
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .clickable {
+                            showAddDocSheet = false
+                            launchDocumentScanner(context, docScannerLauncher)
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Outlined.DocumentScanner, contentDescription = null, tint = secondaryTextColor, modifier = Modifier.size(22.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text("Scan document", fontSize = 16.sp, color = primaryTextColor)
                 }
             }
         }

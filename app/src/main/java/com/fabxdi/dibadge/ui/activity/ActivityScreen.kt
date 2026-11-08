@@ -1,12 +1,15 @@
-package com.fabxdi.dibadge.ui.my_activity
+package com.fabxdi.dibadge.ui.activity
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
+import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -49,7 +52,10 @@ import com.fabxdi.dibadge.data.ActivityLogEntity
 import com.fabxdi.dibadge.ui.components.DiBadgeDateRangePicker
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.ActivityLogViewModel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.time.Instant
@@ -61,9 +67,10 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MyActivityScreen(
+fun ActivityScreen(
     onBack: () -> Unit,
-    onOpenRelatedItem: (String) -> Unit = {},
+    // (relatedId, kind) -> true when the item was opened, false when it is no longer available
+    onOpenRelatedItem: (String, String) -> Boolean = { _, _ -> false },
     viewModel: ActivityLogViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -96,7 +103,7 @@ fun MyActivityScreen(
     val tealAccent = diBadgeColors.accent
     val errorColor = colors.error
 
-    val isDark = primaryTextColor.red > 0.5f
+    val isDark = diBadgeColors.isDark
     val dateBandBgColor = if (isDark) Color(0xFF14181D) else Color(0xFFDDE2E7)
 
     val today = remember { LocalDate.now() }
@@ -176,11 +183,11 @@ fun MyActivityScreen(
         val mFormatter = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault())
 
         if (isCustomFilter && customStartDate != null && customEndDate != null) {
-            "My Activity ${customStartDate!!.format(dFormatter)} to ${customEndDate!!.format(dFormatter)}.pdf"
+            "Activity ${customStartDate!!.format(dFormatter)} to ${customEndDate!!.format(dFormatter)}.pdf"
         } else if (selectedMonthYear != null) {
-            "My Activity ${selectedMonthYear!!.format(mFormatter)}.pdf"
+            "Activity ${selectedMonthYear!!.format(mFormatter)}.pdf"
         } else {
-            "My Activity Statement.pdf"
+            "Activity Statement.pdf"
         }
     }
 
@@ -210,7 +217,7 @@ fun MyActivityScreen(
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = "My Activity",
+                        text = "Activity",
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Normal,
                         color = primaryTextColor
@@ -431,9 +438,8 @@ fun MyActivityScreen(
                                 tealAccent = tealAccent,
                                 errorColor = errorColor,
                                 onClick = {
-                                    if (log.relatedId.isNotBlank()) {
-                                        onOpenRelatedItem(log.relatedId)
-                                    } else {
+                                    val opened = log.relatedId.isNotBlank() && onOpenRelatedItem(log.relatedId, log.kind)
+                                    if (!opened) {
                                         coroutineScope.launch {
                                             snackbarHostState.showSnackbar("This item is no longer available")
                                         }
@@ -467,10 +473,16 @@ fun MyActivityScreen(
             fileName = exportFileName,
             logs = filteredLogs,
             context = context,
+            scope = coroutineScope,
             onDismiss = { showExportSheet = false },
             onSavedToDownloads = {
                 coroutineScope.launch {
                     snackbarHostState.showSnackbar("Saved to Downloads")
+                }
+            },
+            onError = { msg ->
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar(msg)
                 }
             }
         )
@@ -594,8 +606,10 @@ fun ExportActivityPdfSheet(
     fileName: String,
     logs: List<ActivityLogEntity>,
     context: Context,
+    scope: CoroutineScope,
     onDismiss: () -> Unit,
-    onSavedToDownloads: () -> Unit
+    onSavedToDownloads: () -> Unit,
+    onError: (String) -> Unit = {}
 ) {
     val colors = MaterialTheme.colorScheme
     val primaryTextColor = colors.onBackground
@@ -655,17 +669,26 @@ fun ExportActivityPdfSheet(
                     .height(64.dp)
                     .clickable {
                         onDismiss()
-                        val pdfFile = generateActivityStatementPdf(context, logs, periodText, fileName)
-                        if (pdfFile != null) {
-                            try {
-                                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", pdfFile)
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "application/pdf"
-                                    putExtra(Intent.EXTRA_STREAM, uri)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        // The PDF is built in the background so the screen doesn't freeze on a long list
+                        scope.launch {
+                            val pdfFile = withContext(Dispatchers.IO) {
+                                generateActivityStatementPdf(context, logs, periodText, fileName)
+                            }
+                            if (pdfFile == null) {
+                                onError("Couldn't create the PDF")
+                            } else {
+                                try {
+                                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", pdfFile)
+                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "application/pdf"
+                                        putExtra(Intent.EXTRA_STREAM, uri)
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(Intent.createChooser(shareIntent, "Share Activity Statement"))
+                                } catch (e: Exception) {
+                                    onError("Couldn't share the PDF")
                                 }
-                                context.startActivity(Intent.createChooser(shareIntent, "Share Activity Statement"))
-                            } catch (e: Exception) {}
+                            }
                         }
                     },
                 verticalAlignment = Alignment.CenterVertically
@@ -701,14 +724,16 @@ fun ExportActivityPdfSheet(
                     .height(64.dp)
                     .clickable {
                         onDismiss()
-                        val pdfFile = generateActivityStatementPdf(context, logs, periodText, fileName)
-                        if (pdfFile != null) {
-                            try {
-                                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                                val destFile = File(downloadsDir, fileName)
-                                pdfFile.copyTo(destFile, overwrite = true)
-                                onSavedToDownloads()
-                            } catch (e: Exception) {}
+                        scope.launch {
+                            val saved = withContext(Dispatchers.IO) {
+                                val pdfFile = generateActivityStatementPdf(context, logs, periodText, fileName)
+                                if (pdfFile == null) null else saveToDownloads(context, pdfFile, fileName)
+                            }
+                            when (saved) {
+                                null -> onError("Couldn't create the PDF")
+                                true -> onSavedToDownloads()
+                                false -> onError("Couldn't save to Downloads")
+                            }
                         }
                     },
                 verticalAlignment = Alignment.CenterVertically
@@ -738,76 +763,153 @@ fun ExportActivityPdfSheet(
     }
 }
 
-fun generateActivityStatementPdf(context: Context, logs: List<ActivityLogEntity>, periodText: String, fileName: String): File? {
+/** Saves a file into the phone's Downloads folder. Returns true when it was saved. */
+fun saveToDownloads(context: Context, file: File, fileName: String): Boolean {
     return try {
-        val pdfDocument = PdfDocument()
-        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create() // A4
-        val page = pdfDocument.startPage(pageInfo)
-        val canvas: Canvas = page.canvas
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Android 10 and newer: files go in through MediaStore, not straight into the folder
+            val resolver = context.contentResolver
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return false
+            val written = resolver.openOutputStream(uri)?.use { out ->
+                file.inputStream().use { it.copyTo(out) }
+                true
+            } ?: false
+            if (!written) {
+                resolver.delete(uri, null, null)
+                return false
+            }
+            values.clear()
+            values.put(MediaStore.Downloads.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+            true
+        } else {
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            file.copyTo(File(downloadsDir, fileName), overwrite = true)
+            true
+        }
+    } catch (e: Exception) {
+        false
+    }
+}
 
+/**
+ * Builds the activity statement as a PDF in the app's cache folder. Every entry is included:
+ * the list continues on as many A4 pages as it needs, each with its own table header and page number.
+ */
+fun generateActivityStatementPdf(context: Context, logs: List<ActivityLogEntity>, periodText: String, fileName: String): File? {
+    val pageWidth = 595
+    val pageHeight = 842
+    val left = 40f
+    val rowHeight = 20f
+    val bottomLimit = 780f
+    val firstTableTop = 100f   // below the title and the period line
+    val nextTableTop = 50f
+
+    // Columns: x position and the width the text may use
+    val colDate = left to 110f
+    val colTitle = 160f to 150f
+    val colSource = 320f to 150f
+    val colResult = 480f to 70f
+
+    // Rows that fit under the table header (header text + line take 32)
+    val firstPageRows = ((bottomLimit - (firstTableTop + 32f)) / rowHeight).toInt()
+    val otherPageRows = ((bottomLimit - (nextTableTop + 32f)) / rowHeight).toInt()
+
+    val pages = mutableListOf<List<ActivityLogEntity>>()
+    pages.add(logs.take(firstPageRows))
+    var rest = logs.drop(firstPageRows)
+    while (rest.isNotEmpty()) {
+        pages.add(rest.take(otherPageRows))
+        rest = rest.drop(otherPageRows)
+    }
+    val totalPages = pages.size
+
+    val safeName = fileName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+    val dateFormatter = DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a", Locale.getDefault())
+
+    val pdfDocument = PdfDocument()
+    return try {
         val paint = Paint().apply {
             isAntiAlias = true
             color = android.graphics.Color.BLACK
         }
 
-        var y = 50f
-
-        // Title
-        paint.textSize = 14f
-        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        canvas.drawText("Activity statement", 40f, y, paint)
-        y += 20f
-
-        // Period & Entries Count
-        paint.textSize = 10f
-        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-        paint.color = android.graphics.Color.GRAY
-        canvas.drawText("Period: $periodText · Total Entries: ${logs.size}", 40f, y, paint)
-        y += 30f
-
-        // Table Header
-        paint.color = android.graphics.Color.BLACK
-        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        canvas.drawText("Date & Time", 40f, y, paint)
-        canvas.drawText("Title", 160f, y, paint)
-        canvas.drawText("Source & Reference", 320f, y, paint)
-        canvas.drawText("Result", 480f, y, paint)
-        y += 16f
-
-        paint.strokeWidth = 1f
-        canvas.drawLine(40f, y, 550f, y, paint)
-        y += 16f
-
-        // Table Rows
-        paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
-        val dateFormatter = DateTimeFormatter.ofPattern("d MMM yyyy, h:mm a", Locale.getDefault())
-
-        for (log in logs) {
-            val dtStr = Instant.ofEpochMilli(log.timestamp).atZone(ZoneId.systemDefault()).format(dateFormatter)
-            canvas.drawText(dtStr, 40f, y, paint)
-            canvas.drawText(log.title.take(20), 160f, y, paint)
-            canvas.drawText("${log.source.take(15)} · ${log.reference}", 320f, y, paint)
-            canvas.drawText(log.result, 480f, y, paint)
-            y += 20f
-
-            if (y > 780f) break
+        // Cuts text to the column width and adds "..." when it does not fit
+        fun fit(text: String, maxWidth: Float): String {
+            if (paint.measureText(text) <= maxWidth) return text
+            val dots = "\u2026"
+            val count = paint.breakText(text, true, maxWidth - paint.measureText(dots), null)
+            return text.take(count).trimEnd() + dots
         }
 
-        // Footer
-        paint.color = android.graphics.Color.GRAY
-        paint.textSize = 9f
-        canvas.drawText("diBadge", 40f, 810f, paint)
-        canvas.drawText("Page 1 of 1", 500f, 810f, paint)
+        pages.forEachIndexed { index, pageLogs ->
+            val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, index + 1).create()
+            val page = pdfDocument.startPage(pageInfo)
+            val canvas: Canvas = page.canvas
+            var y: Float
 
-        pdfDocument.finishPage(page)
+            if (index == 0) {
+                y = 50f
+                paint.textSize = 14f
+                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                paint.color = android.graphics.Color.BLACK
+                canvas.drawText("Activity statement", left, y, paint)
+                y += 20f
 
-        val tempFile = File(context.cacheDir, fileName)
-        val outputStream = FileOutputStream(tempFile)
-        pdfDocument.writeTo(outputStream)
-        pdfDocument.close()
-        outputStream.close()
+                paint.textSize = 10f
+                paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                paint.color = android.graphics.Color.GRAY
+                canvas.drawText(fit("Period: $periodText \u00b7 Total Entries: ${logs.size}", 510f), left, y, paint)
+                y = firstTableTop
+            } else {
+                y = nextTableTop
+            }
+
+            // Table header
+            paint.textSize = 10f
+            paint.color = android.graphics.Color.BLACK
+            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            canvas.drawText("Date & Time", colDate.first, y, paint)
+            canvas.drawText("Title", colTitle.first, y, paint)
+            canvas.drawText("Source & Reference", colSource.first, y, paint)
+            canvas.drawText("Result", colResult.first, y, paint)
+            y += 16f
+            paint.strokeWidth = 1f
+            canvas.drawLine(left, y, 550f, y, paint)
+            y += 16f
+
+            // Rows
+            paint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            for (log in pageLogs) {
+                val dtStr = Instant.ofEpochMilli(log.timestamp).atZone(ZoneId.systemDefault()).format(dateFormatter)
+                canvas.drawText(fit(dtStr, colDate.second), colDate.first, y, paint)
+                canvas.drawText(fit(log.title, colTitle.second), colTitle.first, y, paint)
+                canvas.drawText(fit("${log.source} \u00b7 ${log.reference}", colSource.second), colSource.first, y, paint)
+                canvas.drawText(fit(log.result, colResult.second), colResult.first, y, paint)
+                y += rowHeight
+            }
+
+            // Footer
+            paint.color = android.graphics.Color.GRAY
+            paint.textSize = 9f
+            canvas.drawText("diBadge", left, 810f, paint)
+            canvas.drawText("Page ${index + 1} of $totalPages", 490f, 810f, paint)
+
+            pdfDocument.finishPage(page)
+        }
+
+        val tempFile = File(context.cacheDir, safeName)
+        FileOutputStream(tempFile).use { pdfDocument.writeTo(it) }
         tempFile
     } catch (e: Exception) {
         null
+    } finally {
+        pdfDocument.close()
     }
 }

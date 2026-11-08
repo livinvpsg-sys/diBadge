@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fabxdi.dibadge.data.ActivityLogEntity
+import com.fabxdi.dibadge.data.ActivityLogRepository
 import com.fabxdi.dibadge.data.AppDatabase
 import com.fabxdi.dibadge.data.InboxEntity
 import com.fabxdi.dibadge.data.InboxSigner
@@ -237,7 +238,7 @@ class InboxViewModel(application: Application) : AndroidViewModel(application) {
                 timestamp = System.currentTimeMillis()
             )
 
-            AppDatabase.getDatabase(getApplication()).activityLogDao().insertActivityLog(activityLog)
+            ActivityLogRepository.record(getApplication(), activityLog)
         }
     }
 

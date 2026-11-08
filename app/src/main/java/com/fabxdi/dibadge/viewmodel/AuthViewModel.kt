@@ -2,6 +2,7 @@ package com.fabxdi.dibadge.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.auth.AuthCredential
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
@@ -37,6 +38,8 @@ data class SignupVerificationState(
     val triesLeft: Int = 5,
     val isLocked: Boolean = false,
     val isGoogleSignup: Boolean = false,
+    /** True when the code is for logging in to an existing account (not for creating one). */
+    val isLogin: Boolean = false,
     val resendSecondsLeft: Int = 60
 )
 
@@ -51,16 +54,42 @@ class AuthViewModel : ViewModel() {
     val uiState: StateFlow<AuthUiState> = _uiState.asStateFlow()
 
     private val _signupVerifyState = MutableStateFlow(SignupVerificationState())
+
+    // True while a new Google account still has to choose its country before Home opens
+    private val _needsCountry = MutableStateFlow(false)
+    val needsCountry: StateFlow<Boolean> = _needsCountry.asStateFlow()
     val signupVerifyState: StateFlow<SignupVerificationState> = _signupVerifyState.asStateFlow()
 
     private var resendTimerJob: Job? = null
 
+    // While a login or a new Google sign-up waits for its email code, the app must not open Home.
+    @Volatile private var otpHold = false
+
+    // Kept in memory only, while the login code is being entered. Nothing is signed in during this time,
+    // so closing the app now leaves the person signed out.
+    private var pendingEmail: String = ""
+    private var pendingPassword: String = ""
+    private var pendingGoogleCredential: AuthCredential? = null
+
+    private fun clearPendingLogin() {
+        pendingEmail = ""
+        pendingPassword = ""
+        pendingGoogleCredential = null
+    }
+
+    private fun releaseHold() {
+        otpHold = false
+        _currentUser.value = auth.currentUser
+        // The auth listener skipped this while the code was pending, so give the account its profile record now
+        auth.currentUser?.let { ensureProfileRecord(it) }
+    }
+
     private val authStateListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
         val signedIn = firebaseAuth.currentUser
-        _currentUser.value = signedIn
+        _currentUser.value = if (otpHold) null else signedIn
         // Every signed-in account gets its profile record, so others can find it in search.
         // A new Google account waits until its email code is confirmed.
-        if (signedIn != null && !_signupVerifyState.value.isOpen) ensureProfileRecord(signedIn)
+        if (signedIn != null && !otpHold && !_signupVerifyState.value.isOpen) ensureProfileRecord(signedIn)
     }
 
     private fun ensureProfileRecord(user: FirebaseUser) {
@@ -86,20 +115,60 @@ class AuthViewModel : ViewModel() {
             return
         }
         _uiState.value = AuthUiState.Loading
+        otpHold = true
         auth.signInWithEmailAndPassword(email.trim(), pass)
             .addOnCompleteListener { task ->
                 if (task.isSuccessful) {
                     val user = auth.currentUser
+                    val codeEmail = (user?.email ?: email).trim()
                     if (user != null) {
-                        _uiState.value = AuthUiState.Success(user)
+                        // The password is right. Sign out again and only sign in for real after the email code.
+                        auth.signOut()
+                        pendingEmail = email.trim()
+                        pendingPassword = pass
+                        pendingGoogleCredential = null
+                        requestSignupCodeInternal(
+                            email = codeEmail,
+                            isGoogle = false,
+                            isLogin = true,
+                            onSuccess = {},
+                            onError = { msg ->
+                                clearPendingLogin()
+                                otpHold = false
+                                _uiState.value = AuthUiState.Error(msg)
+                            }
+                        )
                     } else {
+                        otpHold = false
                         _uiState.value = AuthUiState.Error("Login failed")
                     }
                 } else {
+                    otpHold = false
                     val msg = mapFirebaseError(task.exception?.message)
                     _uiState.value = AuthUiState.Error(msg)
                 }
             }
+    }
+
+    /** Signs in for real once the login code has been confirmed. */
+    private fun completeLogin() {
+        _uiState.value = AuthUiState.Loading
+        val credential = pendingGoogleCredential
+        val task = if (credential != null) {
+            auth.signInWithCredential(credential)
+        } else {
+            auth.signInWithEmailAndPassword(pendingEmail, pendingPassword)
+        }
+        task.addOnCompleteListener { t ->
+            clearPendingLogin()
+            if (t.isSuccessful && auth.currentUser != null) {
+                releaseHold()
+                _uiState.value = AuthUiState.Success(auth.currentUser!!)
+            } else {
+                otpHold = false
+                _uiState.value = AuthUiState.Error(mapFirebaseError(t.exception?.message))
+            }
+        }
     }
 
     fun checkEmailAndRequestSignupCode(
@@ -123,11 +192,21 @@ class AuthViewModel : ViewModel() {
                     _uiState.value = AuthUiState.Idle
                     onRegistered()
                 } else {
-                    requestSignupCodeInternal(cleanEmail, isGoogle = false, onCodeRequested, onError)
+                    requestSignupCodeInternal(
+                        email = cleanEmail,
+                        isGoogle = false,
+                        onSuccess = onCodeRequested,
+                        onError = onError
+                    )
                 }
             } catch (e: Exception) {
                 // If fetchSignInMethods is restricted or offline, proceed to send verification code
-                requestSignupCodeInternal(cleanEmail, isGoogle = false, onCodeRequested, onError)
+                requestSignupCodeInternal(
+                    email = cleanEmail,
+                    isGoogle = false,
+                    onSuccess = onCodeRequested,
+                    onError = onError
+                )
             }
         }
     }
@@ -135,6 +214,7 @@ class AuthViewModel : ViewModel() {
     private fun requestSignupCodeInternal(
         email: String,
         isGoogle: Boolean,
+        isLogin: Boolean = false,
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
@@ -162,7 +242,7 @@ class AuthViewModel : ViewModel() {
                         "to" to email,
                         "message" to mapOf(
                             "subject" to "Your diBadge verification code",
-                            "text" to "Your diBadge verification code is $generatedCode. It expires in 10 minutes. If you did not try to create an account, you can ignore this email."
+                            "text" to "Your diBadge verification code is $generatedCode. It expires in 10 minutes. If you did not just try to log in or create an account, you can ignore this email."
                         )
                     ))
                 } catch (e: Exception) {}
@@ -174,6 +254,7 @@ class AuthViewModel : ViewModel() {
                     code = generatedCode,
                     typedCode = "",
                     isGoogleSignup = isGoogle,
+                    isLogin = isLogin,
                     resendSecondsLeft = 60
                 )
 
@@ -216,8 +297,14 @@ class AuthViewModel : ViewModel() {
 
             if (state.typedCode == state.code) {
                 _signupVerifyState.value = SignupVerificationState(isOpen = false)
-                if (state.isGoogleSignup) auth.currentUser?.let { ensureProfileRecord(it) }
-                onSuccess()
+                when {
+                    state.isLogin -> completeLogin()
+                    state.isGoogleSignup -> {
+                        // A new Google account must now choose its country; Home opens after that
+                        _needsCountry.value = true
+                    }
+                    else -> onSuccess()
+                }
             } else {
                 val newTriesLeft = state.triesLeft - 1
                 if (newTriesLeft <= 0) {
@@ -273,7 +360,7 @@ class AuthViewModel : ViewModel() {
         val state = _signupVerifyState.value
         resendTimerJob?.cancel()
 
-        if (state.isGoogleSignup) {
+        if (state.isGoogleSignup && !state.isLogin) {
             val user = auth.currentUser
             viewModelScope.launch(Dispatchers.IO) {
                 try {
@@ -283,11 +370,56 @@ class AuthViewModel : ViewModel() {
             }
         }
 
+        if (state.isLogin) clearPendingLogin()
+        otpHold = false
+        _currentUser.value = auth.currentUser
+        _uiState.value = AuthUiState.Idle
         _signupVerifyState.value = SignupVerificationState(isOpen = false)
         onCancelled()
     }
 
-    fun signUp(name: String, email: String, pass: String, confirmPass: String) {
+    /** Saves the country chosen by a new Google account, then lets it into the app. */
+    fun setGoogleCountry(isoCode: String) {
+        if (!_needsCountry.value) return
+        val user = auth.currentUser ?: return
+        val iso = isoCode.trim().uppercase()
+        if (iso.isBlank()) return
+        // Switch off first: the picker also calls its dismiss handler right after a choice
+        _needsCountry.value = false
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                firestore.collection("users").document(user.uid)
+                    .set(mapOf("country" to iso), SetOptions.merge())
+                    .await()
+                releaseHold()
+            } catch (e: Exception) {
+                _needsCountry.value = true
+                _uiState.value = AuthUiState.Error("Couldn't save your country. Check your connection and try again.")
+            }
+        }
+    }
+
+    /** Closing the country step cancels the new Google sign-up, like closing the code step does. */
+    fun cancelGoogleSignup(onCancelled: () -> Unit = {}) {
+        if (!_needsCountry.value) return
+        _needsCountry.value = false
+        val user = auth.currentUser
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                user?.delete()?.await()
+            } catch (e: Exception) {}
+            auth.signOut()
+            otpHold = false
+            _currentUser.value = auth.currentUser
+        }
+        onCancelled()
+    }
+
+    fun signUp(name: String, email: String, pass: String, confirmPass: String, country: String) {
+        if (country.isBlank()) {
+            _uiState.value = AuthUiState.Error("Select your country")
+            return
+        }
         if (email.isBlank() || pass.isBlank()) {
             _uiState.value = AuthUiState.Error("Please fill in all required fields")
             return
@@ -318,6 +450,7 @@ class AuthViewModel : ViewModel() {
                             "email" to (user.email ?: email.trim()),
                             "emailLower" to (user.email ?: email.trim()).trim().lowercase(),
                             "emailOtp" to true,
+                            "country" to country.trim().uppercase(),
                             "createdAt" to System.currentTimeMillis()
                         )
                         if (name.isNotBlank()) {
@@ -338,6 +471,7 @@ class AuthViewModel : ViewModel() {
 
     fun googleSignIn(idToken: String) {
         _uiState.value = AuthUiState.Loading
+        otpHold = true
         val credential = GoogleAuthProvider.getCredential(idToken, null)
         auth.signInWithCredential(credential)
             .addOnCompleteListener { task ->
@@ -352,20 +486,47 @@ class AuthViewModel : ViewModel() {
                                 SetOptions.merge()
                             )
                         }
-                        if (isNewUser && !user.email.isNullOrBlank()) {
+                        val codeEmail = user.email
+                        if (codeEmail.isNullOrBlank()) {
+                            // No email to send a code to
+                            otpHold = false
+                            _currentUser.value = auth.currentUser
+                            _uiState.value = AuthUiState.Success(user)
+                        } else if (isNewUser) {
+                            // New account: stays signed in so a cancelled sign-up can delete it
                             requestSignupCodeInternal(
-                                email = user.email!!,
+                                email = codeEmail,
                                 isGoogle = true,
                                 onSuccess = {},
-                                onError = { msg -> _uiState.value = AuthUiState.Error(msg) }
+                                onError = { msg ->
+                                    otpHold = false
+                                    _uiState.value = AuthUiState.Error(msg)
+                                }
                             )
                         } else {
-                            _uiState.value = AuthUiState.Success(user)
+                            // Existing account: sign out again and only sign in for real after the email code
+                            auth.signOut()
+                            pendingGoogleCredential = credential
+                            pendingEmail = ""
+                            pendingPassword = ""
+                            requestSignupCodeInternal(
+                                email = codeEmail,
+                                isGoogle = true,
+                                isLogin = true,
+                                onSuccess = {},
+                                onError = { msg ->
+                                    clearPendingLogin()
+                                    otpHold = false
+                                    _uiState.value = AuthUiState.Error(msg)
+                                }
+                            )
                         }
                     } else {
+                        otpHold = false
                         _uiState.value = AuthUiState.Error("Google Sign-In failed")
                     }
                 } else {
+                    otpHold = false
                     val msg = mapFirebaseError(task.exception?.message)
                     _uiState.value = AuthUiState.Error(msg)
                 }

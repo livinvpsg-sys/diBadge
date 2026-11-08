@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.fabxdi.dibadge.data.ActivityLogEntity
+import com.fabxdi.dibadge.data.ActivityLogRepository
 import com.fabxdi.dibadge.data.AppDatabase
 import com.fabxdi.dibadge.data.FormQuestionData
 import com.fabxdi.dibadge.data.FormSigner
@@ -912,7 +913,7 @@ fun FormFillScreen(
                         relatedId = groupForm.formId,
                         timestamp = System.currentTimeMillis()
                     )
-                    AppDatabase.getDatabase(context).activityLogDao().insertActivityLog(activityLog)
+                    ActivityLogRepository.record(context, activityLog)
                 }
 
                 coroutineScope.launch { snackbarHostState.showSnackbar("Signed") }

@@ -11,7 +11,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Badge
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
@@ -52,7 +52,7 @@ fun HomeMenu(
     photoUrl: String = "",
     onCloseDrawer: () -> Unit,
     onProfileClick: () -> Unit = {},
-    onMyActivityClick: () -> Unit = {},
+    onActivityClick: () -> Unit = {},
     onCalendarClick: () -> Unit = {},
     onMyDocsClick: () -> Unit = {},
     onFormsClick: () -> Unit = {},
@@ -80,9 +80,9 @@ fun HomeMenu(
 
     val topNavGroup = listOf(
         MenuRowData("Profile", "Profile", iconVector = Icons.Outlined.Person),
-        MenuRowData("My Activity", "My Activity", iconRes = R.drawable.ic_my_activity),
+        MenuRowData("My Docs", "My Credentials", iconVector = Icons.Outlined.Badge),
+        MenuRowData("Activity", "Activity", iconRes = R.drawable.ic_my_activity),
         MenuRowData("Calendar", "Calendar", iconVector = Icons.Outlined.CalendarMonth),
-        MenuRowData("My Docs", "My Credentials", iconVector = Icons.Outlined.Description),
         MenuRowData("My Forms", "My Forms", iconRes = R.drawable.ic_forms_outline)
     )
 
@@ -201,7 +201,7 @@ fun HomeMenu(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // 3. Top Group Menu Rows (Profile, My Activity, Calendar, My Credentials)
+                    // 3. Top Group Menu Rows (Profile, My Credentials, Activity, Calendar, My Forms)
                     topNavGroup.forEach { item ->
                         DrawerRowItem(
                             label = item.label,
@@ -213,7 +213,7 @@ fun HomeMenu(
                                 onCloseDrawer()
                                 when (item.id) {
                                     "Profile" -> onProfileClick()
-                                    "My Activity" -> onMyActivityClick()
+                                    "Activity" -> onActivityClick()
                                     "Calendar" -> onCalendarClick()
                                     "My Docs" -> onMyDocsClick()
                                     "My Forms", "Forms" -> onFormsClick()

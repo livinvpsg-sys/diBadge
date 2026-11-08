@@ -4,15 +4,15 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fabxdi.dibadge.data.ActivityLogEntity
+import com.fabxdi.dibadge.data.ActivityLogRepository
 import com.fabxdi.dibadge.data.AppDatabase
+import com.fabxdi.dibadge.data.toActivityLog
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
-import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 import java.util.UUID
 
 class ActivityLogViewModel(application: Application) : AndroidViewModel(application) {
@@ -22,83 +22,57 @@ class ActivityLogViewModel(application: Application) : AndroidViewModel(applicat
 
     private var firestoreListener: ListenerRegistration? = null
     private var currentSyncedUserId: String? = null
+    private var uploadedLocalOnly = false
 
     val allActivityLogs: Flow<List<ActivityLogEntity>> = activityLogDao.getAllActivityLogs()
 
     private val authStateListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
         val user = firebaseAuth.currentUser
         if (user != null) {
-            if (currentSyncedUserId != user.uid) {
-                val switched = currentSyncedUserId != null
-                if (switched) {
-                    viewModelScope.launch(Dispatchers.IO) {
-                        activityLogDao.deleteAllActivityLogs()
-                    }
-                }
-                setupFirestoreSync(user.uid)
-            }
+            if (currentSyncedUserId != user.uid) startSync(user.uid)
         } else {
-            removeFirestoreSync()
-            viewModelScope.launch(Dispatchers.IO) {
-                activityLogDao.deleteAllActivityLogs()
-            }
+            stopSync()
+            viewModelScope.launch(Dispatchers.IO) { activityLogDao.deleteAllActivityLogs() }
         }
     }
 
     init {
         auth.addAuthStateListener(authStateListener)
-        auth.currentUser?.let { setupFirestoreSync(it.uid) }
+        auth.currentUser?.let { startSync(it.uid) }
     }
 
     override fun onCleared() {
         super.onCleared()
         auth.removeAuthStateListener(authStateListener)
-        removeFirestoreSync()
+        stopSync()
     }
 
-    private fun setupFirestoreSync(userId: String) {
-        removeFirestoreSync()
+    /** One live listener: downloads everything on login and keeps this phone updated afterwards. */
+    private fun startSync(userId: String) {
+        stopSync()
         currentSyncedUserId = userId
+        uploadedLocalOnly = false
 
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val snapshot = firestore.collection("users")
-                    .document(userId)
-                    .collection("activity_logs")
-                    .get()
-                    .await()
-
-                // Only mirror this account's real activity. Nothing is created here, so a new account starts empty.
-                for (doc in snapshot.documents) {
-                    val mapData = doc.data ?: continue
-                    val item = mapData.toActivityLogEntity(doc.id)
-                    if (item != null) {
-                        activityLogDao.insertActivityLog(item)
+        firestoreListener = firestore.collection("users").document(userId)
+            .collection("activity_logs")
+            .addSnapshotListener { snapshot, e ->
+                if (e != null || snapshot == null) return@addSnapshotListener
+                val cloudDocs = snapshot.documents.mapNotNull { doc ->
+                    doc.data?.toActivityLog(doc.id)
+                }
+                viewModelScope.launch(Dispatchers.IO) {
+                    if (cloudDocs.isNotEmpty()) activityLogDao.insertAllActivityLogs(cloudDocs)
+                    if (!uploadedLocalOnly && !snapshot.metadata.isFromCache) {
+                        uploadedLocalOnly = true
+                        ActivityLogRepository.uploadLocalOnly(
+                            getApplication(), cloudDocs.map { it.id }.toSet()
+                        )
                     }
                 }
-            } catch (e: Exception) {
-                // Offline or firestore error
             }
-
-            firestoreListener = firestore.collection("users")
-                .document(userId)
-                .collection("activity_logs")
-                .addSnapshotListener { snapshot, e ->
-                    if (e != null || snapshot == null) return@addSnapshotListener
-                    viewModelScope.launch(Dispatchers.IO) {
-                        for (doc in snapshot.documents) {
-                            val mapData = doc.data ?: continue
-                            val item = mapData.toActivityLogEntity(doc.id)
-                            if (item != null) {
-                                activityLogDao.insertActivityLog(item)
-                            }
-                        }
-                    }
-                }
-        }
     }
 
-    private fun removeFirestoreSync() {
+    private fun stopSync() {
         firestoreListener?.remove()
         firestoreListener = null
         currentSyncedUserId = null
@@ -113,63 +87,19 @@ class ActivityLogViewModel(application: Application) : AndroidViewModel(applicat
         relatedId: String
     ) {
         viewModelScope.launch(Dispatchers.IO) {
-            val log = ActivityLogEntity(
-                id = UUID.randomUUID().toString(),
-                result = result,
-                kind = kind,
-                title = title,
-                source = source,
-                reference = reference,
-                relatedId = relatedId,
-                timestamp = System.currentTimeMillis()
+            ActivityLogRepository.record(
+                getApplication(),
+                ActivityLogEntity(
+                    id = UUID.randomUUID().toString(),
+                    result = result,
+                    kind = kind,
+                    title = title,
+                    source = source,
+                    reference = reference,
+                    relatedId = relatedId,
+                    timestamp = System.currentTimeMillis()
+                )
             )
-            activityLogDao.insertActivityLog(log)
-
-            val userId = auth.currentUser?.uid
-            if (userId != null) {
-                try {
-                    firestore.collection("users")
-                        .document(userId)
-                        .collection("activity_logs")
-                        .document(log.id)
-                        .set(log.toFirestoreMap(), SetOptions.merge())
-                } catch (e: Exception) {}
-            }
         }
     }
-}
-
-fun ActivityLogEntity.toFirestoreMap(): Map<String, Any?> {
-    return mapOf(
-        "id" to id,
-        "result" to result,
-        "kind" to kind,
-        "title" to title,
-        "source" to source,
-        "reference" to reference,
-        "relatedId" to relatedId,
-        "timestamp" to timestamp
-    )
-}
-
-fun Map<String, Any?>.toActivityLogEntity(documentId: String): ActivityLogEntity? {
-    val idVal = this["id"] as? String ?: documentId
-    val resultVal = this["result"] as? String ?: "Confirmed"
-    val kindVal = this["kind"] as? String ?: "message"
-    val titleVal = this["title"] as? String ?: "Activity"
-    val sourceVal = this["source"] as? String ?: "Organisation"
-    val referenceVal = this["reference"] as? String ?: "Letter"
-    val relatedIdVal = this["relatedId"] as? String ?: ""
-    val timestampVal = (this["timestamp"] as? Long) ?: System.currentTimeMillis()
-
-    return ActivityLogEntity(
-        id = idVal,
-        result = resultVal,
-        kind = kindVal,
-        title = titleVal,
-        source = sourceVal,
-        reference = referenceVal,
-        relatedId = relatedIdVal,
-        timestamp = timestampVal
-    )
 }

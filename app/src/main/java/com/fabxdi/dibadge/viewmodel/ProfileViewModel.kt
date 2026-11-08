@@ -127,34 +127,8 @@ class ProfileViewModel : ViewModel() {
     private var usernameCheckJob: Job? = null
     private var networkCallbackRegistered = false
 
-    private var orgListener: com.google.firebase.firestore.ListenerRegistration? = null
-    private var loadedForUid: String? = null
-
-    private val authListener = FirebaseAuth.AuthStateListener { fa ->
-        val uid = fa.currentUser?.uid
-        if (uid != loadedForUid) {
-            // account changed or signed out: drop the previous account's profile immediately
-            orgListener?.remove()
-            orgListener = null
-            _profileData.value = UserProfileData()
-            _verifiedOrganization.value = null
-            initialProfileData = UserProfileData()
-            _uiState.value = ProfileUiState.Loading
-            loadedForUid = uid
-            if (uid != null) loadUserProfile()
-        }
-    }
-
     init {
-        loadedForUid = auth.currentUser?.uid
-        auth.addAuthStateListener(authListener)
         loadUserProfile()
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        auth.removeAuthStateListener(authListener)
-        orgListener?.remove()
     }
 
     fun loadUserProfile() {
@@ -166,8 +140,7 @@ class ProfileViewModel : ViewModel() {
         var previousOrgName: String? = null
 
         // Listen to verifiedOrganization
-        orgListener?.remove()
-        orgListener = firestore.collection("users").document(user.uid)
+        firestore.collection("users").document(user.uid)
             .collection("verifiedOrganizations")
             .addSnapshotListener { snapshot, error ->
                 if (error != null || snapshot == null || snapshot.isEmpty) {
@@ -794,20 +767,8 @@ class ProfileViewModel : ViewModel() {
             }
         }
 
-        if (hasProtectedChanges()) {
-            requestEmailVerificationCode(
-                onVerifyRequired = onVerifyRequired,
-                onError = { msg ->
-                    if (msg == "VERIFY_EMAIL_FIRST") {
-                        onError("VERIFY_EMAIL_FIRST")
-                    } else {
-                        onError(msg)
-                    }
-                }
-            )
-        } else {
-            saveProfileInternal(onSuccess, onError)
-        }
+        // No email code when saving the profile. The code is asked for when logging in or signing up.
+        saveProfileInternal(onSuccess, onError)
     }
 
     private fun saveProfileInternal(onSuccess: () -> Unit, onError: (String) -> Unit) {

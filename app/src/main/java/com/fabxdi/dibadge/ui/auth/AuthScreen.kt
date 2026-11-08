@@ -3,6 +3,7 @@ package com.fabxdi.dibadge.ui.auth
 import android.content.Intent
 import android.net.Uri
 import android.util.Patterns
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -17,6 +18,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -53,6 +55,8 @@ import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import com.fabxdi.dibadge.R
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
+import com.fabxdi.dibadge.ui.profile.CountryPickerSheet
+import com.fabxdi.dibadge.util.CountryData
 import com.fabxdi.dibadge.util.maskEmail
 import com.fabxdi.dibadge.viewmodel.AuthUiState
 import com.fabxdi.dibadge.viewmodel.AuthViewModel
@@ -119,6 +123,23 @@ fun AuthScreen(
 
     var snackbarMessage by remember { mutableStateOf<String?>(null) }
 
+    // Country is required when creating an account
+    var selectedCountryIso by remember { mutableStateOf("") }
+    var countryError by remember { mutableStateOf<String?>(null) }
+    var showCountrySheet by remember { mutableStateOf(false) }
+    val needsGoogleCountry by viewModel.needsCountry.collectAsState()
+
+    // Short messages (for example "New code sent") were never shown; show them as a toast
+    LaunchedEffect(snackbarMessage) {
+        snackbarMessage?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            snackbarMessage = null
+        }
+    }
+    LaunchedEffect(needsGoogleCountry) {
+        if (needsGoogleCountry) snackbarMessage = "Choose your country to finish signing up"
+    }
+
     LaunchedEffect(currentUser) {
         if (currentUser != null && !signupVerifyState.isOpen) {
             onAuthSuccess()
@@ -183,7 +204,8 @@ fun AuthScreen(
         val isEmailValid = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches().also { if (!it) emailError = "Enter a valid email address" }
         val isPassValid = (password.length >= 8).also { if (!it) passwordError = "Password must be at least 8 characters" }
         val isMatch = (confirmPassword == password).also { if (!it) confirmPasswordError = "Passwords do not match" }
-        if (isEmailValid && isPassValid && isMatch) {
+        val isCountryValid = selectedCountryIso.isNotBlank().also { if (!it) countryError = "Select your country" }
+        if (isEmailValid && isPassValid && isMatch && isCountryValid) {
             viewModel.checkEmailAndRequestSignupCode(
                 email = email,
                 onRegistered = {
@@ -482,8 +504,22 @@ fun AuthScreen(
                                 imeAction = ImeAction.Done
                             ),
                             keyboardActions = KeyboardActions(
-                                onDone = { performSignupValidationAndCheck() }
+                                onDone = { focusManager.clearFocus() }
                             )
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Country Tile (required)
+                        LoginTileSelect(
+                            label = "Country",
+                            value = CountryData.getCountryDisplayName(selectedCountryIso),
+                            errorMessage = countryError,
+                            enabled = !isLoading,
+                            onClick = {
+                                focusManager.clearFocus()
+                                showCountrySheet = true
+                            }
                         )
 
                         Spacer(modifier = Modifier.height(28.dp))
@@ -704,6 +740,7 @@ fun AuthScreen(
                             emailError = null
                             passwordError = null
                             confirmPasswordError = null
+                            countryError = null
                             viewModel.clearError()
                         },
                     contentAlignment = Alignment.Center
@@ -730,6 +767,30 @@ fun AuthScreen(
         }
     }
 
+    // Country picker for the sign-up form
+    if (showCountrySheet) {
+        CountryPickerSheet(
+            selectedIsoCode = selectedCountryIso,
+            showDialCode = false,
+            onCountrySelected = { country ->
+                selectedCountryIso = country.isoCode
+                countryError = null
+            },
+            onDismiss = { showCountrySheet = false }
+        )
+    }
+
+    // A new Google account must choose a country before it can continue
+    if (needsGoogleCountry) {
+        CountryPickerSheet(
+            showDialCode = false,
+            onCountrySelected = { country -> viewModel.setGoogleCountry(country.isoCode) },
+            onDismiss = {
+                viewModel.cancelGoogleSignup { snackbarMessage = "Sign up cancelled" }
+            }
+        )
+    }
+
     // Signup Verification Code Sheet
     if (signupVerifyState.isOpen) {
         SignupVerificationSheet(
@@ -739,9 +800,9 @@ fun AuthScreen(
             onVerifyClick = {
                 viewModel.verifySignupCode(
                     onSuccess = {
-                        if (!signupVerifyState.isGoogleSignup) {
-                            viewModel.signUp("", email, password, confirmPassword)
-                        }
+                        // Only called when a new email account was being created; logging in and
+                        // Google sign-up are finished inside the view model.
+                        viewModel.signUp("", email, password, confirmPassword, selectedCountryIso)
                     }
                 )
             },
@@ -889,7 +950,9 @@ fun SignupVerificationSheet(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            val bodyText = if (verificationState.isGoogleSignup) {
+            val bodyText = if (verificationState.isLogin) {
+                "We sent a 6-digit code to $maskedEmail. Enter it to log in."
+            } else if (verificationState.isGoogleSignup) {
                 "We sent a 6-digit code to $maskedEmail. Enter it to finish signing up."
             } else {
                 "We sent a 6-digit code to $maskedEmail. Enter it to create your account."
@@ -1168,6 +1231,81 @@ fun LoginTileField(
                     .semantics {
                         error(errorMessage)
                     }
+            )
+        }
+    }
+}
+
+/** Same look as [LoginTileField], but tapping it opens a picker instead of typing. */
+@Composable
+fun LoginTileSelect(
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+    errorMessage: String? = null,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    val colors = MaterialTheme.colorScheme
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val errorColor = colors.error
+    val hasValue = value.isNotEmpty()
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .alpha(if (enabled) 1.0f else 0.5f)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 60.dp)
+                .clickable(enabled = enabled, onClick = onClick),
+            shape = RoundedCornerShape(14.dp),
+            color = colors.surface,
+            border = if (errorMessage != null) BorderStroke(1.dp, errorColor) else null
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp, bottom = 8.dp, start = 16.dp, end = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
+                    Text(
+                        text = label,
+                        fontSize = if (hasValue) 12.sp else 16.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = secondaryTextColor
+                    )
+                    if (hasValue) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = value,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = primaryTextColor
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Select $label",
+                    tint = secondaryTextColor,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+
+        if (errorMessage != null) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = errorMessage,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Normal,
+                color = errorColor,
+                modifier = Modifier.padding(start = 4.dp)
             )
         }
     }

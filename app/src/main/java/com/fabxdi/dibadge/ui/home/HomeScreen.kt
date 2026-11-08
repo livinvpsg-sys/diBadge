@@ -50,7 +50,7 @@ import com.fabxdi.dibadge.viewmodel.InboxViewModel
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatScreen
 import com.fabxdi.dibadge.ui.home.QrScannerScreen
 import com.fabxdi.dibadge.ui.home.MyQrCodeScreen
-import com.fabxdi.dibadge.ui.my_activity.MyActivityScreen
+import com.fabxdi.dibadge.ui.activity.ActivityScreen
 import com.fabxdi.dibadge.ui.my_credentials.MyCredentialsScreen
 import com.fabxdi.dibadge.ui.my_forms.MyFormsScreen
 import com.fabxdi.dibadge.ui.my_tasks.MyTasksScreen
@@ -86,6 +86,7 @@ fun MainDashboard(
     hasMyTasksDot: Boolean = reminderCount > 0,
     notificationCount: Int = 0,
     firstName: String = "User",
+    nickname: String = "",
     fullName: String = firstName,
     email: String = "",
     photoUrl: String = "",
@@ -112,6 +113,7 @@ fun MainDashboard(
 
     val homeEntries by viewModel.allHomeEntries.collectAsState(initial = emptyList())
     val unreadInboxCount by inboxViewModel.unreadCount.collectAsState()
+    val inboxItems by inboxViewModel.allInboxItems.collectAsState(initial = emptyList())
 
     val currentUid = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
     var userNicknames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
@@ -142,7 +144,7 @@ fun MainDashboard(
 
     var isFabExpanded by remember { mutableStateOf(false) }
     var showReminderForm by remember { mutableStateOf(false) }
-    var showMyActivityScreen by remember { mutableStateOf(false) }
+    var showActivityScreen by remember { mutableStateOf(false) }
     var showMyDocsScreen by remember { mutableStateOf(false) }
     var showMyFormsScreen by remember { mutableStateOf(false) }
     var showProfileScreen by remember { mutableStateOf(false) }
@@ -202,11 +204,33 @@ fun MainDashboard(
         return
     }
 
-    if (showMyActivityScreen) {
-        MyActivityScreen(
-            onBack = { showMyActivityScreen = false },
-            onOpenRelatedItem = { relatedId ->
-                showMyActivityScreen = false
+    // A message opened from Activity shows on top of it, so Back returns to Activity
+    if (selectedInboxItemForDetail != null) {
+        MessageDetailScreen(
+            item = selectedInboxItemForDetail!!,
+            onBack = { selectedInboxItemForDetail = null },
+            inboxViewModel = inboxViewModel
+        )
+        return
+    }
+
+    if (showActivityScreen) {
+        ActivityScreen(
+            onBack = { showActivityScreen = false },
+            onOpenRelatedItem = { relatedId, kind ->
+                val inboxItem = inboxItems.firstOrNull { it.id == relatedId }
+                when {
+                    inboxItem != null -> {
+                        selectedInboxItemForDetail = inboxItem
+                        true
+                    }
+                    kind == "form" -> {
+                        showActivityScreen = false
+                        showMyFormsScreen = true
+                        true
+                    }
+                    else -> false
+                }
             }
         )
         return
@@ -262,15 +286,6 @@ fun MainDashboard(
                 showOvertimeForm = false
             },
             onClose = { showOvertimeForm = false }
-        )
-        return
-    }
-
-    if (selectedInboxItemForDetail != null) {
-        MessageDetailScreen(
-            item = selectedInboxItemForDetail!!,
-            onBack = { selectedInboxItemForDetail = null },
-            inboxViewModel = inboxViewModel
         )
         return
     }
@@ -342,7 +357,7 @@ fun MainDashboard(
                         onCloseDrawer = { scope.launch { drawerState.close() } },
                         onProfileClick = { showProfileScreen = true },
                         onCalendarClick = onCalendarTabClick,
-                        onMyActivityClick = { showMyActivityScreen = true },
+                        onActivityClick = { showActivityScreen = true },
                         onMyDocsClick = { showMyDocsScreen = true },
                         onFormsClick = { showMyFormsScreen = true },
                         onSettingsClick = { showSettingsScreen = true },
@@ -357,7 +372,7 @@ fun MainDashboard(
                         if (selectedTab == HomeTab.Home) {
                             HomeBanner(
                                 firstName = firstName,
-                                nickname = "",
+                                nickname = nickname,
                                 reminderCount = reminderCount,
                                 searchQuery = homeSearchQuery,
                                 onSearchQueryChange = { homeSearchQuery = it },
