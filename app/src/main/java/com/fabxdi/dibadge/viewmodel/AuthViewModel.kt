@@ -1,5 +1,6 @@
 package com.fabxdi.dibadge.viewmodel
 
+import com.fabxdi.dibadge.util.OtpApi
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.AuthCredential
@@ -202,11 +203,11 @@ class AuthViewModel : ViewModel() {
             } catch (e: Exception) {
                 // If fetchSignInMethods is restricted or offline, proceed to send verification code
                 requestSignupCodeInternal(
-                    email = cleanEmail,
-                    isGoogle = false,
-                    onSuccess = onCodeRequested,
-                    onError = onError
-                )
+                        email = cleanEmail,
+                        isGoogle = false,
+                        onSuccess = onCodeRequested,
+                        onError = onError
+                    )
             }
         }
     }
@@ -218,52 +219,26 @@ class AuthViewModel : ViewModel() {
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
-        val generatedCode = String.format("%06d", (100000..999999).random())
-        val challengeId = UUID.randomUUID().toString()
-
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val challengeData = mapOf(
-                    "challengeId" to challengeId,
-                    "email" to email,
-                    "code" to generatedCode,
-                    "createdAt" to System.currentTimeMillis(),
-                    "expiresAt" to System.currentTimeMillis() + 10 * 60 * 1000,
-                    "attempts" to 0
-                )
-
-                firestore.collection("signupChallenges")
-                    .document(challengeId)
-                    .set(challengeData)
-                    .await()
-
-                try {
-                    firestore.collection("mail").add(mapOf(
-                        "to" to email,
-                        "message" to mapOf(
-                            "subject" to "Your diBadge verification code",
-                            "text" to "Your diBadge verification code is $generatedCode. It expires in 10 minutes. If you did not just try to log in or create an account, you can ignore this email."
-                        )
-                    ))
-                } catch (e: Exception) {}
-
-                _signupVerifyState.value = SignupVerificationState(
-                    isOpen = true,
-                    email = email,
-                    challengeId = challengeId,
-                    code = generatedCode,
-                    typedCode = "",
-                    isGoogleSignup = isGoogle,
-                    isLogin = isLogin,
-                    resendSecondsLeft = 60
-                )
-
-                startResendTimer()
-                _uiState.value = AuthUiState.Idle
-                onSuccess()
-            } catch (e: Exception) {
-                _uiState.value = AuthUiState.Idle
-                onError(e.localizedMessage ?: "Couldn't reach the server. Check your connection and try again.")
+            // The server makes the code and emails it. The app never sees the code.
+            when (val result = OtpApi.send(email)) {
+                is OtpApi.SendResult.Sent -> {
+                    _signupVerifyState.value = SignupVerificationState(
+                        isOpen = true,
+                        email = email,
+                        typedCode = "",
+                        isGoogleSignup = isGoogle,
+                        isLogin = isLogin,
+                        resendSecondsLeft = 60
+                    )
+                    startResendTimer()
+                    _uiState.value = AuthUiState.Idle
+                    onSuccess()
+                }
+                is OtpApi.SendResult.Failed -> {
+                    _uiState.value = AuthUiState.Idle
+                    onError(result.message)
+                }
             }
         }
     }
@@ -293,33 +268,45 @@ class AuthViewModel : ViewModel() {
         _signupVerifyState.value = state.copy(isVerifying = true)
 
         viewModelScope.launch(Dispatchers.IO) {
-            delay(500)
-
-            if (state.typedCode == state.code) {
-                _signupVerifyState.value = SignupVerificationState(isOpen = false)
-                when {
-                    state.isLogin -> completeLogin()
-                    state.isGoogleSignup -> {
-                        // A new Google account must now choose its country; Home opens after that
-                        _needsCountry.value = true
+            when (val result = OtpApi.verify(state.email, state.typedCode)) {
+                is OtpApi.VerifyResult.Ok -> {
+                    _signupVerifyState.value = SignupVerificationState(isOpen = false)
+                    when {
+                        state.isLogin -> completeLogin()
+                        state.isGoogleSignup -> {
+                            // A new Google account must now choose its country; Home opens after that
+                            _needsCountry.value = true
+                        }
+                        else -> onSuccess()
                     }
-                    else -> onSuccess()
                 }
-            } else {
-                val newTriesLeft = state.triesLeft - 1
-                if (newTriesLeft <= 0) {
-                    _signupVerifyState.value = state.copy(
+                is OtpApi.VerifyResult.Wrong -> {
+                    val left = result.triesLeft
+                    val triesMsg = if (left == 1) "1 try left." else "$left tries left."
+                    _signupVerifyState.value = _signupVerifyState.value.copy(
+                        isVerifying = false,
+                        triesLeft = left,
+                        errorMessage = "That code is not right. $triesMsg"
+                    )
+                }
+                is OtpApi.VerifyResult.Locked -> {
+                    _signupVerifyState.value = _signupVerifyState.value.copy(
                         isVerifying = false,
                         triesLeft = 0,
                         isLocked = true,
                         errorMessage = "Too many wrong codes. Try again in 10 minutes."
                     )
-                } else {
-                    val triesMsg = if (newTriesLeft == 1) "1 try left." else "$newTriesLeft tries left."
-                    _signupVerifyState.value = state.copy(
+                }
+                is OtpApi.VerifyResult.Expired -> {
+                    _signupVerifyState.value = _signupVerifyState.value.copy(
                         isVerifying = false,
-                        triesLeft = newTriesLeft,
-                        errorMessage = "That code is not right. $triesMsg"
+                        errorMessage = "That code has expired. Tap Resend to get a new one."
+                    )
+                }
+                is OtpApi.VerifyResult.Failed -> {
+                    _signupVerifyState.value = _signupVerifyState.value.copy(
+                        isVerifying = false,
+                        errorMessage = result.message
                     )
                 }
             }
@@ -331,28 +318,23 @@ class AuthViewModel : ViewModel() {
         val email = state.email
         if (email.isBlank()) return
 
-        val generatedCode = String.format("%06d", (100000..999999).random())
-
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                firestore.collection("mail").add(mapOf(
-                    "to" to email,
-                    "message" to mapOf(
-                        "subject" to "Your diBadge verification code",
-                        "text" to "Your diBadge verification code is $generatedCode. It expires in 10 minutes. If you did not try to create an account, you can ignore this email."
+            when (val result = OtpApi.send(email)) {
+                is OtpApi.SendResult.Sent -> {
+                    _signupVerifyState.value = _signupVerifyState.value.copy(
+                        typedCode = "",
+                        errorMessage = null,
+                        triesLeft = 5,
+                        isLocked = false,
+                        resendSecondsLeft = 60
                     )
-                ))
-            } catch (e: Exception) {}
-
-            _signupVerifyState.value = _signupVerifyState.value.copy(
-                code = generatedCode,
-                typedCode = "",
-                errorMessage = null,
-                resendSecondsLeft = 60
-            )
-
-            startResendTimer()
-            onSent()
+                    startResendTimer()
+                    onSent()
+                }
+                is OtpApi.SendResult.Failed -> {
+                    _signupVerifyState.value = _signupVerifyState.value.copy(errorMessage = result.message)
+                }
+            }
         }
     }
 
