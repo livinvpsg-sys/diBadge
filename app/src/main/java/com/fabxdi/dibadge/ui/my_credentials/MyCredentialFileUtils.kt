@@ -1,4 +1,4 @@
-package com.fabxdi.dibadge.ui.my_docs
+package com.fabxdi.dibadge.ui.my_credentials
 
 import android.content.Context
 import android.content.Intent
@@ -10,14 +10,14 @@ import java.io.File
 import java.util.UUID
 
 /**
- * My Docs keeps its own copy of every file in the app's private storage. A file picked from the
+ * My Credentials keeps its own copy of every file in the app's private storage. A file picked from the
  * gallery or file manager is only readable for a short time, so without a copy the document
  * could not be opened again later.
  *
  * For opening and sharing, add this line inside <paths> in res/xml/file_paths.xml:
  *     <files-path name="documents" path="documents/" />
  */
-object DocFileUtils {
+object MyCredentialFileUtils {
     const val MAX_FILE_BYTES = 5L * 1024 * 1024
 
     private fun docsDir(context: Context): File =

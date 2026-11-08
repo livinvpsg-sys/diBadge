@@ -1,4 +1,4 @@
-package com.fabxdi.dibadge.ui.my_docs
+package com.fabxdi.dibadge.ui.my_credentials
 
 import android.content.Context
 import android.content.Intent
@@ -32,7 +32,7 @@ import java.util.Locale
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShareDocSheet(
+fun ShareMyCredentialSheet(
     docs: List<DocEntity>,
     context: Context,
     organisations: List<String>,
@@ -53,7 +53,7 @@ fun ShareDocSheet(
     val tabInactiveColor = diBadgeColors.tabInactive
 
     val hasOrg = organisations.isNotEmpty()
-    val countLabel = if (docs.size == 1) "document" else "${docs.size} documents"
+    val countLabel = if (docs.size == 1) "credential" else "${docs.size} credentials"
 
     if (showOrgChoiceSheet) {
         ModalBottomSheet(
@@ -95,7 +95,7 @@ fun ShareDocSheet(
                 Spacer(modifier = Modifier.height(2.dp))
 
                 Text(
-                    text = "A copy of the details and files is sent. Your original stays in My Docs.",
+                    text = "A copy of the details and files is sent. Your original stays in My Credentials.",
                     fontSize = 13.sp,
                     color = secondaryTextColor
                 )
@@ -216,7 +216,7 @@ fun ShareDocSheet(
                 .padding(bottom = 28.dp)
         ) {
             Text(
-                text = if (docs.size == 1) "Share document" else "Share ${docs.size} documents",
+                text = if (docs.size == 1) "Share credential" else "Share ${docs.size} credentials",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Medium,
                 color = primaryTextColor,
@@ -301,7 +301,7 @@ private fun shareWithOtherApp(context: Context, docs: List<DocEntity>) {
         val expiry = doc.expiryDate
         if (!doc.noExpiry && expiry != null) "${doc.name}, expires ${expiry.format(formatter)}" else doc.name
     }
-    val uris = docs.flatMap { it.files }.mapNotNull { DocFileUtils.toShareUri(context, it) }
+    val uris = docs.flatMap { it.files }.mapNotNull { MyCredentialFileUtils.toShareUri(context, it) }
 
     val intent = if (uris.isEmpty()) {
         Intent(Intent.ACTION_SEND).apply {

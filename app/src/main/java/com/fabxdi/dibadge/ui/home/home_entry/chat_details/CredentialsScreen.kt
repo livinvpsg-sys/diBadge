@@ -30,7 +30,7 @@ import com.fabxdi.dibadge.data.DocEntity
 import com.fabxdi.dibadge.ui.components.DocumentTypeTile
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.FilePickerUtils
-import com.fabxdi.dibadge.viewmodel.DocViewModel
+import com.fabxdi.dibadge.viewmodel.MyCredentialViewModel
 import com.fabxdi.dibadge.viewmodel.GroupDetailsViewModel
 import com.fabxdi.dibadge.viewmodel.GroupMember
 import com.fabxdi.dibadge.viewmodel.GroupCredentialItem
@@ -51,7 +51,7 @@ fun CredentialsScreen(
     members: List<GroupMember>,
     onBack: () -> Unit,
     detailsViewModel: GroupDetailsViewModel = viewModel(),
-    docViewModel: DocViewModel = viewModel()
+    docViewModel: MyCredentialViewModel = viewModel()
 ) {
     BackHandler { onBack() }
     val context = LocalContext.current
@@ -238,14 +238,13 @@ fun CredentialsScreen(
                                         PendingRequestCardItem(
                                             request = req,
                                             isAdmin = false,
-                                            isDark = isDark,
                                             cardBgColor = cardBgColor,
                                             outlineColor = outlineColor,
                                             primaryTextColor = primaryTextColor,
                                             secondaryTextColor = secondaryTextColor,
                                             errorColor = errorColor,
                                             onRequestClick = { requestToFulfill = req },
-                                            onRemindClick = null,
+                                            onRemindClick = {},
                                             onCancelClick = {}
                                         )
                                     }
@@ -256,7 +255,7 @@ fun CredentialsScreen(
 
                     // Members grouped credentials and pending requests
                     memberRows.forEach { (member, certList, reqList) ->
-                        item(key = member.uid) {
+                        item {
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 // Member Header
                                 Row(
@@ -336,17 +335,15 @@ fun CredentialsScreen(
                                             PendingRequestCardItem(
                                                 request = req,
                                                 isAdmin = true,
-                                                isDark = isDark,
                                                 cardBgColor = cardBgColor,
                                                 outlineColor = outlineColor,
                                                 primaryTextColor = primaryTextColor,
                                                 secondaryTextColor = secondaryTextColor,
                                                 errorColor = errorColor,
-                                                // An admin can answer a request that was sent to them from their own row.
-                                                onRequestClick = {
-                                                    if (req.memberUid == currentUserId) requestToFulfill = req
+                                                onRequestClick = {},
+                                                onRemindClick = {
+                                                    Toast.makeText(context, "Reminder sent to ${req.memberName}", Toast.LENGTH_SHORT).show()
                                                 },
-                                                onRemindClick = null,
                                                 onCancelClick = {
                                                     detailsViewModel.cancelCredentialRequest(groupId, req.id)
                                                     Toast.makeText(context, "Request cancelled", Toast.LENGTH_SHORT).show()
@@ -374,8 +371,7 @@ fun CredentialsScreen(
                     certName = certName,
                     targetMembers = targetMembers
                 )
-                val sentText = if (targetMembers.size == 1) "Request sent to ${targetMembers.first().displayName}" else "Request sent to ${targetMembers.size} members"
-                Toast.makeText(context, sentText, Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Request sent to ${targetMembers.size} members", Toast.LENGTH_SHORT).show()
                 showRequestSheet = false
             },
             onDismiss = { showRequestSheet = false }
@@ -470,7 +466,7 @@ fun CredentialsScreen(
             },
             text = {
                 Text(
-                    "Remove credential from this group? The file stays in your My Docs.",
+                    "Remove credential from this group? The file stays in your My Credentials.",
                     fontSize = 14.sp,
                     color = secondaryTextColor
                 )
@@ -495,14 +491,10 @@ fun CredentialsScreen(
     }
 
     // Fullscreen Document Viewer
-    val certToOpen = selectedCertForViewer
-    LaunchedEffect(certToOpen) {
-        if (certToOpen != null) {
-            if (certToOpen.fileUri.isNotBlank()) {
-                FilePickerUtils.openFile(context, Uri.parse(certToOpen.fileUri))
-            } else {
-                Toast.makeText(context, "This credential has no file", Toast.LENGTH_SHORT).show()
-            }
+    if (selectedCertForViewer != null) {
+        val cert = selectedCertForViewer!!
+        if (cert.fileUri.isNotBlank()) {
+            FilePickerUtils.openFile(context, Uri.parse(cert.fileUri))
             selectedCertForViewer = null
         }
     }
@@ -631,14 +623,13 @@ private fun CredentialItemCard(
 private fun PendingRequestCardItem(
     request: GroupCredentialRequestItem,
     isAdmin: Boolean,
-    isDark: Boolean,
     cardBgColor: Color,
     outlineColor: Color,
     primaryTextColor: Color,
     secondaryTextColor: Color,
     errorColor: Color,
     onRequestClick: () -> Unit,
-    onRemindClick: (() -> Unit)?, // null hides "Send reminder" until reminders are really sent
+    onRemindClick: () -> Unit,
     onCancelClick: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -657,7 +648,7 @@ private fun PendingRequestCardItem(
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            DocumentTypeTile(extension = "pdf", isDark = isDark, widthDp = 28, heightDp = 34)
+            DocumentTypeTile(extension = "pdf", isDark = true, widthDp = 28, heightDp = 34)
 
             Spacer(modifier = Modifier.width(12.dp))
 
@@ -698,15 +689,13 @@ private fun PendingRequestCardItem(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
-                        if (onRemindClick != null) {
-                            DropdownMenuItem(
-                                text = { Text("Send reminder") },
-                                onClick = {
-                                    showMenu = false
-                                    onRemindClick()
-                                }
-                            )
-                        }
+                        DropdownMenuItem(
+                            text = { Text("Send reminder") },
+                            onClick = {
+                                showMenu = false
+                                onRemindClick()
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text("Cancel request", color = errorColor) },
                             onClick = {

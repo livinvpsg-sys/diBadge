@@ -51,7 +51,7 @@ import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatScreen
 import com.fabxdi.dibadge.ui.home.QrScannerScreen
 import com.fabxdi.dibadge.ui.home.MyQrCodeScreen
 import com.fabxdi.dibadge.ui.my_activity.MyActivityScreen
-import com.fabxdi.dibadge.ui.my_docs.MyDocsScreen
+import com.fabxdi.dibadge.ui.my_credentials.MyCredentialsScreen
 import com.fabxdi.dibadge.ui.my_forms.MyFormsScreen
 import com.fabxdi.dibadge.ui.my_tasks.MyTasksScreen
 import com.fabxdi.dibadge.ui.my_tasks.to_do.ReminderFormScreen
@@ -170,7 +170,7 @@ fun MainDashboard(
     }
 
     if (showMyDocsScreen) {
-        MyDocsScreen(
+        MyCredentialsScreen(
             onBack = { showMyDocsScreen = false }
         )
         return
@@ -442,7 +442,7 @@ fun MainDashboard(
                                                 HomeEntryCard(
                                                     entry = entry,
                                                     isSelected = selectedEntries.contains(entry),
-                                                    onClick = { 
+                                                    onClick = {
                                                         if (selectedEntries.isNotEmpty()) {
                                                             selectedEntries = if (selectedEntries.contains(entry)) {
                                                                 selectedEntries - entry
@@ -474,8 +474,8 @@ fun MainDashboard(
                                                 } else ""
 
                                                 entry.title.contains(query, ignoreCase = true) ||
-                                                (nick.isNotBlank() && nick.contains(query, ignoreCase = true)) ||
-                                                (isGroup && entry.subtitle.contains(query, ignoreCase = true))
+                                                        (nick.isNotBlank() && nick.contains(query, ignoreCase = true)) ||
+                                                        (isGroup && entry.subtitle.contains(query, ignoreCase = true))
                                             }
                                         }
                                     }
@@ -489,9 +489,9 @@ fun MainDashboard(
                                                 val nick = userNicknames[conn.uid] ?: userNicknames[conn.id] ?: ""
 
                                                 !isBlocked && !hasChat && (
-                                                    conn.name.contains(query, ignoreCase = true) ||
-                                                    (nick.isNotBlank() && nick.contains(query, ignoreCase = true))
-                                                )
+                                                        conn.name.contains(query, ignoreCase = true) ||
+                                                                (nick.isNotBlank() && nick.contains(query, ignoreCase = true))
+                                                        )
                                             }
                                         }
                                     }

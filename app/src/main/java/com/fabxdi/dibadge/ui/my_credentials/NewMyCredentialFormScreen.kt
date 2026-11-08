@@ -1,4 +1,4 @@
-package com.fabxdi.dibadge.ui.my_docs
+package com.fabxdi.dibadge.ui.my_credentials
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -43,7 +43,7 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NewDocFormScreen(
+fun NewMyCredentialFormScreen(
     docToEdit: DocEntity? = null,
     initialFile: AttachmentFile? = null,
     onSave: (DocEntity) -> Unit,
@@ -143,7 +143,7 @@ fun NewDocFormScreen(
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = if (isEditing) "Edit document" else "New document",
+                        text = if (isEditing) "Edit credential" else "New credential",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Normal,
                         color = primaryTextColor
@@ -209,7 +209,7 @@ fun NewDocFormScreen(
                         Spacer(modifier = Modifier.height(2.dp))
                         Box(modifier = Modifier.fillMaxWidth()) {
                             if (nameInput.isEmpty()) {
-                                Text("Document name", fontSize = 16.sp, color = tabInactiveColor)
+                                Text("Credential name", fontSize = 16.sp, color = tabInactiveColor)
                             }
                             BasicTextField(
                                 value = nameInput,
@@ -270,7 +270,7 @@ fun NewDocFormScreen(
                         Spacer(modifier = Modifier.height(2.dp))
                         Box(modifier = Modifier.fillMaxWidth()) {
                             if (numberInput.isEmpty()) {
-                                Text("Document number", fontSize = 16.sp, color = tabInactiveColor)
+                                Text("Credential number", fontSize = 16.sp, color = tabInactiveColor)
                             }
                             BasicTextField(
                                 value = numberInput,
@@ -342,7 +342,7 @@ fun NewDocFormScreen(
                 onAddFile = { picked ->
                     // Keep a copy in app storage so the file can still be opened later
                     coroutineScope.launch {
-                        val saved = withContext(Dispatchers.IO) { DocFileUtils.persist(context, picked) }
+                        val saved = withContext(Dispatchers.IO) { MyCredentialFileUtils.persist(context, picked) }
                         if (saved != null) {
                             attachedFiles = attachedFiles + saved
                         } else {
@@ -462,7 +462,7 @@ fun NewDocFormScreen(
             onDismissRequest = { showDiscardDialog = false },
             title = {
                 Text(
-                    text = "Discard this document?",
+                    text = "Discard this credential?",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = primaryTextColor

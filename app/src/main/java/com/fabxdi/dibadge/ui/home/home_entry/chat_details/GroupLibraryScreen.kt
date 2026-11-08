@@ -39,7 +39,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.FilePickerUtils
-import com.fabxdi.dibadge.viewmodel.DocViewModel
+import com.fabxdi.dibadge.viewmodel.MyCredentialViewModel
 import com.fabxdi.dibadge.viewmodel.GroupDetailsViewModel
 import com.fabxdi.dibadge.viewmodel.LibraryCategoryItem
 import com.fabxdi.dibadge.viewmodel.LibraryFileItem
@@ -53,7 +53,7 @@ fun GroupLibraryScreen(
     canUserManage: Boolean,
     onBack: () -> Unit,
     detailsViewModel: GroupDetailsViewModel = viewModel(),
-    docViewModel: DocViewModel = viewModel()
+    docViewModel: MyCredentialViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val currentUserId = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }

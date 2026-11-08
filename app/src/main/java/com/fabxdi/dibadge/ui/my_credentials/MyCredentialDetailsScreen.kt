@@ -1,4 +1,4 @@
-package com.fabxdi.dibadge.ui.my_docs
+package com.fabxdi.dibadge.ui.my_credentials
 
 import android.content.Context
 import android.widget.Toast
@@ -42,7 +42,7 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DocDetailsScreen(
+fun MyCredentialDetailsScreen(
     doc: DocEntity,
     onBack: () -> Unit,
     onEdit: () -> Unit,
@@ -247,7 +247,7 @@ fun DocDetailsScreen(
                                 .fillMaxWidth()
                                 .height(64.dp)
                                 .clickable(role = Role.Button) {
-                                    if (!DocFileUtils.openFile(context, uri, isPdf)) {
+                                    if (!MyCredentialFileUtils.openFile(context, uri, isPdf)) {
                                         Toast.makeText(context, "Couldn't open this file", Toast.LENGTH_SHORT).show()
                                     }
                                 }
@@ -349,7 +349,7 @@ fun DocDetailsScreen(
             onDismissRequest = { showDeleteConfirmDialog = false },
             title = {
                 Text(
-                    text = "Delete this document?",
+                    text = "Delete this credential?",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Medium,
                     color = primaryTextColor
@@ -358,7 +358,7 @@ fun DocDetailsScreen(
             text = {
                 Column {
                     Text(
-                        text = "The document and its files will be removed from your account.",
+                        text = "The credential and its files will be removed from your account.",
                         fontSize = 14.sp,
                         color = secondaryTextColor
                     )

@@ -6,7 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fabxdi.dibadge.data.AppDatabase
 import com.fabxdi.dibadge.data.DocEntity
-import com.fabxdi.dibadge.ui.my_docs.DocFileUtils
+import com.fabxdi.dibadge.ui.my_credentials.MyCredentialFileUtils
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.FirebaseFirestore
@@ -22,7 +22,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.UUID
 
-class DocViewModel(application: Application) : AndroidViewModel(application) {
+class MyCredentialViewModel(application: Application) : AndroidViewModel(application) {
     private val docDao = AppDatabase.getDatabase(application).docDao()
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
@@ -66,7 +66,7 @@ class DocViewModel(application: Application) : AndroidViewModel(application) {
         try {
             val app = getApplication<Application>()
             docDao.getAllDocuments().first().forEach { doc ->
-                doc.files.forEach { DocFileUtils.deleteStored(app, it) }
+                doc.files.forEach { MyCredentialFileUtils.deleteStored(app, it) }
             }
             docDao.deleteAllDocuments()
         } catch (e: Exception) {
@@ -147,7 +147,7 @@ class DocViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteDocument(doc: DocEntity) {
         viewModelScope.launch(Dispatchers.IO) {
             docDao.deleteDocument(doc)
-            doc.files.forEach { DocFileUtils.deleteStored(getApplication(), it) }
+            doc.files.forEach { MyCredentialFileUtils.deleteStored(getApplication(), it) }
             val userId = auth.currentUser?.uid ?: return@launch
             try {
                 firestore.collection("users")
@@ -163,7 +163,7 @@ class DocViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val ids = docs.map { it.id }
             docDao.deleteDocumentsByIds(ids)
-            docs.forEach { d -> d.files.forEach { DocFileUtils.deleteStored(getApplication(), it) } }
+            docs.forEach { d -> d.files.forEach { MyCredentialFileUtils.deleteStored(getApplication(), it) } }
             val userId = auth.currentUser?.uid ?: return@launch
             for (id in ids) {
                 try {

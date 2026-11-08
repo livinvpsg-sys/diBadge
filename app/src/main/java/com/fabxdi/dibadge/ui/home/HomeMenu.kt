@@ -82,7 +82,7 @@ fun HomeMenu(
         MenuRowData("Profile", "Profile", iconVector = Icons.Outlined.Person),
         MenuRowData("My Activity", "My Activity", iconRes = R.drawable.ic_my_activity),
         MenuRowData("Calendar", "Calendar", iconVector = Icons.Outlined.CalendarMonth),
-        MenuRowData("My Docs", "My Docs", iconVector = Icons.Outlined.Description),
+        MenuRowData("My Docs", "My Credentials", iconVector = Icons.Outlined.Description),
         MenuRowData("My Forms", "My Forms", iconRes = R.drawable.ic_forms_outline)
     )
 
@@ -201,7 +201,7 @@ fun HomeMenu(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // 3. Top Group Menu Rows (Profile, My Activity, Calendar, My Docs)
+                    // 3. Top Group Menu Rows (Profile, My Activity, Calendar, My Credentials)
                     topNavGroup.forEach { item ->
                         DrawerRowItem(
                             label = item.label,

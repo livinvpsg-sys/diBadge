@@ -1,4 +1,4 @@
-package com.fabxdi.dibadge.ui.my_docs
+package com.fabxdi.dibadge.ui.my_credentials
 
 import android.content.Context
 import android.net.Uri
@@ -50,7 +50,7 @@ import com.fabxdi.dibadge.data.DocEntity
 import com.fabxdi.dibadge.ui.calendar.AttachmentFile
 import com.fabxdi.dibadge.ui.calendar.rememberOrganizationName
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
-import com.fabxdi.dibadge.viewmodel.DocViewModel
+import com.fabxdi.dibadge.viewmodel.MyCredentialViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -63,9 +63,9 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MyDocsScreen(
+fun MyCredentialsScreen(
     onBack: () -> Unit,
-    viewModel: DocViewModel = viewModel()
+    viewModel: MyCredentialViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val allDocs by viewModel.allDocuments.collectAsState(initial = emptyList())
@@ -120,11 +120,11 @@ fun MyDocsScreen(
     // Reads the real name and size, keeps a copy in app storage, then opens the new-document form
     fun handlePickedFile(uri: Uri, isPdf: Boolean) {
         coroutineScope.launch {
-            val file = withContext(Dispatchers.IO) { DocFileUtils.importPicked(context, uri, isPdf) }
+            val file = withContext(Dispatchers.IO) { MyCredentialFileUtils.importPicked(context, uri, isPdf) }
             when {
                 file == null -> snackbarHostState.showSnackbar("Couldn't add that file")
-                file.sizeBytes > DocFileUtils.MAX_FILE_BYTES -> {
-                    DocFileUtils.discard(context, file)
+                file.sizeBytes > MyCredentialFileUtils.MAX_FILE_BYTES -> {
+                    MyCredentialFileUtils.discard(context, file)
                     snackbarHostState.showSnackbar("File is larger than 5 MB")
                 }
                 else -> {
@@ -182,7 +182,7 @@ fun MyDocsScreen(
 
     // Composed before the early returns below, so it also works from the document detail screen
     if (docsToShare.isNotEmpty()) {
-        ShareDocSheet(
+        ShareMyCredentialSheet(
             docs = docsToShare,
             context = context,
             organisations = listOfNotNull(organisationName.takeIf { it.isNotBlank() }),
@@ -201,7 +201,7 @@ fun MyDocsScreen(
     val liveDetailDoc = activeDocForDetail?.let { d -> allDocs.firstOrNull { it.id == d.id } ?: d }
 
     if (showNewDocForm) {
-        NewDocFormScreen(
+        NewMyCredentialFormScreen(
             docToEdit = docToEdit,
             initialFile = initialFileForNewDoc,
             onSave = { savedDoc ->
@@ -211,12 +211,12 @@ fun MyDocsScreen(
                 docToEdit = null
                 initialFileForNewDoc = null
                 coroutineScope.launch {
-                    snackbarHostState.showSnackbar(if (wasEditing) "Document updated" else "Document saved")
+                    snackbarHostState.showSnackbar(if (wasEditing) "Credential updated" else "Credential saved")
                 }
             },
             onClose = {
                 // A new document that was never saved: do not keep its copied file
-                if (docToEdit == null) initialFileForNewDoc?.let { DocFileUtils.discard(context, it) }
+                if (docToEdit == null) initialFileForNewDoc?.let { MyCredentialFileUtils.discard(context, it) }
                 showNewDocForm = false
                 docToEdit = null
                 initialFileForNewDoc = null
@@ -226,7 +226,7 @@ fun MyDocsScreen(
     }
 
     if (activeDocForDetail != null) {
-        DocDetailsScreen(
+        MyCredentialDetailsScreen(
             doc = liveDetailDoc!!,
             onBack = { activeDocForDetail = null },
             onEdit = {
@@ -239,7 +239,7 @@ fun MyDocsScreen(
                 viewModel.deleteDocument(targetDoc)
                 activeDocForDetail = null
                 coroutineScope.launch {
-                    snackbarHostState.showSnackbar("Document deleted")
+                    snackbarHostState.showSnackbar("Credential deleted")
                 }
             },
             onShare = {
@@ -343,7 +343,7 @@ fun MyDocsScreen(
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            text = "My Docs",
+                            text = "My Credentials",
                             fontSize = 24.sp,
                             fontWeight = FontWeight.Normal,
                             color = primaryTextColor
@@ -356,7 +356,7 @@ fun MyDocsScreen(
             if (!isSelectionMode && !showNewDocForm && activeDocForDetail == null) {
                 DiBadgeFab(
                     onClick = { showAddDocSheet = true },
-                    contentDescription = "Add document",
+                    contentDescription = "Add credential",
                     modifier = Modifier.padding(end = 16.dp, bottom = 36.dp)
                 )
             }
@@ -436,7 +436,7 @@ fun MyDocsScreen(
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "Keep your documents together",
+                            text = "Keep your credentials together",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Medium,
                             color = primaryTextColor
@@ -457,7 +457,7 @@ fun MyDocsScreen(
                 ) {
                     items(sortedDocs, key = { it.id }) { doc ->
                         val isItemSelected = selectedDocs.contains(doc)
-                        DocRowItem(
+                        MyCredentialRowItem(
                             doc = doc,
                             today = today,
                             isSelected = isItemSelected,
@@ -514,7 +514,7 @@ fun MyDocsScreen(
                     .padding(bottom = 28.dp)
             ) {
                 Text(
-                    text = "Add document",
+                    text = "Add credential",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Medium,
                     color = primaryTextColor,
@@ -560,7 +560,7 @@ fun MyDocsScreen(
 
     if (showDeleteConfirmDialog && selectedDocs.isNotEmpty()) {
         val count = selectedDocs.size
-        val titleText = if (count == 1) "Delete 1 document?" else "Delete $count documents?"
+        val titleText = if (count == 1) "Delete 1 credential?" else "Delete $count credentials?"
         val hasShared = selectedDocs.any { it.sharedOrganisations.isNotEmpty() }
 
         AlertDialog(
@@ -570,7 +570,7 @@ fun MyDocsScreen(
             },
             text = {
                 Column {
-                    Text("The documents and their files will be removed from your account.", fontSize = 14.sp, color = secondaryTextColor)
+                    Text("The credentials and their files will be removed from your account.", fontSize = 14.sp, color = secondaryTextColor)
                     if (hasShared) {
                         Spacer(modifier = Modifier.height(6.dp))
                         Text("Copies already shared with organisations stay with them.", fontSize = 13.sp, color = secondaryTextColor)
@@ -585,7 +585,7 @@ fun MyDocsScreen(
                         selectedDocs = emptySet()
                         showDeleteConfirmDialog = false
                         coroutineScope.launch {
-                            val msg = if (count == 1) "Document deleted" else "$count documents deleted"
+                            val msg = if (count == 1) "Credential deleted" else "$count credentials deleted"
                             snackbarHostState.showSnackbar(msg)
                         }
                     }
@@ -606,7 +606,7 @@ fun MyDocsScreen(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun DocRowItem(
+fun MyCredentialRowItem(
     doc: DocEntity,
     today: LocalDate,
     isSelected: Boolean,
