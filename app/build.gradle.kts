@@ -81,6 +81,9 @@ dependencies {
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.storage)
 
+    // Media upload to Cloudflare
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
     // Credential Manager & Google ID for Sign-in
     implementation("androidx.credentials:credentials:1.3.0")
     implementation("androidx.credentials:credentials-play-services-auth:1.3.0")

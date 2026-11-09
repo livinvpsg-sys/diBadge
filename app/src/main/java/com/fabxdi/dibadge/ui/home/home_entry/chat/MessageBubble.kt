@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,6 +18,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -31,13 +33,14 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.DoNotDisturbOn
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.*
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import com.fabxdi.dibadge.ui.components.DocumentTypeTile
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -138,6 +141,23 @@ fun buildMentionAnnotatedString(
             append(text.substring(lastIndex))
         }
     }
+}
+
+/** True for an audio file: a voice note or an attached mp3, m4a, wav and so on. */
+private fun isAudioAttachment(context: android.content.Context, uriString: String): Boolean {
+    val uri = Uri.parse(uriString)
+    val mime = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
+    if (mime?.startsWith("audio/") == true) return true
+    val ext = FilePickerUtils.getFileName(context, uri).substringBefore("?").substringAfterLast('.', "").lowercase()
+    return ext in listOf("m4a", "mp3", "wav", "aac", "ogg", "oga", "opus", "amr", "flac")
+}
+
+/** True for a message that holds one recording made with the mic button (VOICE_...m4a). */
+private fun isMicRecording(message: ChatMessage): Boolean {
+    if (message.isDeleted || message.attachments.size != 1) return false
+    val name = message.attachments[0].substringBefore("?").substringAfterLast('/')
+    val decoded = try { java.net.URLDecoder.decode(name, "UTF-8") } catch (e: Exception) { name }
+    return decoded.startsWith("VOICE_") && decoded.endsWith(".m4a", ignoreCase = true)
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -373,120 +393,147 @@ fun MessageBubble(
                     } else if (isEmojiOnly) {
                         EmojiMessage(message.text, message.timestamp.format(timeFormatter).lowercase(), alignment, secondaryTextColor, primaryTextColor)
                     } else if (message.attachments.isNotEmpty()) {
-                        if (message.replyingTo != null) {
-                            ReplyPreviewAboveBubble(
-                                message = message,
-                                onReplyClick = onReplyClick,
-                                alignment = alignment,
-                                primaryTextColor = primaryTextColor,
-                                secondaryTextColor = secondaryTextColor,
-                                isDark = isDark
-                            )
-                        }
-
-                        val context = LocalContext.current
-                        val isMediaGrid = remember(message.attachments) {
-                            message.attachments.all { uriStr ->
-                                val cat = getAttachmentCategory(context, Uri.parse(uriStr))
-                                cat == AttachmentCategory.IMAGE || cat == AttachmentCategory.VIDEO
-                            }
-                        }
-
-                        val rawTimeStr = remember(message.timestamp) { message.timestamp.format(timeFormatter).lowercase() }
-                        val formattedTimeStr = remember(rawTimeStr, message.isEdited) {
-                            if (message.isEdited) "Edited $rawTimeStr" else rawTimeStr
-                        }
-
-                        Column(
-                            horizontalAlignment = alignment,
-                            modifier = Modifier.padding(bottom = 2.dp)
-                        ) {
-                            if (isMediaGrid) {
-                                MediaGridNoBubble(
+                        Column(horizontalAlignment = alignment) {
+                            if (message.replyingTo != null) {
+                                ReplyPreviewAboveBubble(
                                     message = message,
-                                    formattedTime = formattedTimeStr,
-                                    onMediaClick = onMediaClick,
+                                    onReplyClick = onReplyClick,
+                                    alignment = alignment,
                                     primaryTextColor = primaryTextColor,
                                     secondaryTextColor = secondaryTextColor,
-                                    tealAccent = tealAccent,
-                                    isDark = isDark
-                                )
-                            } else {
-                                DocumentRowsNoBubble(
-                                    message = message,
-                                    formattedTime = formattedTimeStr,
-                                    primaryTextColor = primaryTextColor,
-                                    secondaryTextColor = secondaryTextColor,
-                                    cardFillColor = cardFillColor,
-                                    tealAccent = tealAccent,
                                     isDark = isDark
                                 )
                             }
 
-                            if (message.text.isNotBlank()) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Surface(
-                                    color = bubbleColor,
-                                    shape = bubbleShape,
-                                    shadowElevation = if (!isDark) 1.5.dp else 1.dp,
-                                    modifier = Modifier.widthIn(min = 40.dp, max = 272.dp)
-                                ) {
-                                    Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 6.dp)) {
-                                        Text(
-                                            text = buildMentionAnnotatedString(message.text, primaryTextColor, tealAccent, message.mentionedGroupNames),
-                                            fontSize = 15.sp,
-                                            lineHeight = 21.sp,
-                                            color = primaryTextColor
-                                        )
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(top = 4.dp),
-                                            horizontalArrangement = Arrangement.End,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = formattedTimeStr,
-                                                fontSize = 11.sp,
-                                                color = secondaryTextColor
+                            val context = LocalContext.current
+                            val isMediaGrid = remember(message.attachments) {
+                                message.attachments.all { uriStr ->
+                                    val cat = getAttachmentCategory(context, Uri.parse(uriStr))
+                                    cat == AttachmentCategory.IMAGE || cat == AttachmentCategory.VIDEO
+                                }
+                            }
+
+                            // Voice notes and attached audio files (mp3, m4a ...) play right in the chat
+                            val isAudioOnly = remember(message.attachments) {
+                                message.attachments.isNotEmpty() && message.attachments.all { isAudioAttachment(context, it) }
+                            }
+
+                            val rawTimeStr = remember(message.timestamp) { message.timestamp.format(timeFormatter).lowercase() }
+                            val formattedTimeStr = remember(rawTimeStr, message.isEdited) {
+                                if (message.isEdited) "Edited $rawTimeStr" else rawTimeStr
+                            }
+
+                            Column(
+                                horizontalAlignment = alignment,
+                                modifier = Modifier.padding(bottom = 2.dp)
+                            ) {
+                                if (isMediaGrid) {
+                                    MediaGridNoBubble(
+                                        message = message,
+                                        formattedTime = formattedTimeStr,
+                                        onMediaClick = onMediaClick,
+                                        primaryTextColor = primaryTextColor,
+                                        secondaryTextColor = secondaryTextColor,
+                                        tealAccent = tealAccent,
+                                        isDark = isDark
+                                    )
+                                } else if (isAudioOnly || message.isVoiceNote || isMicRecording(message)) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        message.attachments.forEachIndexed { index, audioUrl ->
+                                            val audioName = remember(audioUrl) { FilePickerUtils.getFileName(context, Uri.parse(audioUrl)) }
+                                            VoiceNoteBubble(
+                                                message = message,
+                                                url = audioUrl,
+                                                title = if (audioName.startsWith("VOICE_")) null else audioName,
+                                                player = player,
+                                                formattedTime = formattedTimeStr,
+                                                bubbleColor = bubbleColor,
+                                                bubbleShape = bubbleShape,
+                                                primaryTextColor = primaryTextColor,
+                                                secondaryTextColor = secondaryTextColor,
+                                                tealAccent = tealAccent,
+                                                isDark = isDark,
+                                                showFooter = message.text.isBlank() && index == message.attachments.lastIndex
                                             )
-                                            if (message.isSentByMe) {
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                when (message.sendStatus) {
-                                                    "SENDING" -> {
-                                                        Icon(
-                                                            imageVector = Icons.Outlined.Schedule,
-                                                            contentDescription = "Sending",
-                                                            tint = secondaryTextColor,
-                                                            modifier = Modifier.size(13.dp)
-                                                        )
-                                                    }
-                                                    "FAILED" -> {
-                                                        Row(
-                                                            verticalAlignment = Alignment.CenterVertically,
-                                                            modifier = Modifier.clickable { onRetryFailedMessage(message) }
-                                                        ) {
-                                                            Text(
-                                                                text = "Not sent",
-                                                                fontSize = 11.sp,
-                                                                color = errorColor
-                                                            )
-                                                            Spacer(modifier = Modifier.width(3.dp))
+                                        }
+                                    }
+                                } else {
+                                    DocumentRowsNoBubble(
+                                        message = message,
+                                        formattedTime = formattedTimeStr,
+                                        primaryTextColor = primaryTextColor,
+                                        secondaryTextColor = secondaryTextColor,
+                                        cardFillColor = cardFillColor,
+                                        tealAccent = tealAccent,
+                                        isDark = isDark
+                                    )
+                                }
+
+                                if (message.text.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Surface(
+                                        color = bubbleColor,
+                                        shape = bubbleShape,
+                                        shadowElevation = if (!isDark) 1.5.dp else 1.dp,
+                                        modifier = Modifier.widthIn(min = 40.dp, max = 272.dp)
+                                    ) {
+                                        Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 6.dp)) {
+                                            Text(
+                                                text = buildMentionAnnotatedString(message.text, primaryTextColor, tealAccent, message.mentionedGroupNames),
+                                                fontSize = 15.sp,
+                                                lineHeight = 21.sp,
+                                                color = primaryTextColor
+                                            )
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(top = 4.dp),
+                                                horizontalArrangement = Arrangement.End,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = formattedTimeStr,
+                                                    fontSize = 11.sp,
+                                                    color = secondaryTextColor
+                                                )
+                                                if (message.isSentByMe) {
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    when (message.sendStatus) {
+                                                        "SENDING" -> {
                                                             Icon(
-                                                                imageVector = Icons.Default.ErrorOutline,
-                                                                contentDescription = "Failed",
-                                                                tint = errorColor,
+                                                                imageVector = Icons.Outlined.Schedule,
+                                                                contentDescription = "Sending",
+                                                                tint = secondaryTextColor,
                                                                 modifier = Modifier.size(13.dp)
                                                             )
                                                         }
-                                                    }
-                                                    else -> {
-                                                        Icon(
-                                                            imageVector = Icons.Default.Check,
-                                                            contentDescription = "Sent",
-                                                            tint = secondaryTextColor,
-                                                            modifier = Modifier.size(13.dp)
-                                                        )
+                                                        "FAILED" -> {
+                                                            Row(
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                modifier = Modifier.clickable { onRetryFailedMessage(message) }
+                                                            ) {
+                                                                Text(
+                                                                    text = "Not sent",
+                                                                    fontSize = 11.sp,
+                                                                    color = errorColor
+                                                                )
+                                                                Spacer(modifier = Modifier.width(3.dp))
+                                                                Icon(
+                                                                    imageVector = Icons.Default.ErrorOutline,
+                                                                    contentDescription = "Failed",
+                                                                    tint = errorColor,
+                                                                    modifier = Modifier.size(13.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                        else -> {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Check,
+                                                                contentDescription = "Sent",
+                                                                tint = secondaryTextColor,
+                                                                modifier = Modifier.size(13.dp)
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }
@@ -496,50 +543,53 @@ fun MessageBubble(
                             }
                         }
                     } else {
-                        if (message.replyingTo != null) {
-                            ReplyPreviewAboveBubble(
-                                message = message,
-                                onReplyClick = onReplyClick,
-                                alignment = alignment,
-                                primaryTextColor = primaryTextColor,
-                                secondaryTextColor = secondaryTextColor,
-                                isDark = isDark
-                            )
-                        }
+                        Column(horizontalAlignment = alignment) {
+                            val topOverlapModifier = Modifier
 
-                        val topOverlapModifier = if (message.replyingTo != null) Modifier.offset(y = (-8).dp) else Modifier
-
-                        Surface(
-                            color = bubbleColor,
-                            shape = bubbleShape,
-                            shadowElevation = if (!isDark) 1.5.dp else 1.dp,
-                            tonalElevation = 0.dp,
-                            modifier = topOverlapModifier.widthIn(min = if (message.isGroupMention) 180.dp else 40.dp, max = 272.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 6.dp)
+                            Surface(
+                                color = bubbleColor,
+                                shape = bubbleShape,
+                                shadowElevation = if (!isDark) 1.5.dp else 1.dp,
+                                tonalElevation = 0.dp,
+                                modifier = topOverlapModifier.widthIn(min = if (message.isGroupMention) 180.dp else 40.dp, max = 272.dp)
                             ) {
-                                AttachmentAndTextSection(
-                                    message = message,
-                                    player = player,
-                                    isAnySelected = isAnySelected,
-                                    onLongClick = onLongClick,
-                                    onMediaClick = onMediaClick,
-                                    onCommentsClick = onCommentsClick,
-                                    onSentToClick = onSentToClick,
-                                    onLocationClick = onLocationClick,
-                                    onStopLiveLocation = onStopLiveLocation,
-                                    onVoteOption = onVoteOption,
-                                    onViewVotesClick = onViewVotesClick,
-                                    timeFormatter = timeFormatter,
-                                    primaryTextColor = primaryTextColor,
-                                    secondaryTextColor = secondaryTextColor,
-                                    outlineColor = outlineColor,
-                                    tealAccent = tealAccent,
-                                    errorColor = errorColor,
-                                    isDark = isDark,
-                                    onRetryFailedMessage = onRetryFailedMessage
-                                )
+                                Column(
+                                    modifier = Modifier
+                                        .width(IntrinsicSize.Max)
+                                        .padding(start = 8.dp, end = 8.dp, top = 6.dp, bottom = 5.dp)
+                                ) {
+                                    if (message.replyingTo != null) {
+                                        ReplyQuoteInBubble(
+                                            message = message,
+                                            onReplyClick = onReplyClick,
+                                            primaryTextColor = primaryTextColor,
+                                            secondaryTextColor = secondaryTextColor,
+                                            tealAccent = tealAccent,
+                                            isDark = isDark
+                                        )
+                                    }
+                                    AttachmentAndTextSection(
+                                        message = message,
+                                        player = player,
+                                        isAnySelected = isAnySelected,
+                                        onLongClick = onLongClick,
+                                        onMediaClick = onMediaClick,
+                                        onCommentsClick = onCommentsClick,
+                                        onSentToClick = onSentToClick,
+                                        onLocationClick = onLocationClick,
+                                        onStopLiveLocation = onStopLiveLocation,
+                                        onVoteOption = onVoteOption,
+                                        onViewVotesClick = onViewVotesClick,
+                                        timeFormatter = timeFormatter,
+                                        primaryTextColor = primaryTextColor,
+                                        secondaryTextColor = secondaryTextColor,
+                                        outlineColor = outlineColor,
+                                        tealAccent = tealAccent,
+                                        errorColor = errorColor,
+                                        isDark = isDark,
+                                        onRetryFailedMessage = onRetryFailedMessage
+                                    )
+                                }
                             }
                         }
                     }
@@ -672,7 +722,7 @@ private fun ReplyPreviewAboveBubble(
                 }
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (replyingTo.isDeleted) {
@@ -713,10 +763,8 @@ private fun ReplyPreviewAboveBubble(
                     if (hasThumb && thumbUri != null) {
                         Spacer(modifier = Modifier.width(8.dp))
                         Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier
-                                .padding(4.dp)
-                                .size(64.dp)
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.size(40.dp)
                         ) {
                             AsyncImage(
                                 model = thumbUri,
@@ -728,6 +776,75 @@ private fun ReplyPreviewAboveBubble(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ReplyQuoteInBubble(
+    message: ChatMessage,
+    onReplyClick: (String, String?) -> Unit,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    tealAccent: Color,
+    isDark: Boolean
+) {
+    val replyingTo = message.replyingTo ?: return
+    val isSenderYou = replyingTo.isSentByMe || replyingTo.senderName == "Me"
+    val name = if (isSenderYou) "You" else replyingTo.senderName
+    // Same per-member colour as the sender names in the chat
+    val nameColor = if (isSenderYou) tealAccent else UserColorUtils.getColorForName(replyingTo.senderName, isDark)
+    val quoteBg = if (isDark) Color(0xFF1D242B) else Color(0xFFEEF1F4)
+    val thumbUri = message.replyingToAttachmentUri ?: replyingTo.attachments.firstOrNull()
+    val preview = when {
+        replyingTo.isDeleted -> "Message deleted"
+        replyingTo.text.isNotBlank() -> replyingTo.text.take(200)
+        replyingTo.isVoiceNote -> "Voice message"
+        replyingTo.msgType == "location" -> "Location"
+        replyingTo.msgType == "poll" -> "Poll"
+        else -> "Attachment"
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 4.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(quoteBg)
+            .clickable { if (!replyingTo.isDeleted) onReplyClick(replyingTo.id, message.replyingToAttachmentUri) }
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f, fill = false)) {
+            Text(
+                text = name,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = nameColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = preview,
+                fontSize = 13.sp,
+                color = secondaryTextColor,
+                fontStyle = if (replyingTo.isDeleted) FontStyle.Italic else FontStyle.Normal,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        if (!replyingTo.isDeleted && thumbUri != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            AsyncImage(
+                model = thumbUri,
+                contentDescription = "Quoted photo/video",
+                contentScale = ContentScale.Crop,
+                error = rememberVectorPainter(Icons.Default.BrokenImage),
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(secondaryTextColor.copy(alpha = 0.15f))
+            )
         }
     }
 }
@@ -767,7 +884,7 @@ private fun AttachmentAndTextSection(
                     imageVector = Icons.AutoMirrored.Filled.Reply,
                     contentDescription = "Forwarded",
                     tint = secondaryTextColor,
-                    modifier = Modifier.size(13.dp).graphicsLayer(scaleX = -1f)
+                    modifier = Modifier.size(13.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
@@ -778,7 +895,7 @@ private fun AttachmentAndTextSection(
                 )
             }
         }
-        if (message.isVoiceNote) {
+        if (message.isVoiceNote || isMicRecording(message)) {
             // Voice Message Bubble
             val audioColor = if (isDark) Color(0xFFE87DA3) else Color(0xFFB0446A)
             val cardFillColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
@@ -2073,7 +2190,8 @@ private fun MediaGridNoBubble(
                         model = uri,
                         contentDescription = if (isVideo) "Video" else "Photo",
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
+                        error = rememberVectorPainter(Icons.Default.BrokenImage),
+                        modifier = Modifier.fillMaxSize().background(secondaryTextColor.copy(alpha = 0.15f))
                     )
 
                     if (isVideo) {
@@ -2111,7 +2229,8 @@ private fun MediaGridNoBubble(
                                 model = uri,
                                 contentDescription = "Photo",
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
+                                error = rememberVectorPainter(Icons.Default.BrokenImage),
+                                modifier = Modifier.fillMaxSize().background(secondaryTextColor.copy(alpha = 0.15f))
                             )
                         }
                     }
@@ -2133,7 +2252,8 @@ private fun MediaGridNoBubble(
                             model = mediaUris[0],
                             contentDescription = "Photo",
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
+                            error = rememberVectorPainter(Icons.Default.BrokenImage),
+                            modifier = Modifier.fillMaxSize().background(secondaryTextColor.copy(alpha = 0.15f))
                         )
                     }
                     Column(
@@ -2152,7 +2272,8 @@ private fun MediaGridNoBubble(
                                 model = mediaUris[1],
                                 contentDescription = "Photo",
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
+                                error = rememberVectorPainter(Icons.Default.BrokenImage),
+                                modifier = Modifier.fillMaxSize().background(secondaryTextColor.copy(alpha = 0.15f))
                             )
                         }
                         Box(
@@ -2165,7 +2286,8 @@ private fun MediaGridNoBubble(
                                 model = mediaUris[2],
                                 contentDescription = "Photo",
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
+                                error = rememberVectorPainter(Icons.Default.BrokenImage),
+                                modifier = Modifier.fillMaxSize().background(secondaryTextColor.copy(alpha = 0.15f))
                             )
                         }
                     }
@@ -2190,7 +2312,8 @@ private fun MediaGridNoBubble(
                                     model = mediaUris[idx],
                                     contentDescription = "Photo",
                                     contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
+                                    error = rememberVectorPainter(Icons.Default.BrokenImage),
+                                    modifier = Modifier.fillMaxSize().background(secondaryTextColor.copy(alpha = 0.15f))
                                 )
                             }
                         }
@@ -2209,7 +2332,8 @@ private fun MediaGridNoBubble(
                                 model = mediaUris[2],
                                 contentDescription = "Photo",
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
+                                error = rememberVectorPainter(Icons.Default.BrokenImage),
+                                modifier = Modifier.fillMaxSize().background(secondaryTextColor.copy(alpha = 0.15f))
                             )
                         }
                         Box(
@@ -2222,7 +2346,8 @@ private fun MediaGridNoBubble(
                                 model = mediaUris[3],
                                 contentDescription = "Photo",
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
+                                error = rememberVectorPainter(Icons.Default.BrokenImage),
+                                modifier = Modifier.fillMaxSize().background(secondaryTextColor.copy(alpha = 0.15f))
                             )
                             if (n > 4) {
                                 Box(
@@ -2243,6 +2368,25 @@ private fun MediaGridNoBubble(
                     }
                 }
             }
+            // Still uploading: dim the photos and show a spinning ring
+            if (message.sendStatus == "SENDING" && message.attachments.any { !it.startsWith("http") }) {
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(Color.Black.copy(alpha = 0.35f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Surface(shape = CircleShape, color = Color.Black.copy(alpha = 0.45f), modifier = Modifier.size(46.dp)) {
+                        Box(contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(30.dp),
+                                strokeWidth = 3.dp,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         if (message.text.isBlank()) {
@@ -2251,6 +2395,352 @@ private fun MediaGridNoBubble(
                 isSentByMe = message.isSentByMe,
                 secondaryTextColor = secondaryTextColor,
                 tealAccent = tealAccent
+            )
+        }
+    }
+}
+
+@Composable
+private fun VoiceNoteBubble(
+    message: ChatMessage,
+    url: String,
+    title: String?,
+    player: AudioPlayer,
+    formattedTime: String,
+    bubbleColor: Color,
+    bubbleShape: androidx.compose.ui.graphics.Shape,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    tealAccent: Color,
+    isDark: Boolean,
+    showFooter: Boolean
+) {
+    val uri = remember(url) { Uri.parse(url) }
+    val totalSecKnown = message.attachmentDurations[url]
+        ?: (if (message.attachments.size == 1) message.attachmentDurations.filterKeys { !it.startsWith("sz_") }.values.firstOrNull() else null)
+        ?: 0L
+
+    var active by remember(url) { mutableStateOf(false) }   // this note is the one loaded in the player
+    var paused by remember(url) { mutableStateOf(false) }
+    var loading by remember(url) { mutableStateOf(false) }
+    var progress by remember(url) { mutableFloatStateOf(0f) }
+    var positionSec by remember(url) { mutableLongStateOf(0L) }
+    var durationSec by remember(url) { mutableLongStateOf(totalSecKnown) }
+    var dragging by remember(url) { mutableStateOf(false) }
+    var speed by remember(url) { mutableFloatStateOf(1f) }
+
+    // Follow the player while this note is active. Starting another note makes this one reset.
+    LaunchedEffect(active) {
+        while (active) {
+            if (player.currentSource() != url) {
+                active = false
+                paused = false
+                loading = false
+                progress = 0f
+                positionSec = 0L
+                break
+            }
+            val ready = player.isPrepared()
+            loading = !ready
+            if (ready) {
+                paused = !player.isPlaying()
+                val total = player.getDuration()
+                val current = player.getCurrentPosition()
+                if (total > 0) {
+                    durationSec = (total / 1000).toLong()
+                    if (!dragging) progress = (current.toFloat() / total).coerceIn(0f, 1f)
+                    positionSec = (current / 1000).toLong()
+                }
+            }
+            delay(80)
+        }
+    }
+
+    // Stop playing when the bubble leaves the screen
+    DisposableEffect(url) {
+        onDispose { if (player.currentSource() == url) player.stop() }
+    }
+
+    fun fmt(sec: Long) = String.format(Locale.getDefault(), "%d:%02d", sec / 60, sec % 60)
+
+    fun togglePlay() {
+        if (active && player.currentSource() == url) {
+            if (player.isPlaying()) {
+                player.pause(); paused = true
+            } else {
+                player.resume(); paused = false
+            }
+        } else {
+            player.playFile(uri) {
+                active = false
+                paused = false
+                loading = false
+                progress = 0f
+                positionSec = 0L
+            }
+            player.setSpeed(speed)
+            active = true
+            paused = false
+            loading = true
+        }
+    }
+
+    val trackColor = secondaryTextColor.copy(alpha = 0.35f)
+    val lineColor = tealAccent
+    // Still being uploaded: the file is local and the message is not sent yet
+    val sending = message.sendStatus == "SENDING" && !url.startsWith("http")
+
+    @Composable
+    fun ProgressLine(modifier: Modifier) {
+        androidx.compose.foundation.Canvas(
+            modifier = modifier
+                .pointerInput(url) {
+                    detectTapGestures { pos ->
+                        if (active && player.isPrepared()) {
+                            val frac = (pos.x / size.width).coerceIn(0f, 1f)
+                            progress = frac
+                            player.seekTo((frac * player.getDuration()).toInt())
+                        }
+                    }
+                }
+                .pointerInput(url) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { dragging = true },
+                        onDragEnd = {
+                            if (active && player.isPrepared()) {
+                                player.seekTo((progress * player.getDuration()).toInt())
+                            }
+                            dragging = false
+                        },
+                        onDragCancel = { dragging = false },
+                        onHorizontalDrag = { change, _ ->
+                            if (active) {
+                                progress = (change.position.x / size.width).coerceIn(0f, 1f)
+                            }
+                        }
+                    )
+                }
+        ) {
+            val pad = 6.dp.toPx()
+            val x0 = pad
+            val x1 = size.width - pad
+            val cy = size.height / 2f
+            val stroke = 4.dp.toPx()
+            val knobX = x0 + (x1 - x0) * progress
+            drawLine(
+                color = trackColor,
+                start = androidx.compose.ui.geometry.Offset(x0, cy),
+                end = androidx.compose.ui.geometry.Offset(x1, cy),
+                strokeWidth = stroke,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round
+            )
+            if (progress > 0f) {
+                drawLine(
+                    color = lineColor,
+                    start = androidx.compose.ui.geometry.Offset(x0, cy),
+                    end = androidx.compose.ui.geometry.Offset(knobX, cy),
+                    strokeWidth = stroke,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                )
+            }
+            drawCircle(
+                color = lineColor,
+                radius = 6.dp.toPx(),
+                center = androidx.compose.ui.geometry.Offset(knobX, cy)
+            )
+        }
+
+    }
+
+    Column(
+        modifier = Modifier.width(234.dp),
+        horizontalAlignment = Alignment.End
+    ) {
+        Surface(
+            color = bubbleColor,
+            shape = bubbleShape,
+            shadowElevation = if (!isDark) 1.5.dp else 1.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                if (!title.isNullOrBlank()) {
+                    val ext = title.substringAfterLast('.', "").uppercase()
+                    val sizeBytes = message.attachmentDurations["sz_" + url]
+                        ?: (if (!url.startsWith("http")) FilePickerUtils.getFileSizeBytes(LocalContext.current, uri) else 0L)
+                    val sizeStr = if (sizeBytes > 0L) FilePickerUtils.formatFileSize(sizeBytes) else ""
+                    val sub = listOf(ext, if (durationSec > 0) fmt(durationSec) else "", sizeStr)
+                        .filter { it.isNotBlank() }.joinToString(" \u00B7 ")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(tealAccent.copy(alpha = 0.18f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = null,
+                                tint = tealAccent,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = title,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = primaryTextColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (sub.isNotBlank()) {
+                                Text(text = sub, fontSize = 12.sp, color = secondaryTextColor, maxLines = 1)
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clickable(enabled = !sending) { togglePlay() },
+                            shape = CircleShape,
+                            color = tealAccent
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                if (loading || sending) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                        color = Color.White
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = if (active && !paused) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        contentDescription = if (active && !paused) "Pause audio" else "Play audio",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.padding(top = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ProgressLine(Modifier.weight(1f).height(22.dp))
+                        Text(
+                            text = if (active) fmt(positionSec) + (if (durationSec > 0) " / " + fmt(durationSec) else "") else fmt(durationSec),
+                            fontSize = 11.sp,
+                            color = secondaryTextColor,
+                            modifier = Modifier.padding(start = 6.dp)
+                        )
+                        if (active && !loading) {
+                            val label = if (speed == 1.5f) "1.5x" else if (speed == 2f) "2x" else "1x"
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = secondaryTextColor.copy(alpha = 0.18f),
+                                modifier = Modifier
+                                    .padding(start = 4.dp)
+                                    .clickable {
+                                        speed = when (speed) { 1f -> 1.5f; 1.5f -> 2f; else -> 1f }
+                                        player.setSpeed(speed)
+                                    }
+                            ) {
+                                Text(
+                                    text = label,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = primaryTextColor,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Play / pause button
+                        Surface(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clickable(enabled = !sending) { togglePlay() },
+                            shape = CircleShape,
+                            color = Color.Transparent
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                if (loading || sending) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        strokeWidth = 2.dp,
+                                        color = lineColor
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = if (active && !paused) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        contentDescription = if (active && !paused) "Pause voice message" else "Play voice message",
+                                        tint = lineColor,
+                                        modifier = Modifier.size(36.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Progress line: tap or drag to jump to a point
+                            ProgressLine(Modifier.weight(1f).height(22.dp))
+
+                            Row(
+                                modifier = Modifier.padding(start = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (active) fmt(positionSec) else fmt(durationSec),
+                                    fontSize = 11.sp,
+                                    color = secondaryTextColor,
+                                    modifier = Modifier.widthIn(min = 28.dp)
+                                )
+                                if (active && !loading) {
+                                    val label = if (speed == 1.5f) "1.5x" else if (speed == 2f) "2x" else "1x"
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = secondaryTextColor.copy(alpha = 0.18f),
+                                        modifier = Modifier.clickable {
+                                            speed = when (speed) { 1f -> 1.5f; 1.5f -> 2f; else -> 1f }
+                                            player.setSpeed(speed)
+                                        }
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = primaryTextColor,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (showFooter) {
+            AttachmentTimeFooterLine(
+                formattedTime = formattedTime,
+                isSentByMe = message.isSentByMe,
+                secondaryTextColor = secondaryTextColor,
+                tealAccent = tealAccent,
+                sendStatus = message.sendStatus
             )
         }
     }
@@ -2312,6 +2802,14 @@ private fun DocumentRowsNoBubble(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
+                    if (message.sendStatus == "SENDING" && !uri.toString().startsWith("http")) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.5.dp,
+                            color = tealAccent
+                        )
+                    }
                 }
             }
         }
@@ -2326,5 +2824,3 @@ private fun DocumentRowsNoBubble(
         }
     }
 }
-
-

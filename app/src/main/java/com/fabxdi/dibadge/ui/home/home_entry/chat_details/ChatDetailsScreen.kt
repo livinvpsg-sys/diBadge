@@ -188,6 +188,8 @@ fun ChatDetailsScreen(
     var selectedActionTab by remember { mutableStateOf<Int?>(null) } // null=None (Media default), 1=Members, 2=Groups, 3=Forms, 4=Folders
     var selectedMediaCategory by remember { mutableStateOf("Media") } // "Media", "Docs"
     var selectedMediaIds by remember { mutableStateOf(setOf<String>()) }
+    // Pictures that cannot be loaded any more (file deleted). They are left out of the grid.
+    var failedMediaUrls by remember { mutableStateOf(setOf<String>()) }
     var selectedViewerMedia by remember { mutableStateOf<GroupMediaItem?>(null) }
     var showDeleteMediaDialog by remember { mutableStateOf(false) }
     var showEditNameDialog by remember { mutableStateOf(false) }
@@ -519,628 +521,485 @@ fun ChatDetailsScreen(
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                // HEADER SECTION (Centered 88dp round avatar, name, description, member count)
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 0.dp, bottom = 4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    // 88dp Round Avatar (same look as the home list and the chat header)
-                    val entryKey = entry.id.toString()
-                    val avatarPhoto = if (isOneToOne) otherUserPhotoUrl else groupPhotoUrl
-                    val avatarTitle = entry.title
-
-                    // Share the photo with the home list and chat header. A blank photo is only
-                    // removed after a short wait, so the first load doesn't wipe it.
-                    LaunchedEffect(avatarPhoto, entryKey) {
-                        if (avatarPhoto.isNotBlank()) {
-                            AvatarPhotoCache.put(context, entryKey, avatarPhoto)
-                        } else {
-                            delay(1500)
-                            AvatarPhotoCache.put(context, entryKey, "")
-                        }
-                    }
-
-                    ChatAvatar(
-                        title = avatarTitle,
-                        idForColor = entryKey,
-                        size = 88.dp,
-                        photoUrl = avatarPhoto,
+                    // HEADER SECTION (Centered 88dp round avatar, name, description, member count)
+                    Column(
                         modifier = Modifier
-                            .clip(CircleShape)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                if (avatarPhoto.isNotBlank()) {
-                                    showFullscreenAvatarViewer = true
-                                } else if (!isOneToOne) {
-                                    avatarPickerLauncher.launch("image/*")
+                            .fillMaxWidth()
+                            .padding(top = 0.dp, bottom = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // 88dp Round Avatar (same look as the home list and the chat header)
+                        val entryKey = entry.id.toString()
+                        val avatarPhoto = if (isOneToOne) otherUserPhotoUrl else groupPhotoUrl
+                        val avatarTitle = entry.title
+
+                        // Share the photo with the home list and chat header. A blank photo is only
+                        // removed after a short wait, so the first load doesn't wipe it.
+                        LaunchedEffect(avatarPhoto, entryKey) {
+                            if (avatarPhoto.isNotBlank()) {
+                                AvatarPhotoCache.put(context, entryKey, avatarPhoto)
+                            } else {
+                                delay(1500)
+                                AvatarPhotoCache.put(context, entryKey, "")
+                            }
+                        }
+
+                        ChatAvatar(
+                            title = avatarTitle,
+                            idForColor = entryKey,
+                            size = 88.dp,
+                            photoUrl = avatarPhoto,
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    if (avatarPhoto.isNotBlank()) {
+                                        showFullscreenAvatarViewer = true
+                                    } else if (!isOneToOne) {
+                                        avatarPickerLauncher.launch("image/*")
+                                    }
                                 }
-                            }
-                    )
+                        )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                    // Name (22sp Medium)
-                    val displayName = if (isOneToOne) (otherUserName.ifBlank { entry.title }) else groupName.ifBlank { "Group" }
-                    Text(
-                        text = displayName,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = primaryTextColor,
-                        textAlign = TextAlign.Center,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.clickable(
-                            enabled = !isOneToOne,
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {
-                            editNameInput = groupName
-                            showEditNameDialog = true
-                        }
-                    )
-
-                    Spacer(modifier = Modifier.height(2.dp))
-
-                    // Line 2: Nickname (if 1-to-1) OR Description (if group)
-                    if (isOneToOne) {
-                        if (otherUserNickname.isNotBlank()) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center,
-                                modifier = Modifier
-                                    .clickable { showNicknameSheet = true }
-                                    .padding(vertical = 2.dp, horizontal = 6.dp)
-                            ) {
-                                Text(
-                                    text = otherUserNickname,
-                                    fontSize = 14.sp,
-                                    color = secondaryTextColor,
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Icon(
-                                    imageVector = Icons.Outlined.Edit,
-                                    contentDescription = "Edit nickname",
-                                    tint = secondaryTextColor,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
-                        } else {
-                            Text(
-                                text = "Add nickname",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = tealAccent,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier
-                                    .clickable { showNicknameSheet = true }
-                                    .padding(vertical = 2.dp, horizontal = 6.dp)
-                            )
-                        }
-                    } else {
-                        val isMemberCountStr = remember(groupSubtitle) {
-                            val sub = groupSubtitle.trim().lowercase()
-                            sub.endsWith("member") || sub.endsWith("members")
-                        }
-                        val displayDescription = if (groupSubtitle == "test" || isMemberCountStr) "" else groupSubtitle
+                        // Name (22sp Medium)
+                        val displayName = if (isOneToOne) (otherUserName.ifBlank { entry.title }) else groupName.ifBlank { "Group" }
                         Text(
-                            text = displayDescription.ifBlank { "Add group description" },
-                            fontSize = 14.sp,
-                            color = secondaryTextColor,
+                            text = displayName,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = primaryTextColor,
                             textAlign = TextAlign.Center,
-                            maxLines = 3,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.clickable(
+                                enabled = !isOneToOne,
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null
                             ) {
-                                editDescriptionInput = displayDescription
-                                showEditDescriptionDialog = true
+                                editNameInput = groupName
+                                showEditNameDialog = true
                             }
                         )
 
                         Spacer(modifier = Modifier.height(2.dp))
 
-                        // Line 3: Member Count (13sp Secondary)
-                        val memberCountText = if (members.size == 1) "1 member" else "${members.size} members"
-                        Text(
-                            text = memberCountText,
-                            fontSize = 13.sp,
-                            color = secondaryTextColor,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.clickable { showMembersSheet = true }
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // Tabs: Media | Docs (if 1-to-1) or Media | Docs | Audio | Links (if group)
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        val categories = if (isOneToOne) listOf("Media", "Docs") else listOf("Media", "Docs", "Audio", "Links")
-                        categories.forEach { category ->
-                            val isSelected = selectedMediaCategory == category
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .clickable { selectedMediaCategory = category },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(
-                                    modifier = Modifier.fillMaxSize(),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.SpaceBetween
+                        // Line 2: Nickname (if 1-to-1) OR Description (if group)
+                        if (isOneToOne) {
+                            if (otherUserNickname.isNotBlank()) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center,
+                                    modifier = Modifier
+                                        .clickable { showNicknameSheet = true }
+                                        .padding(vertical = 2.dp, horizontal = 6.dp)
                                 ) {
-                                    Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = category,
-                                        fontSize = 15.sp,
-                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                        color = if (isSelected) primaryTextColor else secondaryTextColor,
-                                        maxLines = 1
+                                        text = otherUserNickname,
+                                        fontSize = 14.sp,
+                                        color = secondaryTextColor,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(2.dp)
-                                            .background(if (isSelected) primaryTextColor else Color.Transparent)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Icon(
+                                        imageVector = Icons.Outlined.Edit,
+                                        contentDescription = "Edit nickname",
+                                        tint = secondaryTextColor,
+                                        modifier = Modifier.size(14.dp)
                                     )
                                 }
+                            } else {
+                                Text(
+                                    text = "Add nickname",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = tealAccent,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier
+                                        .clickable { showNicknameSheet = true }
+                                        .padding(vertical = 2.dp, horizontal = 6.dp)
+                                )
                             }
+                        } else {
+                            val isMemberCountStr = remember(groupSubtitle) {
+                                val sub = groupSubtitle.trim().lowercase()
+                                sub.endsWith("member") || sub.endsWith("members")
+                            }
+                            val displayDescription = if (groupSubtitle == "test" || isMemberCountStr) "" else groupSubtitle
+                            Text(
+                                text = displayDescription.ifBlank { "Add group description" },
+                                fontSize = 14.sp,
+                                color = secondaryTextColor,
+                                textAlign = TextAlign.Center,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    editDescriptionInput = displayDescription
+                                    showEditDescriptionDialog = true
+                                }
+                            )
+
+                            Spacer(modifier = Modifier.height(2.dp))
+
+                            // Line 3: Member Count (13sp Secondary)
+                            val memberCountText = if (members.size == 1) "1 member" else "${members.size} members"
+                            Text(
+                                text = memberCountText,
+                                fontSize = 13.sp,
+                                color = secondaryTextColor,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.clickable { showMembersSheet = true }
+                            )
                         }
                     }
 
-                    HorizontalDivider(thickness = 1.dp, color = outlineColor)
-                }
+                    Spacer(modifier = Modifier.height(20.dp))
 
-                Spacer(modifier = Modifier.height(12.dp))
+                    // Tabs: Media | Docs (if 1-to-1) or Media | Docs | Audio | Links (if group)
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(44.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val categories = if (isOneToOne) listOf("Media", "Docs") else listOf("Media", "Docs", "Audio", "Links")
+                            categories.forEach { category ->
+                                val isSelected = selectedMediaCategory == category
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxHeight()
+                                        .clickable { selectedMediaCategory = category },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        modifier = Modifier.fillMaxSize(),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = category,
+                                            fontSize = 15.sp,
+                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                            color = if (isSelected) primaryTextColor else secondaryTextColor,
+                                            maxLines = 1
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(2.dp)
+                                                .background(if (isSelected) primaryTextColor else Color.Transparent)
+                                        )
+                                    }
+                                }
+                            }
+                        }
 
-                // MEDIA CONTENT (ALWAYS VISIBLE BELOW DIVIDER LINE)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 280.dp)
-                        .padding(top = 4.dp)
-                ) {
-                    // Media Content
-                    Column(
+                        HorizontalDivider(thickness = 1.dp, color = outlineColor)
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // MEDIA CONTENT (ALWAYS VISIBLE BELOW DIVIDER LINE)
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 68.dp)
+                            .heightIn(min = 280.dp)
+                            .padding(top = 4.dp)
                     ) {
-                        when (selectedMediaCategory) {
-                            "Media" -> {
-                                val mediaItems = media.filter { it.mediaType == "image" || it.mediaType == "video" }
-                                if (mediaItems.isEmpty()) {
-                                    Box(
-                                        modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = "no media",
-                                            fontSize = 13.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                        )
-                                    }
-                                } else {
-                                    val groupedMedia = remember(mediaItems) {
-                                        mediaItems.groupBy { formatTimestampToDateHeader(it.timestamp) }
-                                    }
+                        // Media Content
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 68.dp)
+                        ) {
+                            when (selectedMediaCategory) {
+                                "Media" -> {
+                                    val mediaItems = media.filter { (it.mediaType == "image" || it.mediaType == "video") && it.url !in failedMediaUrls }
+                                    if (mediaItems.isEmpty()) {
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "no media",
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                    } else {
+                                        val groupedMedia = remember(mediaItems) {
+                                            mediaItems.groupBy { formatTimestampToDateHeader(it.timestamp) }
+                                        }
 
-                                    groupedMedia.forEach { (dateHeader, itemsList) ->
-                                        Text(
-                                            text = dateHeader,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                                            modifier = Modifier.padding(vertical = 8.dp)
-                                        )
+                                        groupedMedia.forEach { (dateHeader, itemsList) ->
+                                            Text(
+                                                text = dateHeader,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                                modifier = Modifier.padding(vertical = 8.dp)
+                                            )
 
-                                        itemsList.chunked(3).forEach { rowItems ->
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
-                                                horizontalArrangement = Arrangement.spacedBy(2.dp)
-                                            ) {
-                                                rowItems.forEach { item ->
-                                                    val isSelected = selectedMediaIds.contains(item.id)
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .weight(1f)
-                                                            .aspectRatio(1f)
-                                                            .combinedClickable(
-                                                                onLongClick = {
-                                                                    selectedMediaIds = if (isSelected) {
-                                                                        selectedMediaIds - item.id
-                                                                    } else {
-                                                                        selectedMediaIds + item.id
-                                                                    }
-                                                                },
-                                                                onClick = {
-                                                                    if (selectedMediaIds.isNotEmpty()) {
+                                            itemsList.chunked(3).forEach { rowItems ->
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+                                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                                ) {
+                                                    rowItems.forEach { item ->
+                                                        val isSelected = selectedMediaIds.contains(item.id)
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .weight(1f)
+                                                                .aspectRatio(1f)
+                                                                .combinedClickable(
+                                                                    onLongClick = {
                                                                         selectedMediaIds = if (isSelected) {
                                                                             selectedMediaIds - item.id
                                                                         } else {
                                                                             selectedMediaIds + item.id
                                                                         }
-                                                                    } else {
-                                                                        selectedViewerMedia = item
+                                                                    },
+                                                                    onClick = {
+                                                                        if (selectedMediaIds.isNotEmpty()) {
+                                                                            selectedMediaIds = if (isSelected) {
+                                                                                selectedMediaIds - item.id
+                                                                            } else {
+                                                                                selectedMediaIds + item.id
+                                                                            }
+                                                                        } else {
+                                                                            selectedViewerMedia = item
+                                                                        }
+                                                                    }
+                                                                )
+                                                        ) {
+                                                            AsyncImage(
+                                                                model = item.url,
+                                                                contentDescription = "Media",
+                                                                modifier = Modifier.fillMaxSize(),
+                                                                contentScale = ContentScale.Crop,
+                                                                onError = {
+                                                                    if (item.mediaType == "image") {
+                                                                        failedMediaUrls = failedMediaUrls + item.url
+                                                                        selectedMediaIds = selectedMediaIds - item.id
                                                                     }
                                                                 }
                                                             )
-                                                    ) {
-                                                        AsyncImage(
-                                                            model = item.url,
-                                                            contentDescription = "Media",
-                                                            modifier = Modifier.fillMaxSize(),
-                                                            contentScale = ContentScale.Crop
-                                                        )
-                                                        if (item.mediaType == "video") {
-                                                            Icon(
-                                                                imageVector = Icons.Default.PlayArrow,
-                                                                contentDescription = "Play Video",
-                                                                tint = Color.White,
-                                                                modifier = Modifier
-                                                                    .size(28.dp)
-                                                                    .align(Alignment.Center)
-                                                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                                                    .padding(4.dp)
-                                                            )
-                                                        }
-
-                                                        if (isSelected) {
-                                                            Box(
-                                                                modifier = Modifier
-                                                                    .fillMaxSize()
-                                                                    .background(Color.Black.copy(alpha = 0.35f)),
-                                                                contentAlignment = Alignment.TopEnd
-                                                            ) {
-                                                                Surface(
+                                                            if (item.mediaType == "video") {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.PlayArrow,
+                                                                    contentDescription = "Play Video",
+                                                                    tint = Color.White,
                                                                     modifier = Modifier
-                                                                        .padding(6.dp)
-                                                                        .size(22.dp),
-                                                                    shape = CircleShape,
-                                                                    color = MaterialTheme.colorScheme.primary
+                                                                        .size(28.dp)
+                                                                        .align(Alignment.Center)
+                                                                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                                                        .padding(4.dp)
+                                                                )
+                                                            }
+
+                                                            if (isSelected) {
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .fillMaxSize()
+                                                                        .background(Color.Black.copy(alpha = 0.35f)),
+                                                                    contentAlignment = Alignment.TopEnd
                                                                 ) {
-                                                                    Box(contentAlignment = Alignment.Center) {
-                                                                        Icon(
-                                                                            imageVector = Icons.Default.Check,
-                                                                            contentDescription = "Selected",
-                                                                            tint = Color.White,
-                                                                            modifier = Modifier.size(16.dp)
-                                                                        )
+                                                                    Surface(
+                                                                        modifier = Modifier
+                                                                            .padding(6.dp)
+                                                                            .size(22.dp),
+                                                                        shape = CircleShape,
+                                                                        color = MaterialTheme.colorScheme.primary
+                                                                    ) {
+                                                                        Box(contentAlignment = Alignment.Center) {
+                                                                            Icon(
+                                                                                imageVector = Icons.Default.Check,
+                                                                                contentDescription = "Selected",
+                                                                                tint = Color.White,
+                                                                                modifier = Modifier.size(16.dp)
+                                                                            )
+                                                                        }
                                                                     }
                                                                 }
                                                             }
                                                         }
                                                     }
-                                                }
-                                                repeat(3 - rowItems.size) {
-                                                    Spacer(modifier = Modifier.weight(1f))
+                                                    repeat(3 - rowItems.size) {
+                                                        Spacer(modifier = Modifier.weight(1f))
+                                                    }
                                                 }
                                             }
+                                            Spacer(modifier = Modifier.height(12.dp))
                                         }
-                                        Spacer(modifier = Modifier.height(12.dp))
                                     }
                                 }
-                            }
 
-                            "Docs" -> {
-                                val docFiles = (files + media.filter { it.mediaType == "document" }.map {
-                                    GroupFolderFile(
-                                        id = it.id,
-                                        name = it.name.ifBlank { "Document" },
-                                        downloadUrl = it.url,
-                                        timestamp = it.timestamp
-                                    )
-                                }).distinctBy { it.downloadUrl }
-
-                                if (docFiles.isEmpty()) {
-                                    Box(
-                                        modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = "no documents",
-                                            fontSize = 13.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                "Docs" -> {
+                                    val docFiles = (files + media.filter { it.mediaType == "document" }.map {
+                                        GroupFolderFile(
+                                            id = it.id,
+                                            name = it.name.ifBlank { "Document" },
+                                            downloadUrl = it.url,
+                                            timestamp = it.timestamp
                                         )
-                                    }
-                                } else {
-                                    val groupedDocs = remember(docFiles) {
-                                        docFiles.groupBy { formatTimestampToDateHeader(it.timestamp) }
-                                    }
+                                    }).distinctBy { it.downloadUrl }
 
-                                    groupedDocs.forEach { (dateHeader, filesList) ->
-                                        Text(
-                                            text = dateHeader,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                                            modifier = Modifier.padding(vertical = 8.dp)
-                                        )
+                                    if (docFiles.isEmpty()) {
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "no documents",
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                    } else {
+                                        val groupedDocs = remember(docFiles) {
+                                            docFiles.groupBy { formatTimestampToDateHeader(it.timestamp) }
+                                        }
 
-                                        filesList.chunked(3).forEach { rowFiles ->
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                            ) {
-                                                rowFiles.forEach { file ->
-                                                    val isSelected = selectedMediaIds.contains(file.id)
-                                                    DocumentTileItem(
-                                                        file = file,
-                                                        isSelected = isSelected,
-                                                        onLongClick = {
-                                                            selectedMediaIds = if (isSelected) {
-                                                                selectedMediaIds - file.id
-                                                            } else {
-                                                                selectedMediaIds + file.id
-                                                            }
-                                                        },
-                                                        onClick = {
-                                                            if (selectedMediaIds.isNotEmpty()) {
+                                        groupedDocs.forEach { (dateHeader, filesList) ->
+                                            Text(
+                                                text = dateHeader,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                                modifier = Modifier.padding(vertical = 8.dp)
+                                            )
+
+                                            filesList.chunked(3).forEach { rowFiles ->
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                                ) {
+                                                    rowFiles.forEach { file ->
+                                                        val isSelected = selectedMediaIds.contains(file.id)
+                                                        DocumentTileItem(
+                                                            file = file,
+                                                            isSelected = isSelected,
+                                                            onLongClick = {
                                                                 selectedMediaIds = if (isSelected) {
                                                                     selectedMediaIds - file.id
                                                                 } else {
                                                                     selectedMediaIds + file.id
                                                                 }
-                                                            } else {
-                                                                FilePickerUtils.openFile(context, Uri.parse(file.downloadUrl))
+                                                            },
+                                                            onClick = {
+                                                                if (selectedMediaIds.isNotEmpty()) {
+                                                                    selectedMediaIds = if (isSelected) {
+                                                                        selectedMediaIds - file.id
+                                                                    } else {
+                                                                        selectedMediaIds + file.id
+                                                                    }
+                                                                } else {
+                                                                    FilePickerUtils.openFile(context, Uri.parse(file.downloadUrl))
+                                                                }
                                                             }
-                                                        }
-                                                    )
-                                                }
-                                                repeat(3 - rowFiles.size) {
-                                                    Spacer(modifier = Modifier.width(100.dp))
-                                                }
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                    }
-                                }
-                            }
-
-                            "Audio" -> {
-                                val audioItems = remember(messages) {
-                                    messages.filter { msg ->
-                                        msg.msgType == "audio" || msg.attachments.any { uriStr ->
-                                            uriStr.contains("audio") || uriStr.endsWith(".m4a") || uriStr.endsWith(".mp3") || uriStr.endsWith(".wav")
-                                        }
-                                    }.sortedByDescending { it.timestamp }
-                                }
-
-                                if (audioItems.isEmpty()) {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 80.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Headphones,
-                                            contentDescription = null,
-                                            tint = dimTextColor,
-                                            modifier = Modifier.size(44.dp)
-                                        )
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        Text(
-                                            text = "No audio yet",
-                                            fontSize = 16.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = primaryTextColor
-                                        )
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Text(
-                                            text = "Voice messages and audio files shared in this chat appear here",
-                                            fontSize = 13.sp,
-                                            color = secondaryTextColor,
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier.padding(horizontal = 32.dp)
-                                        )
-                                    }
-                                } else {
-                                    val groupedAudio = remember(audioItems) {
-                                        audioItems.groupBy { formatTimestampToDateHeader(it.timestamp.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()) }
-                                    }
-
-                                    groupedAudio.forEach { (dateHeader, itemsList) ->
-                                        Text(
-                                            text = dateHeader,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = secondaryTextColor,
-                                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 20.dp)
-                                        )
-
-                                        itemsList.forEach { audioMsg ->
-                                            var isPlayingThis by remember { mutableStateOf(false) }
-
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .height(64.dp)
-                                                    .clickable {
-                                                        if (audioMsg.attachments.isNotEmpty()) {
-                                                            FilePickerUtils.openFile(context, Uri.parse(audioMsg.attachments.first()))
-                                                        }
-                                                    }
-                                                    .padding(horizontal = 20.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Surface(
-                                                    modifier = Modifier
-                                                        .size(40.dp)
-                                                        .clickable { isPlayingThis = !isPlayingThis },
-                                                    shape = CircleShape,
-                                                    color = cardFillColor,
-                                                    border = BorderStroke(1.dp, outlineColor)
-                                                ) {
-                                                    Box(contentAlignment = Alignment.Center) {
-                                                        Icon(
-                                                            imageVector = if (isPlayingThis) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                                            contentDescription = "Play audio",
-                                                            tint = primaryTextColor,
-                                                            modifier = Modifier.size(20.dp)
                                                         )
                                                     }
-                                                }
-
-                                                Spacer(modifier = Modifier.width(14.dp))
-
-                                                Column(modifier = Modifier.weight(1f)) {
-                                                    val isVoiceMsg = audioMsg.attachments.isEmpty() || audioMsg.attachments.first().contains("audio")
-                                                    val audioTitle = if (isVoiceMsg) "Voice message" else FilePickerUtils.getFileName(context, Uri.parse(audioMsg.attachments.first()))
-                                                    val durationSec = audioMsg.attachmentDurations.values.firstOrNull() ?: 24L
-                                                    val durationStr = String.format(Locale.getDefault(), "%d:%02d", durationSec / 60, durationSec % 60)
-                                                    val audioSubtitle = if (isVoiceMsg) "$durationStr · ${audioMsg.senderName}" else "MP3 · 3.2 MB · ${audioMsg.senderName}"
-
-                                                    Text(
-                                                        text = audioTitle,
-                                                        fontSize = 15.sp,
-                                                        color = primaryTextColor,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                    Spacer(modifier = Modifier.height(2.dp))
-                                                    Text(
-                                                        text = audioSubtitle,
-                                                        fontSize = 12.sp,
-                                                        color = secondaryTextColor,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-
-                                                    if (isPlayingThis) {
-                                                        Spacer(modifier = Modifier.height(4.dp))
-                                                        LinearProgressIndicator(
-                                                            progress = { 0.4f },
-                                                            modifier = Modifier
-                                                                .fillMaxWidth()
-                                                                .height(2.dp),
-                                                            color = primaryTextColor,
-                                                            trackColor = outlineColor
-                                                        )
+                                                    repeat(3 - rowFiles.size) {
+                                                        Spacer(modifier = Modifier.width(100.dp))
                                                     }
                                                 }
                                             }
-                                            HorizontalDivider(
-                                                thickness = 1.dp,
-                                                color = outlineColor,
-                                                modifier = Modifier.padding(start = 74.dp)
-                                            )
+                                            Spacer(modifier = Modifier.height(12.dp))
                                         }
                                     }
                                 }
-                            }
 
-                            "Links" -> {
-                                val linkList = remember(messages) {
-                                    val list = mutableListOf<ChatLinkItem>()
-                                    messages.sortedByDescending { it.timestamp }.forEach { msg ->
-                                        UrlExtractor.extractUrls(msg.text).forEach { url ->
-                                            val domain = UrlExtractor.extractDomain(url)
-                                            list.add(
-                                                ChatLinkItem(
-                                                    url = url,
-                                                    domain = domain,
-                                                    senderName = msg.senderName,
-                                                    timestamp = msg.timestamp,
-                                                    messageId = msg.id
-                                                )
+                                "Audio" -> {
+                                    val audioItems = remember(messages) {
+                                        messages.filter { msg ->
+                                            msg.msgType == "audio" || msg.attachments.any { uriStr ->
+                                                uriStr.contains("audio") || uriStr.endsWith(".m4a") || uriStr.endsWith(".mp3") || uriStr.endsWith(".wav")
+                                            }
+                                        }.sortedByDescending { it.timestamp }
+                                    }
+
+                                    if (audioItems.isEmpty()) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 80.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Headphones,
+                                                contentDescription = null,
+                                                tint = dimTextColor,
+                                                modifier = Modifier.size(44.dp)
+                                            )
+                                            Spacer(modifier = Modifier.height(12.dp))
+                                            Text(
+                                                text = "No audio yet",
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = primaryTextColor
+                                            )
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                text = "Voice messages and audio files shared in this chat appear here",
+                                                fontSize = 13.sp,
+                                                color = secondaryTextColor,
+                                                textAlign = TextAlign.Center,
+                                                modifier = Modifier.padding(horizontal = 32.dp)
                                             )
                                         }
-                                    }
-                                    list
-                                }
+                                    } else {
+                                        val groupedAudio = remember(audioItems) {
+                                            audioItems.groupBy { formatTimestampToDateHeader(it.timestamp.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()) }
+                                        }
 
-                                if (linkList.isEmpty()) {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(top = 80.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Link,
-                                            contentDescription = null,
-                                            tint = dimTextColor,
-                                            modifier = Modifier.size(44.dp)
-                                        )
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        Text(
-                                            text = "No links yet",
-                                            fontSize = 16.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = primaryTextColor
-                                        )
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Text(
-                                            text = "Links shared in this chat appear here",
-                                            fontSize = 13.sp,
-                                            color = secondaryTextColor,
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier.padding(horizontal = 32.dp)
-                                        )
-                                    }
-                                } else {
-                                    val groupedLinks = remember(linkList) {
-                                        linkList.groupBy { formatTimestampToDateHeader(it.timestamp.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()) }
-                                    }
+                                        groupedAudio.forEach { (dateHeader, itemsList) ->
+                                            Text(
+                                                text = dateHeader,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = secondaryTextColor,
+                                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 20.dp)
+                                            )
 
-                                    groupedLinks.forEach { (dateHeader, itemsList) ->
-                                        Text(
-                                            text = dateHeader,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = secondaryTextColor,
-                                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 20.dp)
-                                        )
+                                            itemsList.forEach { audioMsg ->
+                                                var isPlayingThis by remember { mutableStateOf(false) }
 
-                                        itemsList.forEach { linkItem ->
-                                            var showLinkMenu by remember { mutableStateOf(false) }
-
-                                            Box {
                                                 Row(
                                                     modifier = Modifier
                                                         .fillMaxWidth()
-                                                        .height(72.dp)
-                                                        .combinedClickable(
-                                                            onClick = {
-                                                                try {
-                                                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(if (!linkItem.url.startsWith("http")) "https://${linkItem.url}" else linkItem.url))
-                                                                    context.startActivity(intent)
-                                                                } catch (e: Exception) {
-                                                                    Toast.makeText(context, "Could not open link", Toast.LENGTH_SHORT).show()
-                                                                }
-                                                            },
-                                                            onLongClick = { showLinkMenu = true }
-                                                        )
+                                                        .height(64.dp)
+                                                        .clickable {
+                                                            if (audioMsg.attachments.isNotEmpty()) {
+                                                                FilePickerUtils.openFile(context, Uri.parse(audioMsg.attachments.first()))
+                                                            }
+                                                        }
                                                         .padding(horizontal = 20.dp),
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
                                                     Surface(
-                                                        modifier = Modifier.size(40.dp),
-                                                        shape = RoundedCornerShape(10.dp),
+                                                        modifier = Modifier
+                                                            .size(40.dp)
+                                                            .clickable { isPlayingThis = !isPlayingThis },
+                                                        shape = CircleShape,
                                                         color = cardFillColor,
                                                         border = BorderStroke(1.dp, outlineColor)
                                                     ) {
                                                         Box(contentAlignment = Alignment.Center) {
                                                             Icon(
-                                                                imageVector = Icons.Outlined.Link,
-                                                                contentDescription = "Link",
-                                                                tint = secondaryTextColor,
+                                                                imageVector = if (isPlayingThis) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                                                contentDescription = "Play audio",
+                                                                tint = primaryTextColor,
                                                                 modifier = Modifier.size(20.dp)
                                                             )
                                                         }
@@ -1149,55 +1008,205 @@ fun ChatDetailsScreen(
                                                     Spacer(modifier = Modifier.width(14.dp))
 
                                                     Column(modifier = Modifier.weight(1f)) {
+                                                        val isVoiceMsg = audioMsg.attachments.isEmpty() || audioMsg.attachments.first().contains("audio")
+                                                        val audioTitle = if (isVoiceMsg) "Voice message" else FilePickerUtils.getFileName(context, Uri.parse(audioMsg.attachments.first()))
+                                                        val durationSec = audioMsg.attachmentDurations.values.firstOrNull() ?: 24L
+                                                        val durationStr = String.format(Locale.getDefault(), "%d:%02d", durationSec / 60, durationSec % 60)
+                                                        val audioSubtitle = if (isVoiceMsg) "$durationStr · ${audioMsg.senderName}" else "MP3 · 3.2 MB · ${audioMsg.senderName}"
+
                                                         Text(
-                                                            text = linkItem.domain,
+                                                            text = audioTitle,
                                                             fontSize = 15.sp,
-                                                            fontWeight = FontWeight.Medium,
                                                             color = primaryTextColor,
                                                             maxLines = 1,
                                                             overflow = TextOverflow.Ellipsis
                                                         )
                                                         Spacer(modifier = Modifier.height(2.dp))
                                                         Text(
-                                                            text = linkItem.url,
+                                                            text = audioSubtitle,
                                                             fontSize = 12.sp,
                                                             color = secondaryTextColor,
                                                             maxLines = 1,
                                                             overflow = TextOverflow.Ellipsis
                                                         )
-                                                        Spacer(modifier = Modifier.height(2.dp))
-                                                        val timeStr = linkItem.timestamp.format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()))
-                                                        Text(
-                                                            text = "${linkItem.senderName} · $timeStr",
-                                                            fontSize = 12.sp,
-                                                            color = dimTextColor,
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis
-                                                        )
+
+                                                        if (isPlayingThis) {
+                                                            Spacer(modifier = Modifier.height(4.dp))
+                                                            LinearProgressIndicator(
+                                                                progress = { 0.4f },
+                                                                modifier = Modifier
+                                                                    .fillMaxWidth()
+                                                                    .height(2.dp),
+                                                                color = primaryTextColor,
+                                                                trackColor = outlineColor
+                                                            )
+                                                        }
                                                     }
                                                 }
+                                                HorizontalDivider(
+                                                    thickness = 1.dp,
+                                                    color = outlineColor,
+                                                    modifier = Modifier.padding(start = 74.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
 
-                                                DropdownMenu(
-                                                    expanded = showLinkMenu,
-                                                    onDismissRequest = { showLinkMenu = false }
-                                                ) {
-                                                    DropdownMenuItem(
-                                                        text = { Text("Copy link", fontSize = 14.sp) },
-                                                        onClick = {
-                                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                                            val clip = ClipData.newPlainText("Link", linkItem.url)
-                                                            clipboard.setPrimaryClip(clip)
-                                                            Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
-                                                            showLinkMenu = false
-                                                        }
+                                "Links" -> {
+                                    val linkList = remember(messages) {
+                                        val list = mutableListOf<ChatLinkItem>()
+                                        messages.sortedByDescending { it.timestamp }.forEach { msg ->
+                                            UrlExtractor.extractUrls(msg.text).forEach { url ->
+                                                val domain = UrlExtractor.extractDomain(url)
+                                                list.add(
+                                                    ChatLinkItem(
+                                                        url = url,
+                                                        domain = domain,
+                                                        senderName = msg.senderName,
+                                                        timestamp = msg.timestamp,
+                                                        messageId = msg.id
                                                     )
-                                                    DropdownMenuItem(
-                                                        text = { Text("Go to message", fontSize = 14.sp) },
-                                                        onClick = {
-                                                            showLinkMenu = false
-                                                            onShowInChat(linkItem.url)
+                                                )
+                                            }
+                                        }
+                                        list
+                                    }
+
+                                    if (linkList.isEmpty()) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 80.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Link,
+                                                contentDescription = null,
+                                                tint = dimTextColor,
+                                                modifier = Modifier.size(44.dp)
+                                            )
+                                            Spacer(modifier = Modifier.height(12.dp))
+                                            Text(
+                                                text = "No links yet",
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = primaryTextColor
+                                            )
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                text = "Links shared in this chat appear here",
+                                                fontSize = 13.sp,
+                                                color = secondaryTextColor,
+                                                textAlign = TextAlign.Center,
+                                                modifier = Modifier.padding(horizontal = 32.dp)
+                                            )
+                                        }
+                                    } else {
+                                        val groupedLinks = remember(linkList) {
+                                            linkList.groupBy { formatTimestampToDateHeader(it.timestamp.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()) }
+                                        }
+
+                                        groupedLinks.forEach { (dateHeader, itemsList) ->
+                                            Text(
+                                                text = dateHeader,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = secondaryTextColor,
+                                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 20.dp)
+                                            )
+
+                                            itemsList.forEach { linkItem ->
+                                                var showLinkMenu by remember { mutableStateOf(false) }
+
+                                                Box {
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .height(72.dp)
+                                                            .combinedClickable(
+                                                                onClick = {
+                                                                    try {
+                                                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(if (!linkItem.url.startsWith("http")) "https://${linkItem.url}" else linkItem.url))
+                                                                        context.startActivity(intent)
+                                                                    } catch (e: Exception) {
+                                                                        Toast.makeText(context, "Could not open link", Toast.LENGTH_SHORT).show()
+                                                                    }
+                                                                },
+                                                                onLongClick = { showLinkMenu = true }
+                                                            )
+                                                            .padding(horizontal = 20.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Surface(
+                                                            modifier = Modifier.size(40.dp),
+                                                            shape = RoundedCornerShape(10.dp),
+                                                            color = cardFillColor,
+                                                            border = BorderStroke(1.dp, outlineColor)
+                                                        ) {
+                                                            Box(contentAlignment = Alignment.Center) {
+                                                                Icon(
+                                                                    imageVector = Icons.Outlined.Link,
+                                                                    contentDescription = "Link",
+                                                                    tint = secondaryTextColor,
+                                                                    modifier = Modifier.size(20.dp)
+                                                                )
+                                                            }
                                                         }
-                                                    )
+
+                                                        Spacer(modifier = Modifier.width(14.dp))
+
+                                                        Column(modifier = Modifier.weight(1f)) {
+                                                            Text(
+                                                                text = linkItem.domain,
+                                                                fontSize = 15.sp,
+                                                                fontWeight = FontWeight.Medium,
+                                                                color = primaryTextColor,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                            Spacer(modifier = Modifier.height(2.dp))
+                                                            Text(
+                                                                text = linkItem.url,
+                                                                fontSize = 12.sp,
+                                                                color = secondaryTextColor,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                            Spacer(modifier = Modifier.height(2.dp))
+                                                            val timeStr = linkItem.timestamp.format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()))
+                                                            Text(
+                                                                text = "${linkItem.senderName} · $timeStr",
+                                                                fontSize = 12.sp,
+                                                                color = dimTextColor,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                        }
+                                                    }
+
+                                                    DropdownMenu(
+                                                        expanded = showLinkMenu,
+                                                        onDismissRequest = { showLinkMenu = false }
+                                                    ) {
+                                                        DropdownMenuItem(
+                                                            text = { Text("Copy link", fontSize = 14.sp) },
+                                                            onClick = {
+                                                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                                val clip = ClipData.newPlainText("Link", linkItem.url)
+                                                                clipboard.setPrimaryClip(clip)
+                                                                Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+                                                                showLinkMenu = false
+                                                            }
+                                                        )
+                                                        DropdownMenuItem(
+                                                            text = { Text("Go to message", fontSize = 14.sp) },
+                                                            onClick = {
+                                                                showLinkMenu = false
+                                                                onShowInChat(linkItem.url)
+                                                            }
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
@@ -1207,479 +1216,478 @@ fun ChatDetailsScreen(
                         }
                     }
                 }
-            }
 
-            // Custom Pure Text Toast Overlay (Horizontally Centered at Bottom)
-            if (customToastMessage != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 60.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surface,
-                        shape = RoundedCornerShape(24.dp),
-                        shadowElevation = 6.dp
+                // Custom Pure Text Toast Overlay (Horizontally Centered at Bottom)
+                if (customToastMessage != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 60.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(24.dp),
+                            shadowElevation = 6.dp
+                        ) {
+                            Text(
+                                text = customToastMessage ?: "",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Edit Name Popup
+        EditNameDialog(
+            show = showEditNameDialog,
+            input = editNameInput,
+            onInputChange = { editNameInput = it },
+            onDismiss = { showEditNameDialog = false },
+            onSave = {
+                if (editNameInput.isNotBlank()) {
+                    detailsViewModel.updateGroupName(context, editNameInput)
+                    showEditNameDialog = false
+                }
+            }
+        )
+
+        // Edit Description Popup
+        EditDescriptionDialog(
+            show = showEditDescriptionDialog,
+            input = editDescriptionInput,
+            onInputChange = { editDescriptionInput = it },
+            onDismiss = { showEditDescriptionDialog = false },
+            onSave = {
+                detailsViewModel.updateGroupSubtitle(context, editDescriptionInput)
+                showEditDescriptionDialog = false
+            }
+        )
+
+        if (showGroupCodeDialog) {
+            GroupCodeSheet(
+                groupCode = groupCode,
+                onCopy = { code ->
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = ClipData.newPlainText("group_code", code)
+                    clipboard.setPrimaryClip(clip)
+                    showGroupCodeDialog = false
+                    customToastMessage = "Group code copied"
+                },
+                onDismiss = { showGroupCodeDialog = false }
+            )
+        }
+
+        if (showHeaderDropdown) {
+            val otherMember = members.find { !it.isYou }
+            val otherUid = otherMember?.uid ?: ""
+            val fullNameStr = if (otherUserName.isNotBlank()) otherUserName else groupName
+
+            ChatDetailsMenuSheet(
+                isMuted = isMuted,
+                canUserManage = canUserManage,
+                waitingInvitesCount = pendingRequests.size,
+                isConnectedToOrg = acceptedConnections.isNotEmpty(),
+                isOneToOne = isOneToOne,
+                isBlocked = isOtherUserBlocked,
+                onSelectMembers = { showMembersSheet = true },
+                onSelectGroups = { showGroupsSheet = true },
+                onSelectForms = { showGroupFormsScreen = true },
+                onSelectTasks = { showTasksSheet = true },
+                onSelectCredentials = { showCredentialsScreen = true },
+                onSelectLibrary = { showLibraryScreen = true },
+                onSelectMute = { showMuteSheet = true },
+                onSelectUnmute = {
+                    isMuted = false
+                    customToastMessage = "Notifications unmuted"
+                },
+                onSelectClearChat = { showClearChatDialog = true },
+                onSelectGroupCode = { showGroupCodeDialog = true },
+                onSelectBlockUser = { showBlockUserDialog = true },
+                onSelectUnblockUser = {
+                    detailsViewModel.unblockUser(otherUid) {
+                        val fn = otherUserFirstName.ifBlank { fullNameStr.split(" ").firstOrNull().orEmpty() }
+                        Toast.makeText(context, "$fn unblocked", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onDismiss = { showHeaderDropdown = false }
+            )
+        }
+
+        if (showBlockUserDialog) {
+            val otherMember = members.find { !it.isYou }
+            val otherUid = otherMember?.uid ?: ""
+            val fullNameStr = if (otherUserName.isNotBlank()) otherUserName else groupName
+            val fn = otherUserFirstName.ifBlank { fullNameStr.split(" ").firstOrNull().orEmpty() }
+
+            AlertDialog(
+                onDismissRequest = { showBlockUserDialog = false },
+                containerColor = cardColor,
+                shape = RoundedCornerShape(24.dp),
+                title = {
+                    Text(
+                        text = "Block $fullNameStr?",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = primaryTextColor
+                    )
+                },
+                text = {
+                    Text(
+                        text = "$fn won't be able to send you messages. You can unblock anytime in Settings, Blocked users.",
+                        fontSize = 14.sp,
+                        color = secondaryTextColor
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showBlockUserDialog = false
+                            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                            val isOnline = cm?.activeNetwork != null
+                            if (!isOnline) {
+                                Toast.makeText(context, "You're offline. Try again when connected", Toast.LENGTH_SHORT).show()
+                            } else {
+                                detailsViewModel.blockUser(otherUid, fullNameStr, otherUserOrg) {
+                                    Toast.makeText(context, "$fn blocked", Toast.LENGTH_SHORT).show()
+                                    onBack()
+                                }
+                            }
+                        }
                     ) {
                         Text(
-                            text = customToastMessage ?: "",
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
+                            text = "Block",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = errorColor
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showBlockUserDialog = false }) {
+                        Text(
+                            text = "Cancel",
+                            fontSize = 15.sp,
+                            color = secondaryTextColor
                         )
                     }
                 }
+            )
+        }
+
+        if (showClearChatDialog) {
+            val fullNameStr = if (otherUserName.isNotBlank()) otherUserName else groupName
+            val clearText = if (isOneToOne) {
+                "Messages will be removed only for you. $fullNameStr still sees them."
+            } else {
+                "Messages will be removed only for you. Other group members will still see them."
             }
-        }
-    }
 
-    // Edit Name Popup
-    EditNameDialog(
-        show = showEditNameDialog,
-        input = editNameInput,
-        onInputChange = { editNameInput = it },
-        onDismiss = { showEditNameDialog = false },
-        onSave = {
-            if (editNameInput.isNotBlank()) {
-                detailsViewModel.updateGroupName(context, editNameInput)
-                showEditNameDialog = false
-            }
-        }
-    )
-
-    // Edit Description Popup
-    EditDescriptionDialog(
-        show = showEditDescriptionDialog,
-        input = editDescriptionInput,
-        onInputChange = { editDescriptionInput = it },
-        onDismiss = { showEditDescriptionDialog = false },
-        onSave = {
-            detailsViewModel.updateGroupSubtitle(context, editDescriptionInput)
-            showEditDescriptionDialog = false
-        }
-    )
-
-    if (showGroupCodeDialog) {
-        GroupCodeSheet(
-            groupCode = groupCode,
-            onCopy = { code ->
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                val clip = ClipData.newPlainText("group_code", code)
-                clipboard.setPrimaryClip(clip)
-                showGroupCodeDialog = false
-                customToastMessage = "Group code copied"
-            },
-            onDismiss = { showGroupCodeDialog = false }
-        )
-    }
-
-    if (showHeaderDropdown) {
-        val otherMember = members.find { !it.isYou }
-        val otherUid = otherMember?.uid ?: ""
-        val fullNameStr = if (otherUserName.isNotBlank()) otherUserName else groupName
-
-        ChatDetailsMenuSheet(
-            isMuted = isMuted,
-            canUserManage = canUserManage,
-            waitingInvitesCount = pendingRequests.size,
-            isConnectedToOrg = acceptedConnections.isNotEmpty(),
-            isOneToOne = isOneToOne,
-            isBlocked = isOtherUserBlocked,
-            onSelectMembers = { showMembersSheet = true },
-            onSelectGroups = { showGroupsSheet = true },
-            onSelectForms = { showGroupFormsScreen = true },
-            onSelectTasks = { showTasksSheet = true },
-            onSelectCredentials = { showCredentialsScreen = true },
-            onSelectLibrary = { showLibraryScreen = true },
-            onSelectMute = { showMuteSheet = true },
-            onSelectUnmute = {
-                isMuted = false
-                customToastMessage = "Notifications unmuted"
-            },
-            onSelectClearChat = { showClearChatDialog = true },
-            onSelectGroupCode = { showGroupCodeDialog = true },
-            onSelectBlockUser = { showBlockUserDialog = true },
-            onSelectUnblockUser = {
-                detailsViewModel.unblockUser(otherUid) {
-                    val fn = otherUserFirstName.ifBlank { fullNameStr.split(" ").firstOrNull().orEmpty() }
-                    Toast.makeText(context, "$fn unblocked", Toast.LENGTH_SHORT).show()
-                }
-            },
-            onDismiss = { showHeaderDropdown = false }
-        )
-    }
-
-    if (showBlockUserDialog) {
-        val otherMember = members.find { !it.isYou }
-        val otherUid = otherMember?.uid ?: ""
-        val fullNameStr = if (otherUserName.isNotBlank()) otherUserName else groupName
-        val fn = otherUserFirstName.ifBlank { fullNameStr.split(" ").firstOrNull().orEmpty() }
-
-        AlertDialog(
-            onDismissRequest = { showBlockUserDialog = false },
-            containerColor = cardColor,
-            shape = RoundedCornerShape(24.dp),
-            title = {
-                Text(
-                    text = "Block $fullNameStr?",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = primaryTextColor
-                )
-            },
-            text = {
-                Text(
-                    text = "$fn won't be able to send you messages. You can unblock anytime in Settings, Blocked users.",
-                    fontSize = 14.sp,
-                    color = secondaryTextColor
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showBlockUserDialog = false
-                        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-                        val isOnline = cm?.activeNetwork != null
-                        if (!isOnline) {
-                            Toast.makeText(context, "You're offline. Try again when connected", Toast.LENGTH_SHORT).show()
-                        } else {
-                            detailsViewModel.blockUser(otherUid, fullNameStr, otherUserOrg) {
-                                Toast.makeText(context, "$fn blocked", Toast.LENGTH_SHORT).show()
-                                onBack()
-                            }
+            AlertDialog(
+                onDismissRequest = { showClearChatDialog = false },
+                containerColor = cardColor,
+                shape = RoundedCornerShape(24.dp),
+                title = {
+                    Text(
+                        text = "Clear this chat?",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = primaryTextColor
+                    )
+                },
+                text = {
+                    Text(
+                        text = clearText,
+                        fontSize = 14.sp,
+                        color = secondaryTextColor
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showClearChatDialog = false
+                            detailsViewModel.clearChatLocally(context, entry.id.toString())
+                            Toast.makeText(context, "Chat cleared", Toast.LENGTH_SHORT).show()
                         }
+                    ) {
+                        Text(
+                            text = "Clear",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = errorColor
+                        )
                     }
-                ) {
-                    Text(
-                        text = "Block",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = errorColor
-                    )
+                },
+                dismissButton = {
+                    TextButton(onClick = { showClearChatDialog = false }) {
+                        Text(
+                            text = "Cancel",
+                            fontSize = 15.sp,
+                            color = secondaryTextColor
+                        )
+                    }
                 }
+            )
+        }
+
+        if (showNicknameSheet) {
+            val otherMember = members.find { !it.isYou }
+            val otherUid = otherMember?.uid ?: ""
+            val fullNameStr = if (otherUserName.isNotBlank()) otherUserName else groupName
+
+            NicknameSheet(
+                fullName = fullNameStr,
+                currentNickname = otherUserNickname,
+                onSave = { newNick ->
+                    detailsViewModel.saveNickname(context, otherUid, newNick) {
+                        customToastMessage = if (newNick.isNotBlank()) "Nickname saved" else "Nickname removed"
+                    }
+                },
+                onDismiss = { showNicknameSheet = false }
+            )
+        }
+
+        if (showGroupsSheet) {
+            GroupsBottomSheet(
+                ownGroupCode = groupCode,
+                connectedGroups = acceptedConnections,
+                pendingRequests = pendingRequests,
+                canUserManage = canUserManage,
+                onCodeLookup = { code ->
+                    detailsViewModel.lookupGroupCode(code)
+                },
+                codeLookupResult = codeLookupResult,
+                onSendInvite = { targetId, targetType, name ->
+                    detailsViewModel.sendConnectRequest(targetId, targetType) {
+                        customToastMessage = "Invite sent to $name"
+                    }
+                },
+                onAcceptInvite = { connectionId, name ->
+                    detailsViewModel.updateConnectionStatus(connectionId, "accepted")
+                    customToastMessage = "$name is now connected"
+                },
+                onDeclineInvite = { connectionId ->
+                    detailsViewModel.updateConnectionStatus(connectionId, "declined")
+                    customToastMessage = "Invitation declined"
+                },
+                onRemoveConnection = { connectionId, name ->
+                    detailsViewModel.updateConnectionStatus(connectionId, "removed")
+                    customToastMessage = "$name removed"
+                },
+                onDismiss = { showGroupsSheet = false }
+            )
+        }
+
+        if (showTasksSheet) {
+            val currentUserName = FirebaseAuth.getInstance().currentUser?.displayName?.ifBlank { null } ?: "Me"
+            TasksBottomSheet(
+                groupId = entry.id.toString(),
+                tasks = groupTasks,
+                members = members,
+                currentRole = resolvedUserRole,
+                currentUserName = currentUserName,
+                currentUserUid = currentUserId,
+                onAssignTaskConfirmed = { title, assignees, dueDate, dueTime, note ->
+                    groupTaskViewModel.assignTasks(
+                        title = title,
+                        groupId = entry.id.toString(),
+                        assignees = assignees,
+                        assignerName = currentUserName,
+                        assignerUid = currentUserId,
+                        dueDate = dueDate,
+                        dueTime = dueTime,
+                        note = note
+                    )
+                },
+                onDismiss = { showTasksSheet = false }
+            )
+        }
+
+        if (showMuteSheet) {
+            MuteChoiceSheet(
+                onMuteConfirmed = { option ->
+                    isMuted = true
+                    customToastMessage = "Muted for $option"
+                },
+                onDismiss = { showMuteSheet = false }
+            )
+        }
+
+        if (showClearChatDialog) {
+            AlertDialog(
+                onDismissRequest = { showClearChatDialog = false },
+                title = {
+                    Text("Clear this chat?", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = primaryTextColor)
+                },
+                text = {
+                    Text("Messages will be removed only for you. Others in this group still see them.", fontSize = 14.sp, color = secondaryTextColor)
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showClearChatDialog = false
+                            customToastMessage = "Chat cleared"
+                        }
+                    ) {
+                        Text("Clear", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = colors.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showClearChatDialog = false }) {
+                        Text("Cancel", fontSize = 15.sp, fontWeight = FontWeight.Normal, color = secondaryTextColor)
+                    }
+                },
+                containerColor = cardColor,
+                shape = RoundedCornerShape(20.dp)
+            )
+        }
+
+        // Add Member Dialog / Bottom Sheet
+        if (showAddMemberDialog) {
+            val connectionsViewModel: ConnectionsViewModel = viewModel()
+            val userConnections by connectionsViewModel.connections.collectAsState()
+
+            val existingMemberUids = remember(members) { members.map { it.uid }.toSet() }
+            val existingMemberNames = remember(members) { members.map { it.displayName.lowercase() }.toSet() }
+
+            val availableCandidates = remember(userConnections, existingMemberUids, existingMemberNames) {
+                userConnections
+                    .filter { conn ->
+                        val uid = conn.uid.ifBlank { conn.id }
+                        !existingMemberUids.contains(uid) && !existingMemberNames.contains(conn.name.lowercase())
+                    }
+                    .map { conn ->
+                        AddConnectionCandidate(
+                            id = conn.uid.ifBlank { conn.id },
+                            name = conn.name,
+                            email = conn.organization.ifBlank { conn.role }
+                        )
+                    }
+            }
+
+            AddPeopleSheet(
+                candidates = availableCandidates,
+                totalConnectionsCount = userConnections.size,
+                onAddSelected = { added ->
+                    showAddMemberDialog = false
+                    for (candidate in added) {
+                        detailsViewModel.addMemberToGroup(candidate.id)
+                    }
+                    if (added.isNotEmpty()) {
+                        Toast.makeText(context, "Added ${added.size} member(s)", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onDismiss = {
+                    showAddMemberDialog = false
+                }
+            )
+        }
+
+        // Delete Media Popup
+        DeleteMediaDialog(
+            show = showDeleteMediaDialog,
+            onDismiss = { showDeleteMediaDialog = false },
+            onDeleteForMe = {
+                detailsViewModel.deleteSelectedMediaForMe(context, selectedMediaIds)
+                selectedMediaIds = emptySet()
+                showDeleteMediaDialog = false
             },
-            dismissButton = {
-                TextButton(onClick = { showBlockUserDialog = false }) {
-                    Text(
-                        text = "Cancel",
-                        fontSize = 15.sp,
-                        color = secondaryTextColor
-                    )
-                }
+            onDeleteForAll = {
+                detailsViewModel.deleteSelectedMediaForAll(context, selectedMediaIds)
+                selectedMediaIds = emptySet()
+                showDeleteMediaDialog = false
+            }
+        )
+
+        if (showMembersSheet) {
+            val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: "me"
+            val userMember = members.find { it.uid == currentUserId || it.isYou }
+            val userRole = userMember?.role?.lowercase() ?: (if (isAdmin) "owner" else "member")
+
+            MembersBottomSheet(
+                groupName = groupName,
+                members = members,
+                currentUserId = currentUserId,
+                currentRole = userRole,
+                onAddPeopleClick = {
+                    showMembersSheet = false
+                    showAddMemberDialog = true
+                },
+                onRoleChange = { memberId, newRole ->
+                    detailsViewModel.updateMemberRole(context, memberId, newRole)
+                },
+                onTransferOwnership = { newOwnerId ->
+                    detailsViewModel.transferGroupOwnership(context, newOwnerId)
+                },
+                onExitGroup = {
+                    showMembersSheet = false
+                    detailsViewModel.leaveGroup(context) {
+                        onBack()
+                    }
+                },
+                onDismiss = { showMembersSheet = false }
+            )
+        }
+
+        // Avatar Crop / Rotate Editor Dialog
+        AvatarCropDialog(
+            pendingAvatarUri = pendingAvatarUri,
+            avatarRotationAngle = avatarRotationAngle,
+            onRotate = { avatarRotationAngle = (avatarRotationAngle + 90f) % 360f },
+            onCancel = {
+                showAvatarCropDialog = false
+                pendingAvatarUri = null
+            },
+            onDone = { uri ->
+                showAvatarCropDialog = false
+                showFullscreenAvatarViewer = false
+                pendingAvatarUri = null
+                detailsViewModel.uploadGroupAvatarPhoto(context, uri)
+            }
+        )
+
+        // Fullscreen Group Avatar Viewer
+        FullscreenAvatarViewer(
+            show = showFullscreenAvatarViewer,
+            groupPhotoUrl = groupPhotoUrl,
+            onClose = { showFullscreenAvatarViewer = false },
+            onEdit = { avatarPickerLauncher.launch("image/*") },
+            onDelete = {
+                showFullscreenAvatarViewer = false
+                detailsViewModel.deleteGroupAvatarPhoto(context)
+            }
+        )
+
+        // Fullscreen Media Viewer Overlay
+        FullscreenMediaViewer(
+            viewerItem = selectedViewerMedia,
+            onClose = { selectedViewerMedia = null },
+            onReply = { mediaUrl ->
+                selectedViewerMedia = null
+                onReplyMedia(mediaUrl)
+            },
+            onDelete = { id ->
+                selectedMediaIds = setOf(id)
+                showDeleteMediaDialog = true
+                selectedViewerMedia = null
+            },
+            onShare = { item ->
+                shareMediaItem(context, item.url, item.mediaType)
+            },
+            onForward = { item ->
+                shareMediaItem(context, item.url, item.mediaType)
+            },
+            onOpenInChat = { mediaUrl ->
+                selectedViewerMedia = null
+                onShowInChat(mediaUrl)
             }
         )
     }
-
-    if (showClearChatDialog) {
-        val fullNameStr = if (otherUserName.isNotBlank()) otherUserName else groupName
-        val clearText = if (isOneToOne) {
-            "Messages will be removed only for you. $fullNameStr still sees them."
-        } else {
-            "Messages will be removed only for you. Other group members will still see them."
-        }
-
-        AlertDialog(
-            onDismissRequest = { showClearChatDialog = false },
-            containerColor = cardColor,
-            shape = RoundedCornerShape(24.dp),
-            title = {
-                Text(
-                    text = "Clear this chat?",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = primaryTextColor
-                )
-            },
-            text = {
-                Text(
-                    text = clearText,
-                    fontSize = 14.sp,
-                    color = secondaryTextColor
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showClearChatDialog = false
-                        detailsViewModel.clearChatLocally(context, entry.id.toString())
-                        Toast.makeText(context, "Chat cleared", Toast.LENGTH_SHORT).show()
-                    }
-                ) {
-                    Text(
-                        text = "Clear",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = errorColor
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearChatDialog = false }) {
-                    Text(
-                        text = "Cancel",
-                        fontSize = 15.sp,
-                        color = secondaryTextColor
-                    )
-                }
-            }
-        )
-    }
-
-    if (showNicknameSheet) {
-        val otherMember = members.find { !it.isYou }
-        val otherUid = otherMember?.uid ?: ""
-        val fullNameStr = if (otherUserName.isNotBlank()) otherUserName else groupName
-
-        NicknameSheet(
-            fullName = fullNameStr,
-            currentNickname = otherUserNickname,
-            onSave = { newNick ->
-                detailsViewModel.saveNickname(context, otherUid, newNick) {
-                    customToastMessage = if (newNick.isNotBlank()) "Nickname saved" else "Nickname removed"
-                }
-            },
-            onDismiss = { showNicknameSheet = false }
-        )
-    }
-
-    if (showGroupsSheet) {
-        GroupsBottomSheet(
-            ownGroupCode = groupCode,
-            connectedGroups = acceptedConnections,
-            pendingRequests = pendingRequests,
-            canUserManage = canUserManage,
-            onCodeLookup = { code ->
-                detailsViewModel.lookupGroupCode(code)
-            },
-            codeLookupResult = codeLookupResult,
-            onSendInvite = { targetId, targetType, name ->
-                detailsViewModel.sendConnectRequest(targetId, targetType) {
-                    customToastMessage = "Invite sent to $name"
-                }
-            },
-            onAcceptInvite = { connectionId, name ->
-                detailsViewModel.updateConnectionStatus(connectionId, "accepted")
-                customToastMessage = "$name is now connected"
-            },
-            onDeclineInvite = { connectionId ->
-                detailsViewModel.updateConnectionStatus(connectionId, "declined")
-                customToastMessage = "Invitation declined"
-            },
-            onRemoveConnection = { connectionId, name ->
-                detailsViewModel.updateConnectionStatus(connectionId, "removed")
-                customToastMessage = "$name removed"
-            },
-            onDismiss = { showGroupsSheet = false }
-        )
-    }
-
-    if (showTasksSheet) {
-        val currentUserName = FirebaseAuth.getInstance().currentUser?.displayName?.ifBlank { null } ?: "Me"
-        TasksBottomSheet(
-            groupId = entry.id.toString(),
-            tasks = groupTasks,
-            members = members,
-            currentRole = resolvedUserRole,
-            currentUserName = currentUserName,
-            currentUserUid = currentUserId,
-            onAssignTaskConfirmed = { title, assignees, dueDate, dueTime, note ->
-                groupTaskViewModel.assignTasks(
-                    title = title,
-                    groupId = entry.id.toString(),
-                    assignees = assignees,
-                    assignerName = currentUserName,
-                    assignerUid = currentUserId,
-                    dueDate = dueDate,
-                    dueTime = dueTime,
-                    note = note
-                )
-            },
-            onDismiss = { showTasksSheet = false }
-        )
-    }
-
-    if (showMuteSheet) {
-        MuteChoiceSheet(
-            onMuteConfirmed = { option ->
-                isMuted = true
-                customToastMessage = "Muted for $option"
-            },
-            onDismiss = { showMuteSheet = false }
-        )
-    }
-
-    if (showClearChatDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearChatDialog = false },
-            title = {
-                Text("Clear this chat?", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = primaryTextColor)
-            },
-            text = {
-                Text("Messages will be removed only for you. Others in this group still see them.", fontSize = 14.sp, color = secondaryTextColor)
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showClearChatDialog = false
-                        customToastMessage = "Chat cleared"
-                    }
-                ) {
-                    Text("Clear", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = colors.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearChatDialog = false }) {
-                    Text("Cancel", fontSize = 15.sp, fontWeight = FontWeight.Normal, color = secondaryTextColor)
-                }
-            },
-            containerColor = cardColor,
-            shape = RoundedCornerShape(20.dp)
-        )
-    }
-
-    // Add Member Dialog / Bottom Sheet
-    if (showAddMemberDialog) {
-        val connectionsViewModel: ConnectionsViewModel = viewModel()
-        val userConnections by connectionsViewModel.connections.collectAsState()
-
-        val existingMemberUids = remember(members) { members.map { it.uid }.toSet() }
-        val existingMemberNames = remember(members) { members.map { it.displayName.lowercase() }.toSet() }
-
-        val availableCandidates = remember(userConnections, existingMemberUids, existingMemberNames) {
-            userConnections
-                .filter { conn ->
-                    val uid = conn.uid.ifBlank { conn.id }
-                    !existingMemberUids.contains(uid) && !existingMemberNames.contains(conn.name.lowercase())
-                }
-                .map { conn ->
-                    AddConnectionCandidate(
-                        id = conn.uid.ifBlank { conn.id },
-                        name = conn.name,
-                        email = conn.organization.ifBlank { conn.role }
-                    )
-                }
-        }
-
-        AddPeopleSheet(
-            candidates = availableCandidates,
-            totalConnectionsCount = userConnections.size,
-            onAddSelected = { added ->
-                showAddMemberDialog = false
-                for (candidate in added) {
-                    detailsViewModel.addMemberToGroup(candidate.id)
-                }
-                if (added.isNotEmpty()) {
-                    Toast.makeText(context, "Added ${added.size} member(s)", Toast.LENGTH_SHORT).show()
-                }
-            },
-            onDismiss = {
-                showAddMemberDialog = false
-            }
-        )
-    }
-
-    // Delete Media Popup
-    DeleteMediaDialog(
-        show = showDeleteMediaDialog,
-        onDismiss = { showDeleteMediaDialog = false },
-        onDeleteForMe = {
-            detailsViewModel.deleteSelectedMediaForMe(context, selectedMediaIds)
-            selectedMediaIds = emptySet()
-            showDeleteMediaDialog = false
-        },
-        onDeleteForAll = {
-            detailsViewModel.deleteSelectedMediaForAll(context, selectedMediaIds)
-            selectedMediaIds = emptySet()
-            showDeleteMediaDialog = false
-        }
-    )
-
-    if (showMembersSheet) {
-        val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: "me"
-        val userMember = members.find { it.uid == currentUserId || it.isYou }
-        val userRole = userMember?.role?.lowercase() ?: (if (isAdmin) "owner" else "member")
-
-        MembersBottomSheet(
-            groupName = groupName,
-            members = members,
-            currentUserId = currentUserId,
-            currentRole = userRole,
-            onAddPeopleClick = {
-                showMembersSheet = false
-                showAddMemberDialog = true
-            },
-            onRoleChange = { memberId, newRole ->
-                detailsViewModel.updateMemberRole(context, memberId, newRole)
-            },
-            onTransferOwnership = { newOwnerId ->
-                detailsViewModel.transferGroupOwnership(context, newOwnerId)
-            },
-            onExitGroup = {
-                showMembersSheet = false
-                detailsViewModel.leaveGroup(context) {
-                    onBack()
-                }
-            },
-            onDismiss = { showMembersSheet = false }
-        )
-    }
-
-    // Avatar Crop / Rotate Editor Dialog
-    AvatarCropDialog(
-        pendingAvatarUri = pendingAvatarUri,
-        avatarRotationAngle = avatarRotationAngle,
-        onRotate = { avatarRotationAngle = (avatarRotationAngle + 90f) % 360f },
-        onCancel = {
-            showAvatarCropDialog = false
-            pendingAvatarUri = null
-        },
-        onDone = { uri ->
-            showAvatarCropDialog = false
-            showFullscreenAvatarViewer = false
-            pendingAvatarUri = null
-            detailsViewModel.uploadGroupAvatarPhoto(context, uri)
-        }
-    )
-
-    // Fullscreen Group Avatar Viewer
-    FullscreenAvatarViewer(
-        show = showFullscreenAvatarViewer,
-        groupPhotoUrl = groupPhotoUrl,
-        onClose = { showFullscreenAvatarViewer = false },
-        onEdit = { avatarPickerLauncher.launch("image/*") },
-        onDelete = {
-            showFullscreenAvatarViewer = false
-            detailsViewModel.deleteGroupAvatarPhoto(context)
-        }
-    )
-
-    // Fullscreen Media Viewer Overlay
-    FullscreenMediaViewer(
-        viewerItem = selectedViewerMedia,
-        onClose = { selectedViewerMedia = null },
-        onReply = { mediaUrl ->
-            selectedViewerMedia = null
-            onReplyMedia(mediaUrl)
-        },
-        onDelete = { id ->
-            selectedMediaIds = setOf(id)
-            showDeleteMediaDialog = true
-            selectedViewerMedia = null
-        },
-        onShare = { item ->
-            shareMediaItem(context, item.url, item.mediaType)
-        },
-        onForward = { item ->
-            shareMediaItem(context, item.url, item.mediaType)
-        },
-        onOpenInChat = { mediaUrl ->
-            selectedViewerMedia = null
-            onShowInChat(mediaUrl)
-        }
-    )
-}
 }
 
 // ---------------------------------------------------------------------------

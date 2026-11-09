@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Badge
@@ -18,6 +19,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -30,7 +37,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import com.fabxdi.dibadge.R
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.currentUserAvatarColor
@@ -61,6 +71,7 @@ fun HomeMenu(
 ) {
     val context = LocalContext.current
     var showSignOutConfirmation by remember { mutableStateOf(false) }
+    var showPhotoViewer by remember { mutableStateOf(false) }
 
     val versionName = remember(context) {
         try {
@@ -100,6 +111,62 @@ fun HomeMenu(
     val tabInactiveColor = diBadgeColors.tabInactive
     val errorColor = colors.error
 
+    if (showPhotoViewer && photoUrl.isNotBlank()) {
+        Dialog(
+            onDismissRequest = { showPhotoViewer = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            var scale by remember { mutableStateOf(1f) }
+            var offset by remember { mutableStateOf(Offset.Zero) }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+            ) {
+                AsyncImage(
+                    model = photoUrl,
+                    contentDescription = "Enlarged profile photo",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onTap = { showPhotoViewer = false },
+                                onDoubleTap = {
+                                    if (scale > 1f) { scale = 1f; offset = Offset.Zero } else scale = 2.5f
+                                }
+                            )
+                        }
+                        .pointerInput(Unit) {
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                scale = (scale * zoom).coerceIn(1f, 5f)
+                                offset = if (scale > 1f) offset + pan * scale else Offset.Zero
+                            }
+                        }
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            translationX = offset.x,
+                            translationY = offset.y
+                        )
+                )
+                IconButton(
+                    onClick = { showPhotoViewer = false },
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .padding(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close photo",
+                        tint = Color.White
+                    )
+                }
+            }
+        }
+    }
+
     ModalDrawerSheet(
         modifier = Modifier
             .fillMaxHeight()
@@ -137,16 +204,37 @@ fun HomeMenu(
                     ) {
                         // Avatar Circle 60dp
                         Surface(
-                            modifier = Modifier.size(60.dp),
+                            modifier = Modifier
+                                .size(60.dp)
+                                .clip(CircleShape)
+                                .then(
+                                    if (photoUrl.isNotBlank())
+                                        Modifier.clickable(onClickLabel = "View profile photo") { showPhotoViewer = true }
+                                    else Modifier
+                                ),
                             shape = CircleShape,
                             color = avatarBgColor
                         ) {
                             if (photoUrl.isNotBlank()) {
-                                AsyncImage(
+                                SubcomposeAsyncImage(
                                     model = photoUrl,
                                     contentDescription = "Profile photo",
                                     contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
+                                    modifier = Modifier.fillMaxSize(),
+                                    error = {
+                                        // the picture could not load: show the initial instead of an empty circle
+                                        Box(
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = avatarInitial,
+                                                fontSize = 26.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
                                 )
                             } else {
                                 Box(

@@ -66,6 +66,8 @@ fun NewPollScreen(
     val validOptionCount = optionsList.count { it.text.trim().isNotBlank() }
     val canSend = questionText.trim().isNotBlank() && validOptionCount >= 2
 
+    androidx.activity.compose.BackHandler(onBack = onClose)
+
     Surface(modifier = Modifier.fillMaxSize(), color = pageBg) {
         Column(
             modifier = Modifier
@@ -128,7 +130,7 @@ fun NewPollScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 // ---- Question (no length limit) ----
-                item { SectionLabel("QUESTION", teal) }
+                item { SectionLabel("QUESTION", textSub) }
                 item {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
@@ -159,7 +161,7 @@ fun NewPollScreen(
                 }
 
                 // ---- Options ----
-                item { SectionLabel("OPTIONS", teal) }
+                item { SectionLabel("OPTIONS", textSub) }
                 itemsIndexed(optionsList, key = { _, o -> o.id }) { index, option ->
                     Row(
                         modifier = Modifier
@@ -169,19 +171,9 @@ fun NewPollScreen(
                             .background(card)
                             .border(1.dp, line, RoundedCornerShape(14.dp))
                             .heightIn(min = 52.dp)
-                            .padding(horizontal = 12.dp),
+                            .padding(start = 16.dp, end = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(24.dp)
-                                .clip(CircleShape)
-                                .background(teal.copy(alpha = 0.18f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("${index + 1}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = teal)
-                        }
-                        Spacer(Modifier.width(10.dp))
                         Box(
                             modifier = Modifier
                                 .weight(1f)
@@ -224,14 +216,11 @@ fun NewPollScreen(
                     item {
                         Row(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .border(1.5.dp, teal, RoundedCornerShape(14.dp))
+                                .clip(RoundedCornerShape(10.dp))
                                 .clickable {
                                     optionsList = optionsList + PollOptionInput(java.util.UUID.randomUUID().toString(), "")
                                 }
-                                .padding(horizontal = 14.dp),
+                                .padding(horizontal = 4.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, tint = teal, modifier = Modifier.size(20.dp))
@@ -242,7 +231,7 @@ fun NewPollScreen(
                 }
 
                 // ---- Settings ----
-                item { SectionLabel("SETTINGS", teal) }
+                item { SectionLabel("SETTINGS", textSub) }
                 item {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
@@ -309,10 +298,10 @@ private fun SettingRow(
             modifier = Modifier
                 .size(36.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(teal.copy(alpha = 0.16f)),
+                .background(textSub.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = null, tint = teal, modifier = Modifier.size(20.dp))
+            Icon(icon, contentDescription = null, tint = textSub, modifier = Modifier.size(20.dp))
         }
         Spacer(Modifier.width(12.dp))
         Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = textMain, modifier = Modifier.weight(1f))

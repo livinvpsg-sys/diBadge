@@ -2,6 +2,7 @@ package com.fabxdi.dibadge.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fabxdi.dibadge.util.fixDownloadUrl
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
@@ -91,6 +92,7 @@ class ConnectionsViewModel : ViewModel() {
 
         connectionsListener?.remove(); connectionsListener = null
         blockedListener?.remove(); blockedListener = null
+        photoCache.clear()
         _connections.value = emptyList()
         _receivedRequests.value = emptyList()
         _sentRequests.value = emptyList()
@@ -255,10 +257,42 @@ class ConnectionsViewModel : ViewModel() {
                     }
                 }
 
-                _connections.value = connList.sortedBy { it.name.lowercase() }
-                _receivedRequests.value = recList.sortedByDescending { it.timestamp }
-                _sentRequests.value = sentList.sortedByDescending { it.timestamp }
+                _connections.value = connList.sortedBy { it.name.lowercase() }.withKnownPhotos()
+                _receivedRequests.value = recList.sortedByDescending { it.timestamp }.withKnownPhotos()
+                _sentRequests.value = sentList.sortedByDescending { it.timestamp }.withKnownPhotos()
+
+                refreshPhotos((connList + recList + sentList).map { it.uid }.distinct())
             }
+    }
+
+    // Latest profile photo of each person, read from their own profile (the copy saved
+    // inside a connection entry goes stale when they add or change a photo later).
+    private val photoCache = HashMap<String, String>()
+
+    private fun List<ConnectionItem>.withKnownPhotos() =
+        map { it.copy(photoUrl = photoCache[it.uid] ?: fixDownloadUrl(it.photoUrl)) }
+
+    private fun refreshPhotos(uids: List<String>) {
+        viewModelScope.launch {
+            var changed = false
+            for (uid in uids) {
+                try {
+                    val doc = firestore.collection("users").document(uid).get().await()
+                    val url = fixDownloadUrl(doc.getString("photoUrl") ?: doc.getString("photoURL") ?: "")
+                    if (photoCache[uid] != url) {
+                        photoCache[uid] = url
+                        changed = true
+                    }
+                } catch (e: Exception) {
+                    // keep whatever photo we already have
+                }
+            }
+            if (changed) {
+                _connections.value = _connections.value.withKnownPhotos()
+                _receivedRequests.value = _receivedRequests.value.withKnownPhotos()
+                _sentRequests.value = _sentRequests.value.withKnownPhotos()
+            }
+        }
     }
 
     // ---------------------------------------------------------------- Search
@@ -279,7 +313,7 @@ class ConnectionsViewModel : ViewModel() {
         organization = getString("organization") ?: getString("company") ?: "",
         role = getString("role") ?: getString("jobTitle") ?: "",
         bio = getString("bio") ?: "",
-        photoUrl = getString("photoUrl") ?: getString("photoURL") ?: "",
+        photoUrl = fixDownloadUrl(getString("photoUrl") ?: getString("photoURL") ?: ""),
         status = "none",
         country = getString("country") ?: ""
     )

@@ -34,6 +34,7 @@ import com.fabxdi.dibadge.ui.settings.SettingsDialog
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.AlarmSoundManager
 import com.fabxdi.dibadge.util.LiveProfilePhoto
+import com.fabxdi.dibadge.util.fixDownloadUrl
 import com.fabxdi.dibadge.viewmodel.AuthViewModel
 import com.fabxdi.dibadge.viewmodel.LeaveOvertimeViewModel
 import com.fabxdi.dibadge.viewmodel.ReminderViewModel
@@ -130,7 +131,7 @@ class MainActivity : ComponentActivity() {
                                         userFirstName = snapshot.getString("firstName") ?: ""
                                         userMiddleName = snapshot.getString("middleName") ?: ""
                                         userLastName = snapshot.getString("lastName") ?: ""
-                                        userPhotoUrl = snapshot.getString("photoUrl") ?: ""
+                                        userPhotoUrl = fixDownloadUrl(snapshot.getString("photoUrl") ?: "")
                                     }
                                 }
                         } else null

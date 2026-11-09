@@ -10,3 +10,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 object LiveProfilePhoto {
     val url = MutableStateFlow<String?>(null)
 }
+
+/**
+ * Firebase Storage links already contain "?alt=media&token=...". An older version added "?v=123"
+ * on the end, which breaks the token so the picture never loads. This removes that bad ending.
+ */
+fun fixDownloadUrl(url: String): String {
+    if (!url.startsWith("http") || !url.contains("alt=media")) return url
+    return url.replace(Regex("\\?v=\\d+$"), "")
+}

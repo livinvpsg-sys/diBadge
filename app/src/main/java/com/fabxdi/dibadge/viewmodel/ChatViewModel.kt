@@ -2,6 +2,7 @@ package com.fabxdi.dibadge.viewmodel
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -258,7 +259,21 @@ fun ChatMessageEntity.toDomain(): ChatMessage {
         deletedByRole = this.deletedByRole,
         isHiddenForMe = this.isHiddenForMe,
         sendStatus = this.sendStatus
-    ).withExtras(this.libraryRevision)
+    ).withExtras(this.libraryRevision).asVoiceNoteIfRecording()
+}
+
+/**
+ * A message that holds one recording made with the mic button (VOICE_...m4a) is always shown as a
+ * voice message bubble (play button and waveform), even if the message was saved without the
+ * voice flags.
+ */
+private fun ChatMessage.asVoiceNoteIfRecording(): ChatMessage {
+    if (isVoiceNote || isDeleted || attachments.size != 1) return this
+    val name = attachments[0].substringBefore("?").substringAfterLast('/')
+    val decoded = try { java.net.URLDecoder.decode(name, "UTF-8") } catch (e: Exception) { name }
+    return if (decoded.startsWith("VOICE_") && decoded.endsWith(".m4a", ignoreCase = true)) {
+        copy(msgType = "audio", isVoiceNote = true)
+    } else this
 }
 
 class ChatViewModel : ViewModel() {
@@ -528,6 +543,13 @@ class ChatViewModel : ViewModel() {
                         file.thumbUrl?.let { uploadedThumbs[file.url] = it }
                         val knownDuration = durationsMap[uriString] ?: file.durationMs.takeIf { it > 0L }
                         knownDuration?.let { uploadedDurationsMap[file.url] = it }
+                        // Remember the size of attached audio files so the bubble can show it
+                        val isRecording = FilePickerUtils.getFileName(context, uri).startsWith("VOICE_")
+                        val mime = try { context.contentResolver.getType(uri) } catch (e: Exception) { null }
+                        if (!isRecording && mime?.startsWith("audio/") == true) {
+                            val bytes = FilePickerUtils.getFileSizeBytes(context, uri)
+                            if (bytes > 0L) uploadedDurationsMap["sz_" + file.url] = bytes
+                        }
                     }
                 }
 
@@ -672,6 +694,24 @@ class ChatViewModel : ViewModel() {
 
                 // 2. Update the cloud copy for everyone else
                 try {
+                    val msgRef = db.collection("personalGroups").document(groupId)
+                        .collection("messages").document(msgId)
+
+                    // Remember which files (and preview pictures) belong to this message BEFORE
+                    // the cloud copy is cleared, because the preview links only exist there.
+                    val filesToRemove = mutableSetOf<String>()
+                    try {
+                        val cloudDoc = msgRef.get().await()
+                        (cloudDoc.get("attachments") as? List<*>)?.forEach { it?.toString()?.let(filesToRemove::add) }
+                        (cloudDoc.get("attachmentThumbs") as? List<*>)?.forEach { it?.toString()?.let(filesToRemove::add) }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                    original?.attachmentsJson
+                        ?.takeIf { it.isNotBlank() }
+                        ?.split("|||")
+                        ?.forEach { filesToRemove.add(it) }
+
                     val updates = mapOf<String, Any?>(
                         "deleted" to true,
                         "deletedBy" to currentUid,
@@ -679,22 +719,41 @@ class ChatViewModel : ViewModel() {
                         "deletedAt" to FieldValue.serverTimestamp(),
                         "text" to "",
                         "attachments" to emptyList<String>(),
+                        "attachmentThumbs" to emptyList<String>(),
+                        "attachmentDurations" to emptyMap<String, Long>(),
                         "replyingToText" to null,
                         "replyingToAttachmentUri" to null
                     )
 
-                    db.collection("personalGroups").document(groupId)
-                        .collection("messages").document(msgId)
-                        .update(updates)
-                        .await()
+                    msgRef.update(updates).await()
 
                     // The message is gone for everyone: free the storage used by its files.
                     // Only files this account uploaded can be removed; others are skipped quietly.
-                    original?.attachmentsJson
-                        ?.takeIf { it.isNotBlank() }
-                        ?.split("|||")
-                        ?.filter { MediaCloud.isOurs(it) }
-                        ?.forEach { MediaCloud.delete(it) }
+                    // Only files that were stored for THIS message are removed. A forwarded message
+                    // has its own copy of the files, so the original and the copies never affect
+                    // each other (older forwards that still share the original's link are skipped).
+                    // A problem here must not undo the delete, so it has its own try.
+                    try {
+                        val mine = filesToRemove.filter { it.isNotBlank() && MediaCloud.belongsToMessage(it, msgId) }
+                        Log.w("MediaCloud", "Deleting $msgId: ${filesToRemove.size} links found, ${mine.size} belong to it")
+                        mine.forEach { MediaCloud.delete(it) }
+
+                        // Also remove the entries in the group's Media and Files lists
+                        for (u in filesToRemove.filter { it.isNotBlank() }) {
+                            for (col in listOf("media", "files")) {
+                                try {
+                                    val col2 = db.collection("personalGroups").document(groupId).collection(col)
+                                    for (field in listOf("url", "downloadUrl")) {
+                                        col2.whereEqualTo(field, u).get().await().documents.forEach { it.reference.delete() }
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                 } catch (e: Exception) {
                     e.printStackTrace()
                     failed = true
@@ -753,24 +812,50 @@ class ChatViewModel : ViewModel() {
     fun editMessage(context: Context, groupId: String, messageId: String, newText: String) {
         if (groupId.isBlank() || messageId.isBlank() || newText.isBlank()) return
         val dao = AppDatabase.getDatabase(context).reminderDao()
-
-        viewModelScope.launch(Dispatchers.IO) {
-            val msg = _messages.value.find { it.id == messageId }
-            if (msg != null) {
-                val updated = msg.copy(text = newText.trim(), isEdited = true)
-                dao.insertChatMessage(updated.toEntity(groupId))
-            }
-        }
+        val trimmed = newText.trim()
 
         viewModelScope.launch {
+            // Only your own, not-deleted message can be edited, and only when the text really changed
+            val msg = _messages.value.find { it.id == messageId } ?: return@launch
+            if (!msg.isSentByMe || msg.isDeleted || msg.text == trimmed) return@launch
+
+            // 1. Show the new text on this phone straight away
+            withContext(Dispatchers.IO) {
+                dao.getChatMessageById(messageId)?.let { entity ->
+                    dao.insertChatMessage(entity.copy(text = trimmed, isEdited = true))
+                }
+            }
+
+            // 2. Save it in the cloud so everyone else sees it
             try {
                 db.collection("personalGroups")
                     .document(groupId)
                     .collection("messages")
                     .document(messageId)
-                    .update("text", newText.trim(), "isEdited", true)
+                    .update("text", trimmed, "isEdited", true, "editedAt", System.currentTimeMillis())
+                    .await()
+
+                // Keep the chat list preview in step when this was the latest message
+                try {
+                    val group = db.collection("personalGroups").document(groupId).get().await()
+                    val lastTs = group.getLong("lastMessageTimestamp") ?: 0L
+                    val msgTs = msg.timestamp.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                    if (lastTs == msgTs) {
+                        db.collection("personalGroups").document(groupId)
+                            .set(mapOf("lastMessage" to trimmed), SetOptions.merge()).await()
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
+                // Put the old text back so this phone matches the cloud
+                withContext(Dispatchers.IO) {
+                    dao.getChatMessageById(messageId)?.let { entity ->
+                        dao.insertChatMessage(entity.copy(text = msg.text, isEdited = msg.isEdited))
+                    }
+                }
+                Toast.makeText(context, "Could not edit the message. Please try again.", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -1025,35 +1110,89 @@ class ChatViewModel : ViewModel() {
         val currentName = auth.currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Me"
         val messageId = UUID.randomUUID().toString()
 
-        val audioUri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            audioFile
-        ).toString()
+        val dao = AppDatabase.getDatabase(context).reminderDao()
+        val localUri = Uri.fromFile(audioFile).toString()
+        val durationSec = durationMs / 1000L
+        val ts = System.currentTimeMillis()
 
-        val docData = mutableMapOf<String, Any>(
-            "id" to messageId,
-            "senderUid" to currentUid,
-            "senderName" to currentName,
-            "timestamp" to Timestamp.now(),
-            "text" to "",
-            "msgType" to "audio",
-            "isVoiceNote" to true,
-            "waveformArray" to waveform,
-            "attachments" to listOf(audioUri),
-            "attachmentDurations" to mapOf(audioUri to (durationMs / 1000L))
+        // Show the voice message in the chat right away (with a spinning ring), then upload it
+        val optimisticMsg = ChatMessage(
+            id = messageId,
+            text = "",
+            senderName = currentName,
+            isSentByMe = true,
+            attachments = listOf(localUri),
+            attachmentDurations = mapOf(localUri to durationSec),
+            timestamp = LocalDateTime.ofInstant(Instant.ofEpochMilli(ts), ZoneId.systemDefault()),
+            sendStatus = "SENDING"
         )
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.insertChatMessage(optimisticMsg.toEntity(groupId))
+        }
 
+        // The recording is uploaded so everyone in the chat gets a normal link to play
+        // (a file path on this phone would only work here).
         viewModelScope.launch {
             try {
+                val audioUrl = MediaCloud.upload(
+                    context,
+                    Uri.fromFile(audioFile),
+                    groupId,
+                    messageId,
+                    audioFile.name,
+                    "audio/mp4"
+                )
+
+                val docData = mutableMapOf<String, Any>(
+                    "id" to messageId,
+                    "senderUid" to currentUid,
+                    "senderName" to currentName,
+                    "timestamp" to Timestamp.now(),
+                    "text" to "",
+                    "msgType" to "audio",
+                    "isVoiceNote" to true,
+                    "waveformArray" to waveform,
+                    "attachments" to listOf(audioUrl),
+                    "attachmentDurations" to mapOf(audioUrl to (durationMs / 1000L))
+                )
+
                 db.collection("personalGroups")
                     .document(groupId)
                     .collection("messages")
                     .document(messageId)
                     .set(docData)
                     .await()
+
+                try {
+                    db.collection("personalGroups").document(groupId)
+                        .set(
+                            mapOf(
+                                "lastMessage" to "Voice message",
+                                "lastMessageTimestamp" to System.currentTimeMillis(),
+                                "updatedAt" to System.currentTimeMillis()
+                            ),
+                            SetOptions.merge()
+                        )
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+
+                withContext(Dispatchers.IO) {
+                    dao.insertChatMessage(
+                        optimisticMsg.copy(
+                            attachments = listOf(audioUrl),
+                            attachmentDurations = mapOf(audioUrl to durationSec),
+                            sendStatus = "SENT"
+                        ).toEntity(groupId)
+                    )
+                    audioFile.delete()
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
+                withContext(Dispatchers.IO) {
+                    dao.insertChatMessage(optimisticMsg.copy(sendStatus = "FAILED").toEntity(groupId))
+                }
+                Toast.makeText(context, "Could not send the voice message. Tap retry to send again.", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -1074,13 +1213,40 @@ class ChatViewModel : ViewModel() {
                     val newMsgId = UUID.randomUUID().toString()
                     val ts = System.currentTimeMillis()
 
+                    // Each chat gets its own copy of the files, so deleting the message in one
+                    // chat never removes the file from another chat.
+                    val copiedUrls = mutableListOf<String>()
+                    val copiedDurations = mutableMapOf<String, Long>()
+                    var copyFailed = false
+                    for (url in msg.attachments) {
+                        if (MediaCloud.isOurs(url)) {
+                            try {
+                                val newUrl = MediaCloud.copy(url, targetGroupId, newMsgId)
+                                copiedUrls.add(newUrl)
+                                msg.attachmentDurations[url]?.let { copiedDurations[newUrl] = it }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                                copyFailed = true
+                                break
+                            }
+                        } else {
+                            // Older links (Firebase) or local files are passed on as they are
+                            copiedUrls.add(url)
+                            msg.attachmentDurations[url]?.let { copiedDurations[url] = it }
+                        }
+                    }
+                    if (copyFailed) {
+                        Toast.makeText(context, "Could not forward a file. Please try again.", Toast.LENGTH_LONG).show()
+                        continue
+                    }
+
                     val forwardedMsg = ChatMessage(
                         id = newMsgId,
                         text = stripGroupMention(msg.text),
                         senderName = currentName,
                         isSentByMe = true,
-                        attachments = msg.attachments,
-                        attachmentDurations = msg.attachmentDurations,
+                        attachments = copiedUrls,
+                        attachmentDurations = copiedDurations,
                         timestamp = LocalDateTime.ofInstant(Instant.ofEpochMilli(ts), ZoneId.systemDefault()),
                         msgType = msg.msgType,
                         isVoiceNote = msg.isVoiceNote,
@@ -1103,8 +1269,8 @@ class ChatViewModel : ViewModel() {
                             "senderName" to currentName,
                             "senderUid" to currentUid,
                             "timestamp" to Timestamp.now(),
-                            "attachments" to msg.attachments,
-                            "attachmentDurations" to msg.attachmentDurations,
+                            "attachments" to copiedUrls,
+                            "attachmentDurations" to copiedDurations,
                             "msgType" to msg.msgType,
                             "isVoiceNote" to msg.isVoiceNote,
                             "waveformArray" to msg.waveformArray,

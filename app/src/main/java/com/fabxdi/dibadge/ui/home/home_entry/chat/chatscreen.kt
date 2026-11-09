@@ -34,6 +34,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.layout.*
@@ -737,6 +741,16 @@ fun ChatScreen(
     var voiceDragOffsetY by remember { mutableFloatStateOf(0f) }
     var voiceAudioFile by remember { mutableStateOf<File?>(null) }
     var isPreviewPlaying by remember { mutableStateOf(false) }
+    var previewStarted by remember { mutableStateOf(false) }
+    var previewProgress by remember { mutableFloatStateOf(0f) }
+    var previewPosMs by remember { mutableIntStateOf(0) }
+    LaunchedEffect(voiceRecordState) {
+        if (voiceRecordState != VoiceRecordState.PAUSED) {
+            previewStarted = false
+            previewProgress = 0f
+            previewPosMs = 0
+        }
+    }
 
     var recordAudioPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -839,6 +853,24 @@ fun ChatScreen(
         return
     }
 
+    if (showNewPollScreen) {
+        NewPollScreen(
+            isDark = isDark,
+            onCreatePoll = { question, options, allowMultiple, showVoters ->
+                chatViewModel.sendPollMessage(
+                    context = context,
+                    groupId = currentEntry.id.toString(),
+                    question = question,
+                    options = options,
+                    allowMultiple = allowMultiple,
+                    showVoters = showVoters
+                )
+            },
+            onClose = { showNewPollScreen = false }
+        )
+        return
+    }
+
     val groupedMessages = remember(messages) {
         messages.groupBy { it.timestamp.toLocalDate() }.toSortedMap()
     }
@@ -860,6 +892,17 @@ fun ChatScreen(
     var recordingTime by remember { mutableStateOf(0L) }
     val recorder = remember { AudioRecorder(context) }
     val player = remember { AudioPlayer(context) }
+    LaunchedEffect(isPreviewPlaying) {
+        while (isPreviewPlaying) {
+            val total = player.getDuration()
+            if (total > 0) {
+                val cur = player.getCurrentPosition()
+                previewPosMs = cur
+                previewProgress = (cur.toFloat() / total).coerceIn(0f, 1f)
+            }
+            delay(80)
+        }
+    }
     var audioFile by remember { mutableStateOf<File?>(null) }
 
     DisposableEffect(Unit) {
@@ -881,7 +924,7 @@ fun ChatScreen(
                 voiceAmplitudes = amps.takeLast(25)
 
                 if (voiceRecordDurationMs >= 15 * 60 * 1000L) {
-                    recorder.pause()
+                    recorder.stop()
                     voiceRecordState = VoiceRecordState.PAUSED
                     break
                 }
@@ -1057,9 +1100,13 @@ fun ChatScreen(
 
     val listState = rememberLazyListState()
 
+    // Always end at the real last item. The list also holds date headers, so
+    // messages.size - 1 is not the last item and the newest bubble stayed hidden.
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+            delay(60)
+            val last = listState.layoutInfo.totalItemsCount - 1
+            if (last >= 0) listState.animateScrollToItem(last)
         }
     }
 
@@ -1967,7 +2014,8 @@ fun ChatScreen(
 
                                                 IconButton(
                                                     onClick = {
-                                                        recorder.pause()
+                                                        // Finalize the file now so the preview can play it (a paused file is not playable)
+                                                        recorder.stop()
                                                         voiceRecordState = VoiceRecordState.PAUSED
                                                     },
                                                     modifier = Modifier.size(40.dp)
@@ -2014,53 +2062,66 @@ fun ChatScreen(
                                                             if (isPreviewPlaying) {
                                                                 player.pause()
                                                                 isPreviewPlaying = false
+                                                            } else if (previewStarted) {
+                                                                player.resume()
+                                                                isPreviewPlaying = true
                                                             } else {
                                                                 voiceAudioFile?.let { file ->
                                                                     player.playFile(Uri.fromFile(file)) {
                                                                         isPreviewPlaying = false
+                                                                        previewStarted = false
+                                                                        previewProgress = 0f
+                                                                        previewPosMs = 0
                                                                     }
+                                                                    previewStarted = true
                                                                     isPreviewPlaying = true
                                                                 }
                                                             }
                                                         },
                                                     shape = CircleShape,
-                                                    color = primaryTextColor
+                                                    color = Color.Transparent
                                                 ) {
                                                     Box(contentAlignment = Alignment.Center) {
                                                         Icon(
                                                             imageVector = if (isPreviewPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                                             contentDescription = "Preview recording",
-                                                            tint = pageBgColor,
-                                                            modifier = Modifier.size(18.dp)
+                                                            tint = tealAccent,
+                                                            modifier = Modifier.size(30.dp)
                                                         )
                                                     }
                                                 }
 
-                                                val audioColor = if (isDark) Color(0xFFE87DA3) else Color(0xFFB0446A)
-                                                Row(
+                                                androidx.compose.foundation.Canvas(
                                                     modifier = Modifier
-                                                        .width(100.dp)
-                                                        .height(22.dp),
-                                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
+                                                        .weight(1f)
+                                                        .padding(horizontal = 8.dp)
+                                                        .height(22.dp)
                                                 ) {
-                                                    val bars = if (voiceAmplitudes.isNotEmpty()) voiceAmplitudes.takeLast(16) else List(16) { 6 }
-                                                    bars.forEachIndexed { idx, amp ->
-                                                        val heightFrac = (amp / 32767f).coerceIn(0.15f, 1f)
-                                                        val isPlayed = isPreviewPlaying && idx < 8
-                                                        Surface(
-                                                            modifier = Modifier
-                                                                .weight(1f)
-                                                                .fillMaxHeight(heightFrac),
-                                                            shape = RoundedCornerShape(1.dp),
-                                                            color = if (isPlayed) audioColor else secondaryTextColor.copy(alpha = 0.35f)
-                                                        ) {}
+                                                    val pad = 6.dp.toPx()
+                                                    val cy = size.height / 2f
+                                                    val knobX = pad + (size.width - 2 * pad) * previewProgress
+                                                    drawLine(
+                                                        color = secondaryTextColor.copy(alpha = 0.35f),
+                                                        start = androidx.compose.ui.geometry.Offset(pad, cy),
+                                                        end = androidx.compose.ui.geometry.Offset(size.width - pad, cy),
+                                                        strokeWidth = 4.dp.toPx(),
+                                                        cap = androidx.compose.ui.graphics.StrokeCap.Round
+                                                    )
+                                                    if (previewProgress > 0f) {
+                                                        drawLine(
+                                                            color = tealAccent,
+                                                            start = androidx.compose.ui.geometry.Offset(pad, cy),
+                                                            end = androidx.compose.ui.geometry.Offset(knobX, cy),
+                                                            strokeWidth = 4.dp.toPx(),
+                                                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                                                        )
                                                     }
+                                                    drawCircle(tealAccent, 6.dp.toPx(), androidx.compose.ui.geometry.Offset(knobX, cy))
                                                 }
 
-                                                val durationSec = voiceRecordDurationMs / 1000L
+                                                val shownSec = if (previewStarted) previewPosMs / 1000L else voiceRecordDurationMs / 1000L
                                                 Text(
-                                                    text = String.format(Locale.getDefault(), "%d:%02d", durationSec / 60, durationSec % 60),
+                                                    text = String.format(Locale.getDefault(), "%d:%02d", shownSec / 60, shownSec % 60),
                                                     fontSize = 15.sp,
                                                     fontWeight = FontWeight.Medium,
                                                     color = primaryTextColor
@@ -2541,63 +2602,31 @@ fun ChatScreen(
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()
-                                                .pointerInput(Unit) {
-                                                    detectDragGestures(
-                                                        onDragStart = {
-                                                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                                                                player.stop()
-                                                                val audioFile = File(context.cacheDir, "VOICE_${System.currentTimeMillis()}.m4a")
-                                                                voiceAudioFile = audioFile
-                                                                recorder.start(audioFile)
-                                                                voiceRecordState = VoiceRecordState.HOLD
-                                                                voiceDragOffsetX = 0f
-                                                                voiceDragOffsetY = 0f
-                                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                            } else {
-                                                                recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                                            }
-                                                        },
-                                                        onDrag = { _, dragAmount ->
-                                                            voiceDragOffsetX += dragAmount.x
-                                                            voiceDragOffsetY += dragAmount.y
-
-                                                            if (voiceDragOffsetX < -120f) {
-                                                                recorder.stop()
-                                                                voiceAudioFile?.delete()
-                                                                voiceRecordState = VoiceRecordState.NONE
-                                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                            } else if (voiceDragOffsetY < -100f) {
-                                                                voiceRecordState = VoiceRecordState.LOCKED
-                                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                            }
-                                                        },
-                                                        onDragEnd = {
-                                                            if (voiceRecordState == VoiceRecordState.HOLD) {
-                                                                if (voiceDragOffsetX < -120f) {
-                                                                    recorder.stop()
-                                                                    voiceAudioFile?.delete()
-                                                                    voiceRecordState = VoiceRecordState.NONE
-                                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                                } else if (voiceAudioFile != null && voiceRecordDurationMs >= 1000L) {
-                                                                    recorder.stop()
-                                                                    val normWaveform = normalizeWaveformTo64(voiceAmplitudes)
-                                                                    chatViewModel.sendVoiceNoteMessage(
-                                                                        context = context,
-                                                                        groupId = currentEntry.id.toString(),
-                                                                        audioFile = voiceAudioFile!!,
-                                                                        durationMs = voiceRecordDurationMs,
-                                                                        waveform = normWaveform
-                                                                    )
-                                                                    voiceRecordState = VoiceRecordState.NONE
-                                                                } else {
-                                                                    recorder.stop()
-                                                                    voiceAudioFile?.delete()
-                                                                    Toast.makeText(context, "Hold to record, release to send", Toast.LENGTH_SHORT).show()
-                                                                    voiceRecordState = VoiceRecordState.NONE
-                                                                }
-                                                            }
+                                                .clip(CircleShape)
+                                                .clickable {
+                                                    // Tap to start. The recording opens with pause, delete and send buttons.
+                                                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                                                        recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                                    } else {
+                                                        player.stop()
+                                                        val audioFile = File(context.cacheDir, "VOICE_${System.currentTimeMillis()}.m4a")
+                                                        val started = try {
+                                                            recorder.start(audioFile)
+                                                        } catch (e: Exception) {
+                                                            e.printStackTrace()
+                                                            false
                                                         }
-                                                    )
+                                                        if (started) {
+                                                            voiceAudioFile = audioFile
+                                                            voiceDragOffsetX = 0f
+                                                            voiceDragOffsetY = 0f
+                                                            voiceRecordState = VoiceRecordState.LOCKED
+                                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                        } else {
+                                                            audioFile.delete()
+                                                            Toast.makeText(context, "Could not start recording", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
                                                 },
                                             contentAlignment = Alignment.Center
                                         ) {
@@ -2723,11 +2752,15 @@ fun ChatScreen(
                                             selectedMessages = if (selectedMessages.contains(msgToRender.id)) selectedMessages - msgToRender.id else selectedMessages + msgToRender.id
                                         }
                                     },
-                                    onReplyClick = { originalId, specificUri ->
-                                        val originalMessage = messages.find { it.id == originalId }
-                                        if (originalMessage != null) {
-                                            replyingTo = originalMessage
-                                            replyingToAttachmentUriState = specificUri
+                                    onReplyClick = { originalId, _ ->
+                                        // Tapping the quoted message jumps to the original and highlights it
+                                        val lazyIdx = messageToLazyIndex[originalId]
+                                        if (lazyIdx != null) {
+                                            val headerOffset = if (messages.isNotEmpty() && groupCreatedDateText != null) 1 else 0
+                                            scope.launch {
+                                                listState.animateScrollToItem(lazyIdx + headerOffset)
+                                                highlightedMessageId = originalId
+                                            }
                                         }
                                     },
                                     isHighlighted = highlightedMessageId == msgToRender.id,
@@ -3304,23 +3337,6 @@ fun ChatScreen(
                         )
                     },
                     onDismiss = { showShareLocationSheet = false }
-                )
-            }
-
-            if (showNewPollScreen) {
-                NewPollScreen(
-                    isDark = isDark,
-                    onCreatePoll = { question, options, allowMultiple, showVoters ->
-                        chatViewModel.sendPollMessage(
-                            context = context,
-                            groupId = currentEntry.id.toString(),
-                            question = question,
-                            options = options,
-                            allowMultiple = allowMultiple,
-                            showVoters = showVoters
-                        )
-                    },
-                    onClose = { showNewPollScreen = false }
                 )
             }
 

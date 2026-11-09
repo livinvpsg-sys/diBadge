@@ -41,6 +41,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import com.fabxdi.dibadge.util.CountryData
 import com.fabxdi.dibadge.util.avatarColorFor
 import com.fabxdi.dibadge.util.currentUserAvatarColor
@@ -73,11 +74,27 @@ fun ProfileAvatarSection(
                 modifier = Modifier.size(88.dp),
                 shape = CircleShape
             ) {
-                AsyncImage(
+                SubcomposeAsyncImage(
                     model = profileData.photoUrl,
                     contentDescription = "Profile photo, double tap to change",
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    error = {
+                        // the picture could not load: show the initial instead of an empty circle
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(currentUserAvatarColor()),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = profileData.firstName.trim().take(1).ifBlank { "U" }.uppercase(),
+                                fontSize = 34.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
                 )
             }
         } else {

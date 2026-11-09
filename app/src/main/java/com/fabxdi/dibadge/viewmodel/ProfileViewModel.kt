@@ -11,6 +11,7 @@ import android.util.Base64
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fabxdi.dibadge.util.LiveProfilePhoto
+import com.fabxdi.dibadge.util.fixDownloadUrl
 import com.fabxdi.dibadge.util.UsernameFormatResult
 import com.fabxdi.dibadge.util.cleanAndFormatUsernameInput
 import com.fabxdi.dibadge.util.fullName
@@ -208,8 +209,8 @@ class ProfileViewModel : ViewModel() {
                     val countryVal = doc.getString("country") ?: ""
                     val bd = doc.getString("birthday") ?: ""
                     val bioText = doc.getString("bio") ?: ""
-                    val photo = doc.getString("photoUrl") ?: ""
-                    val sig = doc.getString("signatureUrl") ?: ""
+                    val photo = fixDownloadUrl(doc.getString("photoUrl") ?: "")
+                    val sig = fixDownloadUrl(doc.getString("signatureUrl") ?: "")
 
                     val loaded = UserProfileData(
                         badgeNumber = badgeNo,
@@ -658,7 +659,7 @@ class ProfileViewModel : ViewModel() {
                     val storageRef = storage.reference.child("users/${user.uid}/profile_photo.jpg")
                     storageRef.putBytes(data).await()
                     val rawUrl = storageRef.downloadUrl.await().toString()
-                    val cloudUrl = "$rawUrl?v=${System.currentTimeMillis()}"
+                    val cloudUrl = "$rawUrl&v=${System.currentTimeMillis()}"
 
                     firestore.collection("users")
                         .document(user.uid)
@@ -718,7 +719,7 @@ class ProfileViewModel : ViewModel() {
             val storageRef = storage.reference.child("users/$userId/signature.png")
             storageRef.putBytes(decodedBytes).await()
             val rawUrl = storageRef.downloadUrl.await().toString()
-            "$rawUrl?v=${System.currentTimeMillis()}"
+            "$rawUrl&v=${System.currentTimeMillis()}"
         } catch (e: Exception) {
             sigUrl
         }
@@ -735,7 +736,7 @@ class ProfileViewModel : ViewModel() {
             val storageRef = storage.reference.child("users/$userId/profile_photo.jpg")
             storageRef.putBytes(bytes).await()
             val rawUrl = storageRef.downloadUrl.await().toString()
-            "$rawUrl?v=${System.currentTimeMillis()}"
+            "$rawUrl&v=${System.currentTimeMillis()}"
         } catch (e: Exception) {
             photoUrl
         }

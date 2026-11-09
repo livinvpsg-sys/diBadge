@@ -11,6 +11,7 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSink
 import okio.source
 import org.json.JSONObject
@@ -130,7 +131,10 @@ object MediaCloud {
 
     /** Removes a file this account uploaded. Quietly does nothing for other links. */
     suspend fun delete(url: String): Boolean = withContext(Dispatchers.IO) {
-        if (!isOurs(url)) return@withContext false
+        if (!isOurs(url)) {
+            Log.w(TAG, "Delete skipped, not our link: $url")
+            return@withContext false
+        }
         try {
             val token = FirebaseAuth.getInstance().currentUser?.getIdToken(false)?.await()?.token
                 ?: return@withContext false
@@ -139,11 +143,46 @@ object MediaCloud {
                 .header("Authorization", "Bearer $token")
                 .delete()
                 .build()
-            client.newCall(request).execute().use { it.isSuccessful }
+            client.newCall(request).execute().use {
+                Log.w(TAG, "Delete ${it.code} for $url: ${it.body?.string().orEmpty()}")
+                it.isSuccessful
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Delete failed: ${e.message}")
             false
         }
+    }
+
+    /**
+     * Makes an independent copy of one of our files for another chat (used when forwarding), so
+     * deleting either message never removes the other's file. Throws if the copy fails.
+     */
+    suspend fun copy(url: String, groupId: String, msgId: String): String = withContext(Dispatchers.IO) {
+        if (!isOurs(url)) throw IOException("Not a diBadge file")
+        val token = FirebaseAuth.getInstance().currentUser?.getIdToken(false)?.await()?.token
+            ?: throw IOException("Not signed in")
+        val body = JSONObject().put("from", url).toString()
+            .toRequestBody("application/json".toMediaTypeOrNull())
+        val request = Request.Builder()
+            .url("$BASE_URL/copy/${enc(groupId)}/${enc(msgId)}")
+            .header("Authorization", "Bearer $token")
+            .post(body)
+            .build()
+        client.newCall(request).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                Log.w(TAG, "Copy failed ${response.code}: $text")
+                throw IOException("Copy failed (${response.code})")
+            }
+            JSONObject(text).getString("url")
+        }
+    }
+
+    /** True when this link's file was uploaded for the message [msgId] (not shared from another message). */
+    fun belongsToMessage(url: String, msgId: String): Boolean {
+        if (!isOurs(url)) return false
+        val parts = url.removePrefix("$BASE_URL/f/").substringBefore("?").split("/")
+        return parts.size >= 3 && java.net.URLDecoder.decode(parts[1], "UTF-8") == msgId
     }
 
     private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8").replace("+", "%20")

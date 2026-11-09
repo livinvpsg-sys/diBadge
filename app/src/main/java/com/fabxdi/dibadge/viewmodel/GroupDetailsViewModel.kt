@@ -9,6 +9,7 @@ import com.fabxdi.dibadge.data.AppDatabase
 import com.fabxdi.dibadge.data.HomeEntryEntity
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatMessage
 import com.fabxdi.dibadge.util.FilePickerUtils
+import com.fabxdi.dibadge.util.MediaCloud
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.FieldValue
@@ -175,15 +176,28 @@ class GroupDetailsViewModel : ViewModel() {
     private var chatMedia: List<GroupMediaItem> = emptyList()
     private var chatFiles: List<GroupFolderFile> = emptyList()
     private val hiddenIds = mutableSetOf<String>()
+    // media id -> (message id, file link), so a delete can reach the real chat message
+    private var idToSource: Map<String, Pair<String, String>> = emptyMap()
     private var listeningGroupId: String? = null
+
+    // Ids of chat messages that still exist (not deleted). Files stored for a message that is
+    // gone are hidden here, so deleted chat media no longer leaves empty tiles behind.
+    private var liveMsgIds: Set<String> = emptySet()
+    private var chatSynced = false
+
+    private fun isStaleChatFile(url: String): Boolean {
+        if (!chatSynced || !MediaCloud.isOurs(url)) return false
+        val msgId = url.substringAfter("/f/").split("/").getOrNull(1) ?: return false
+        return msgId.isNotBlank() && msgId !in liveMsgIds
+    }
 
     private fun publishMediaAndFiles() {
         _media.value = (fsMedia + chatMedia)
-            .filter { it.id !in hiddenIds }
+            .filter { it.id !in hiddenIds && !isStaleChatFile(it.url) }
             .distinctBy { it.url }
             .sortedByDescending { it.timestamp }
         _files.value = (fsFiles + chatFiles)
-            .filter { it.id !in hiddenIds }
+            .filter { it.id !in hiddenIds && !isStaleChatFile(it.downloadUrl) }
             .distinctBy { it.downloadUrl }
             .sortedByDescending { it.timestamp }
     }
@@ -1127,10 +1141,21 @@ class GroupDetailsViewModel : ViewModel() {
         }
     }
 
+    private fun hiddenPrefs(context: Context) =
+        context.getSharedPreferences("details_hidden_media", Context.MODE_PRIVATE)
+
     fun deleteSelectedMediaForMe(context: Context, idsToDelete: Set<String>) {
         if (idsToDelete.isEmpty()) return
         viewModelScope.launch {
             hiddenIds.addAll(idsToDelete)
+            // Remember it, so the item does not come back when this screen opens again
+            try {
+                val prefs = hiddenPrefs(context)
+                val old = prefs.getStringSet("g_$currentGroupId", emptySet()) ?: emptySet()
+                prefs.edit().putStringSet("g_$currentGroupId", old + idsToDelete).apply()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
             publishMediaAndFiles()
             Toast.makeText(context, "Deleted for you", Toast.LENGTH_SHORT).show()
         }
@@ -1142,10 +1167,66 @@ class GroupDetailsViewModel : ViewModel() {
             hiddenIds.addAll(idsToDelete)
             publishMediaAndFiles()
             if (currentGroupId.isNotBlank()) {
+                val dao = AppDatabase.getDatabase(context).reminderDao()
                 for (id in idsToDelete) {
                     try {
                         db.collection("personalGroups").document(currentGroupId).collection("media").document(id).delete()
                         db.collection("personalGroups").document(currentGroupId).collection("files").document(id).delete()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+
+                    // Take the file out of the chat message itself (and out of cloud storage),
+                    // otherwise it would come back from the chat the next time this screen opens.
+                    val (msgId, url) = idToSource[id] ?: continue
+                    try {
+                        val msgRef = db.collection("personalGroups").document(currentGroupId)
+                            .collection("messages").document(msgId)
+                        val doc = msgRef.get().await()
+                        var thumbToRemove: String? = null
+                        if (doc.exists()) {
+                            val attachments = (doc.get("attachments") as? List<*>)?.map { it.toString() } ?: emptyList()
+                            val thumbs = (doc.get("attachmentThumbs") as? List<*>)?.map { it.toString() } ?: emptyList()
+                            val durations = (doc.get("attachmentDurations") as? Map<*, *>) ?: emptyMap<Any, Any>()
+                            val idx = attachments.indexOf(url)
+                            if (idx >= 0) {
+                                val newAttachments = attachments.filterIndexed { i, _ -> i != idx }
+                                val newThumbs = if (thumbs.size == attachments.size) {
+                                    thumbToRemove = thumbs.getOrNull(idx)
+                                    thumbs.filterIndexed { i, _ -> i != idx }
+                                } else thumbs
+                                val newDurations = durations.filterKeys { it.toString() != url && it.toString() != "sz_$url" }
+                                val updates = mutableMapOf<String, Any?>(
+                                    "attachments" to newAttachments,
+                                    "attachmentThumbs" to newThumbs,
+                                    "attachmentDurations" to newDurations
+                                )
+                                if (newAttachments.isEmpty() && doc.getString("text").isNullOrBlank()) {
+                                    updates["deleted"] = true
+                                    updates["deletedBy"] = auth.currentUser?.uid ?: ""
+                                    updates["deletedAt"] = FieldValue.serverTimestamp()
+                                }
+                                msgRef.update(updates).await()
+                            }
+                        }
+
+                        // Same message on this phone
+                        withContext(Dispatchers.IO) {
+                            dao.getChatMessageById(msgId)?.let { entity ->
+                                val remaining = entity.attachmentsJson.split("|||").filter { it.isNotBlank() && it != url }
+                                val hideAll = remaining.isEmpty() && entity.text.isBlank()
+                                dao.insertChatMessage(
+                                    entity.copy(
+                                        attachmentsJson = remaining.joinToString("|||"),
+                                        isHiddenForMe = entity.isHiddenForMe || hideAll
+                                    )
+                                )
+                            }
+                        }
+
+                        // Free the storage (only the file stored for this message, uploaded by this account)
+                        listOfNotNull(url, thumbToRemove).filter { it.isNotBlank() && MediaCloud.belongsToMessage(it, msgId) }
+                            .forEach { MediaCloud.delete(it) }
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
@@ -1159,8 +1240,17 @@ class GroupDetailsViewModel : ViewModel() {
 
         val extractedMedia = mutableListOf<GroupMediaItem>()
         val extractedFiles = mutableListOf<GroupFolderFile>()
+        val sources = mutableMapOf<String, Pair<String, String>>()
+
+        // Items this person deleted for themselves stay hidden
+        try {
+            hiddenIds.addAll(hiddenPrefs(context).getStringSet("g_$currentGroupId", emptySet()) ?: emptySet())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
 
         for (msg in messages) {
+            if (msg.isDeleted) continue
             val ts = try {
                 msg.timestamp.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
             } catch (e: Exception) {
@@ -1177,6 +1267,7 @@ class GroupDetailsViewModel : ViewModel() {
 
                 val mediaType = getMediaTypeFromUri(context, url)
                 val mediaId = "${msg.id}_${url.hashCode()}"
+                sources[mediaId] = msg.id to url
 
                 if (mediaType == "document") {
                     extractedFiles.add(
@@ -1204,6 +1295,9 @@ class GroupDetailsViewModel : ViewModel() {
         // Replace (not append) so a deleted chat message also leaves Media and Files.
         chatMedia = extractedMedia
         chatFiles = extractedFiles
+        idToSource = sources
+        liveMsgIds = messages.filter { !it.isDeleted }.map { it.id }.toSet()
+        chatSynced = true
         publishMediaAndFiles()
     }
 
