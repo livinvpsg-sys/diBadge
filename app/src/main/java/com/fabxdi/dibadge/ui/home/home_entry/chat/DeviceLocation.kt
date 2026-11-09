@@ -3,6 +3,10 @@ package com.fabxdi.dibadge.ui.home.home_entry.chat
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import android.widget.Toast
 import android.content.pm.PackageManager
 import android.location.Geocoder
 import android.location.Location
@@ -48,9 +52,9 @@ object DeviceLocationProvider {
 
     fun hasPermission(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
-            PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
-            PackageManager.PERMISSION_GRANTED
+                PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED
 
     /** Returns null when permission is missing, location is off, or no fix arrives in time. */
     @SuppressLint("MissingPermission")
@@ -129,11 +133,13 @@ fun rememberLocationState(enabled: Boolean = true): LocationState {
     }
     var location by remember { mutableStateOf<DeviceLocation?>(null) }
     var attempt by remember { mutableStateOf(0) }
+    var askedBefore by remember { mutableStateOf(false) }
 
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
         granted = result.values.any { it }
+        askedBefore = true
         if (!granted) status = LocationStatus.NeedsPermission
     }
 
@@ -153,12 +159,25 @@ fun rememberLocationState(enabled: Boolean = true): LocationState {
         status = status,
         location = location,
         requestPermission = {
-            launcher.launch(
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
+            if (askedBefore) {
+                // Android will not show the question again after a refusal, so send the person to Settings
+                Toast.makeText(context, "Turn on Location for this app in Settings", Toast.LENGTH_LONG).show()
+                try {
+                    context.startActivity(
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            } else {
+                launcher.launch(
+                    arrayOf(
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    )
                 )
-            )
+            }
         },
         retry = { attempt++ }
     )

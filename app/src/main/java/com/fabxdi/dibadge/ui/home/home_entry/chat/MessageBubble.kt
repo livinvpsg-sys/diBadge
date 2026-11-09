@@ -33,6 +33,7 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.DoNotDisturbOn
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.*
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.runtime.*
@@ -45,6 +46,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -160,6 +162,64 @@ private fun isMicRecording(message: ChatMessage): Boolean {
     return decoded.startsWith("VOICE_") && decoded.endsWith(".m4a", ignoreCase = true)
 }
 
+/** True while a bubble should not print its own time: the time is shown once, under the last bubble of a group. */
+private val LocalGroupedTime = compositionLocalOf { false }
+
+/** Opens a PDF inside the app. Provided by the chat screen; documents of other types open in an outside app. */
+val LocalOpenPdf = staticCompositionLocalOf<(Uri) -> Unit> { {} }
+
+private fun openDocument(context: android.content.Context, uri: Uri, fileName: String, openPdf: (Uri) -> Unit) {
+    if (fileName.substringAfterLast('.', "").equals("pdf", ignoreCase = true)) openPdf(uri)
+    else FilePickerUtils.openFileInExternalApp(context, uri, fileName)
+}
+
+@Composable
+private fun OutsideTimeRow(
+    message: ChatMessage,
+    formattedTime: String,
+    secondaryTextColor: Color,
+    tealAccent: Color,
+    errorColor: Color,
+    onRetryFailedMessage: (ChatMessage) -> Unit
+) {
+    Row(
+        modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = formattedTime, fontSize = 11.sp, color = secondaryTextColor)
+        if (message.isSentByMe) {
+            Spacer(modifier = Modifier.width(4.dp))
+            when (message.sendStatus) {
+                "SENDING" -> Icon(
+                    imageVector = Icons.Outlined.Schedule,
+                    contentDescription = "Sending",
+                    tint = secondaryTextColor,
+                    modifier = Modifier.size(13.dp)
+                )
+                "FAILED" -> Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { onRetryFailedMessage(message) }
+                ) {
+                    Text(text = "Not sent", fontSize = 11.sp, color = errorColor)
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Icon(
+                        imageVector = Icons.Default.ErrorOutline,
+                        contentDescription = "Failed",
+                        tint = errorColor,
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
+                else -> Icon(
+                    imageVector = Icons.Default.DoneAll,
+                    contentDescription = "Sent",
+                    tint = tealAccent,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageBubble(
@@ -168,6 +228,8 @@ fun MessageBubble(
     isSelected: Boolean,
     isAnySelected: Boolean,
     isFirstInRun: Boolean = true,
+    isGroupedWithPrev: Boolean = false,
+    isGroupedWithNext: Boolean = false,
     isHighlighted: Boolean = false,
     isOneToOne: Boolean = false,
     onLongClick: (String?) -> Unit,
@@ -207,10 +269,18 @@ fun MessageBubble(
     }
 
     // Corner radius: 14dp corners with 2dp corner at tail
+    // Bubbles sent together (same person, same minute) sit close, with tighter inner corners
+    val innerTop = if (isGroupedWithPrev) 4.dp else 14.dp
+    val innerBottom = if (isGroupedWithNext) 4.dp else 2.dp
     val bubbleShape = if (message.isSentByMe) {
-        RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = 14.dp, bottomEnd = 2.dp)
+        RoundedCornerShape(topStart = 14.dp, topEnd = innerTop, bottomStart = 14.dp, bottomEnd = innerBottom)
     } else {
-        RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = 2.dp, bottomEnd = 14.dp)
+        RoundedCornerShape(topStart = innerTop, topEnd = 14.dp, bottomStart = innerBottom, bottomEnd = 14.dp)
+    }
+    val groupedTime = !message.isDeleted && !message.isGroupMention
+    val outsideTimeText = remember(message.timestamp, message.isEdited) {
+        val t = message.timestamp.format(timeFormatter).lowercase()
+        if (message.isEdited) "Edited $t" else t
     }
 
     val isEmojiOnly = remember(message.text) {
@@ -220,319 +290,323 @@ fun MessageBubble(
     var offsetX by remember { mutableFloatStateOf(0f) }
     val swipeThreshold = 150f
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .pointerInput(Unit) {
-                detectHorizontalDragGestures(
-                    onHorizontalDrag = { change, dragAmount ->
-                        change.consume()
-                        if (dragAmount > 0 || offsetX > 0) {
-                            offsetX = (offsetX + dragAmount).coerceIn(0f, swipeThreshold + 50f)
-                        }
-                    },
-                    onDragEnd = {
-                        if (offsetX >= swipeThreshold) {
-                            onSwipeToReply(null)
-                        }
-                        offsetX = 0f
-                    },
-                    onDragCancel = { offsetX = 0f }
-                )
-            }
-    ) {
-        if (offsetX > 20f) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.Reply,
-                    contentDescription = null,
-                    tint = secondaryTextColor.copy(alpha = (offsetX / swipeThreshold).coerceIn(0f, 1f)),
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-        }
-
-        Row(
+    CompositionLocalProvider(LocalGroupedTime provides groupedTime) {
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .offset { IntOffset(offsetX.toInt(), 0) }
-                .background(
-                    when {
-                        isSelected -> primaryTextColor.copy(alpha = 0.12f)
-                        isHighlighted -> primaryTextColor.copy(alpha = 0.15f)
-                        else -> Color.Transparent
-                    }
-                )
-                .combinedClickable(
-                    onClick = onClick,
-                    onLongClick = { onLongClick(null) }
-                )
-                .padding(vertical = if (isFirstInRun) 4.dp else 1.dp, horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            if (dragAmount > 0 || offsetX > 0) {
+                                offsetX = (offsetX + dragAmount).coerceIn(0f, swipeThreshold + 50f)
+                            }
+                        },
+                        onDragEnd = {
+                            if (offsetX >= swipeThreshold) {
+                                onSwipeToReply(null)
+                            }
+                            offsetX = 0f
+                        },
+                        onDragCancel = { offsetX = 0f }
+                    )
+                }
         ) {
-            if (isAnySelected) {
+            if (offsetX > 20f) {
                 Box(
                     modifier = Modifier
-                        .padding(end = 12.dp)
-                        .size(22.dp),
+                        .align(Alignment.CenterStart)
+                        .padding(start = 16.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (isSelected) {
-                        Surface(
-                            modifier = Modifier.size(22.dp),
-                            shape = CircleShape,
-                            color = tealAccent
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = "Selected",
-                                    tint = if (isDark) Color(0xFF0E1114) else Color(0xFFFFFFFF),
-                                    modifier = Modifier.size(13.dp)
-                                )
-                            }
-                        }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .size(22.dp)
-                                .background(Color.Transparent, CircleShape)
-                                .border(BorderStroke(1.5.dp, outlineColor), CircleShape)
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Reply,
+                        contentDescription = null,
+                        tint = secondaryTextColor.copy(alpha = (offsetX / swipeThreshold).coerceIn(0f, 1f)),
+                        modifier = Modifier.size(24.dp)
+                    )
                 }
             }
 
-            Column(
-                modifier = Modifier.weight(1f),
-                horizontalAlignment = alignment
-            ) {
-                // Label above bubble
-                if (message.isGroupMention && !message.isSentByMe) {
-                    // Incoming Cross-Posted Group-Mention Bubble: Group name in identity name color + 13dp link icon
-                    val groupDisplayName = message.sendingGroupName ?: message.senderName
-                    val groupTitleColor = remember(groupDisplayName, isDark) {
-                        UserColorUtils.getIdentityColor(groupDisplayName, isDark)
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(start = 36.dp, bottom = 2.dp)
-                    ) {
-                        Text(
-                            text = groupDisplayName,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = groupTitleColor
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.Link,
-                            contentDescription = "Cross-posted link",
-                            tint = secondaryTextColor,
-                            modifier = Modifier.size(13.dp)
-                        )
-                    }
-                } else if (!isOneToOne && !message.isSentByMe && isFirstInRun) {
-                    // Normal Incoming Sender Name (using per-identity color palette, never teal)
-                    val senderColor = remember(message.senderName, isDark) {
-                        UserColorUtils.getColorForName(message.senderName, isDark)
-                    }
-                    Text(
-                        text = message.senderName,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = senderColor,
-                        modifier = Modifier.padding(start = 36.dp, bottom = 2.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .offset { IntOffset(offsetX.toInt(), 0) }
+                    .background(
+                        when {
+                            isSelected -> primaryTextColor.copy(alpha = 0.12f)
+                            isHighlighted -> primaryTextColor.copy(alpha = 0.15f)
+                            else -> Color.Transparent
+                        }
                     )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = if (message.isSentByMe) Arrangement.End else Arrangement.Start,
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    if (!isOneToOne && !message.isSentByMe) {
-                        if (isFirstInRun || message.isGroupMention) {
-                            val avatarShape = if (message.isGroupMention) RoundedCornerShape(10.dp) else CircleShape
-                            val avatarText = (message.sendingGroupName ?: message.senderName).take(1).uppercase()
-
+                    .combinedClickable(
+                        onClick = onClick,
+                        onLongClick = { onLongClick(null) }
+                    )
+                    .padding(vertical = if (isFirstInRun) 4.dp else 1.dp, horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (isAnySelected) {
+                    Box(
+                        modifier = Modifier
+                            .padding(end = 12.dp)
+                            .size(22.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isSelected) {
                             Surface(
-                                modifier = Modifier.size(28.dp),
-                                shape = avatarShape,
-                                color = cardFillColor,
-                                border = BorderStroke(1.dp, outlineColor)
+                                modifier = Modifier.size(22.dp),
+                                shape = CircleShape,
+                                color = tealAccent
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text = avatarText,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = primaryTextColor
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Selected",
+                                        tint = if (isDark) Color(0xFF0E1114) else Color(0xFFFFFFFF),
+                                        modifier = Modifier.size(13.dp)
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
                         } else {
-                            Spacer(modifier = Modifier.width(36.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .background(Color.Transparent, CircleShape)
+                                    .border(BorderStroke(1.5.dp, outlineColor), CircleShape)
+                            )
                         }
                     }
+                }
 
-                    if (message.isDeleted) {
-                        DeletedMessagePlaceholderBubble(
-                            message = message,
-                            primaryTextColor = primaryTextColor,
-                            secondaryTextColor = secondaryTextColor,
-                            outlineColor = outlineColor,
-                            timeFormatter = timeFormatter
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = alignment
+                ) {
+                    // Label above bubble
+                    if (message.isGroupMention && !message.isSentByMe) {
+                        // Incoming Cross-Posted Group-Mention Bubble: Group name in identity name color + 13dp link icon
+                        val groupDisplayName = message.sendingGroupName ?: message.senderName
+                        val groupTitleColor = remember(groupDisplayName, isDark) {
+                            UserColorUtils.getIdentityColor(groupDisplayName, isDark)
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(start = 36.dp, bottom = 2.dp)
+                        ) {
+                            Text(
+                                text = groupDisplayName,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = groupTitleColor
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Default.Link,
+                                contentDescription = "Cross-posted link",
+                                tint = secondaryTextColor,
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+                    } else if (!isOneToOne && !message.isSentByMe && isFirstInRun) {
+                        // Normal Incoming Sender Name (using per-identity color palette, never teal)
+                        val senderColor = remember(message.senderName, isDark) {
+                            UserColorUtils.getColorForName(message.senderName, isDark)
+                        }
+                        Text(
+                            text = message.senderName,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = senderColor,
+                            modifier = Modifier.padding(start = 36.dp, bottom = 2.dp)
                         )
-                    } else if (isEmojiOnly) {
-                        EmojiMessage(message.text, message.timestamp.format(timeFormatter).lowercase(), alignment, secondaryTextColor, primaryTextColor)
-                    } else if (message.attachments.isNotEmpty()) {
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = if (message.isSentByMe) Arrangement.End else Arrangement.Start,
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        if (!isOneToOne && !message.isSentByMe) {
+                            if (isFirstInRun || message.isGroupMention) {
+                                val avatarShape = if (message.isGroupMention) RoundedCornerShape(10.dp) else CircleShape
+                                val avatarText = (message.sendingGroupName ?: message.senderName).take(1).uppercase()
+
+                                Surface(
+                                    modifier = Modifier.size(28.dp),
+                                    shape = avatarShape,
+                                    color = cardFillColor,
+                                    border = BorderStroke(1.dp, outlineColor)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = avatarText,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = primaryTextColor
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                            } else {
+                                Spacer(modifier = Modifier.width(36.dp))
+                            }
+                        }
+
                         Column(horizontalAlignment = alignment) {
-                            if (message.replyingTo != null) {
-                                ReplyPreviewAboveBubble(
+                            if (message.isDeleted) {
+                                DeletedMessagePlaceholderBubble(
                                     message = message,
-                                    onReplyClick = onReplyClick,
-                                    alignment = alignment,
                                     primaryTextColor = primaryTextColor,
                                     secondaryTextColor = secondaryTextColor,
-                                    isDark = isDark
+                                    outlineColor = outlineColor,
+                                    timeFormatter = timeFormatter
                                 )
-                            }
+                            } else if (isEmojiOnly) {
+                                EmojiMessage(message.text, message.timestamp.format(timeFormatter).lowercase(), alignment, secondaryTextColor, primaryTextColor)
+                            } else if (message.attachments.isNotEmpty()) {
+                                Column(horizontalAlignment = alignment) {
+                                    if (message.replyingTo != null) {
+                                        ReplyPreviewAboveBubble(
+                                            message = message,
+                                            onReplyClick = onReplyClick,
+                                            alignment = alignment,
+                                            primaryTextColor = primaryTextColor,
+                                            secondaryTextColor = secondaryTextColor,
+                                            isDark = isDark
+                                        )
+                                    }
 
-                            val context = LocalContext.current
-                            val isMediaGrid = remember(message.attachments) {
-                                message.attachments.all { uriStr ->
-                                    val cat = getAttachmentCategory(context, Uri.parse(uriStr))
-                                    cat == AttachmentCategory.IMAGE || cat == AttachmentCategory.VIDEO
-                                }
-                            }
+                                    val context = LocalContext.current
+                                    val isMediaGrid = remember(message.attachments) {
+                                        message.attachments.all { uriStr ->
+                                            val cat = getAttachmentCategory(context, Uri.parse(uriStr))
+                                            cat == AttachmentCategory.IMAGE || cat == AttachmentCategory.VIDEO
+                                        }
+                                    }
 
-                            // Voice notes and attached audio files (mp3, m4a ...) play right in the chat
-                            val isAudioOnly = remember(message.attachments) {
-                                message.attachments.isNotEmpty() && message.attachments.all { isAudioAttachment(context, it) }
-                            }
+                                    // Voice notes and attached audio files (mp3, m4a ...) play right in the chat
+                                    val isAudioOnly = remember(message.attachments) {
+                                        message.attachments.isNotEmpty() && message.attachments.all { isAudioAttachment(context, it) }
+                                    }
 
-                            val rawTimeStr = remember(message.timestamp) { message.timestamp.format(timeFormatter).lowercase() }
-                            val formattedTimeStr = remember(rawTimeStr, message.isEdited) {
-                                if (message.isEdited) "Edited $rawTimeStr" else rawTimeStr
-                            }
+                                    val rawTimeStr = remember(message.timestamp) { message.timestamp.format(timeFormatter).lowercase() }
+                                    val formattedTimeStr = remember(rawTimeStr, message.isEdited) {
+                                        if (message.isEdited) "Edited $rawTimeStr" else rawTimeStr
+                                    }
 
-                            Column(
-                                horizontalAlignment = alignment,
-                                modifier = Modifier.padding(bottom = 2.dp)
-                            ) {
-                                if (isMediaGrid) {
-                                    MediaGridNoBubble(
-                                        message = message,
-                                        formattedTime = formattedTimeStr,
-                                        onMediaClick = onMediaClick,
-                                        primaryTextColor = primaryTextColor,
-                                        secondaryTextColor = secondaryTextColor,
-                                        tealAccent = tealAccent,
-                                        isDark = isDark
-                                    )
-                                } else if (isAudioOnly || message.isVoiceNote || isMicRecording(message)) {
-                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        message.attachments.forEachIndexed { index, audioUrl ->
-                                            val audioName = remember(audioUrl) { FilePickerUtils.getFileName(context, Uri.parse(audioUrl)) }
-                                            VoiceNoteBubble(
+                                    Column(
+                                        horizontalAlignment = alignment,
+                                        modifier = Modifier.padding(bottom = 2.dp)
+                                    ) {
+                                        if (isMediaGrid) {
+                                            MediaGridNoBubble(
                                                 message = message,
-                                                url = audioUrl,
-                                                title = if (audioName.startsWith("VOICE_")) null else audioName,
-                                                player = player,
                                                 formattedTime = formattedTimeStr,
-                                                bubbleColor = bubbleColor,
-                                                bubbleShape = bubbleShape,
+                                                onMediaClick = onMediaClick,
                                                 primaryTextColor = primaryTextColor,
                                                 secondaryTextColor = secondaryTextColor,
                                                 tealAccent = tealAccent,
-                                                isDark = isDark,
-                                                showFooter = message.text.isBlank() && index == message.attachments.lastIndex
+                                                isDark = isDark
+                                            )
+                                        } else if (isAudioOnly || message.isVoiceNote || isMicRecording(message)) {
+                                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                message.attachments.forEachIndexed { index, audioUrl ->
+                                                    val audioName = remember(audioUrl) { FilePickerUtils.getFileName(context, Uri.parse(audioUrl)) }
+                                                    VoiceNoteBubble(
+                                                        message = message,
+                                                        url = audioUrl,
+                                                        title = if (audioName.startsWith("VOICE_")) null else audioName,
+                                                        player = player,
+                                                        formattedTime = formattedTimeStr,
+                                                        bubbleColor = bubbleColor,
+                                                        bubbleShape = bubbleShape,
+                                                        primaryTextColor = primaryTextColor,
+                                                        secondaryTextColor = secondaryTextColor,
+                                                        tealAccent = tealAccent,
+                                                        isDark = isDark,
+                                                        showFooter = message.text.isBlank() && index == message.attachments.lastIndex
+                                                    )
+                                                }
+                                            }
+                                        } else {
+                                            DocumentRowsNoBubble(
+                                                message = message,
+                                                formattedTime = formattedTimeStr,
+                                                primaryTextColor = primaryTextColor,
+                                                secondaryTextColor = secondaryTextColor,
+                                                cardFillColor = cardFillColor,
+                                                tealAccent = tealAccent,
+                                                isDark = isDark
                                             )
                                         }
-                                    }
-                                } else {
-                                    DocumentRowsNoBubble(
-                                        message = message,
-                                        formattedTime = formattedTimeStr,
-                                        primaryTextColor = primaryTextColor,
-                                        secondaryTextColor = secondaryTextColor,
-                                        cardFillColor = cardFillColor,
-                                        tealAccent = tealAccent,
-                                        isDark = isDark
-                                    )
-                                }
 
-                                if (message.text.isNotBlank()) {
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Surface(
-                                        color = bubbleColor,
-                                        shape = bubbleShape,
-                                        shadowElevation = if (!isDark) 1.5.dp else 1.dp,
-                                        modifier = Modifier.widthIn(min = 40.dp, max = 272.dp)
-                                    ) {
-                                        Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 6.dp)) {
-                                            Text(
-                                                text = buildMentionAnnotatedString(message.text, primaryTextColor, tealAccent, message.mentionedGroupNames),
-                                                fontSize = 15.sp,
-                                                lineHeight = 21.sp,
-                                                color = primaryTextColor
-                                            )
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(top = 4.dp),
-                                                horizontalArrangement = Arrangement.End,
-                                                verticalAlignment = Alignment.CenterVertically
+                                        if (message.text.isNotBlank()) {
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Surface(
+                                                color = bubbleColor,
+                                                shape = bubbleShape,
+                                                shadowElevation = if (!isDark) 1.5.dp else 1.dp,
+                                                modifier = Modifier.widthIn(min = 40.dp, max = 272.dp)
                                             ) {
-                                                Text(
-                                                    text = formattedTimeStr,
-                                                    fontSize = 11.sp,
-                                                    color = secondaryTextColor
-                                                )
-                                                if (message.isSentByMe) {
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    when (message.sendStatus) {
-                                                        "SENDING" -> {
-                                                            Icon(
-                                                                imageVector = Icons.Outlined.Schedule,
-                                                                contentDescription = "Sending",
-                                                                tint = secondaryTextColor,
-                                                                modifier = Modifier.size(13.dp)
-                                                            )
-                                                        }
-                                                        "FAILED" -> {
-                                                            Row(
-                                                                verticalAlignment = Alignment.CenterVertically,
-                                                                modifier = Modifier.clickable { onRetryFailedMessage(message) }
-                                                            ) {
-                                                                Text(
-                                                                    text = "Not sent",
-                                                                    fontSize = 11.sp,
-                                                                    color = errorColor
-                                                                )
-                                                                Spacer(modifier = Modifier.width(3.dp))
-                                                                Icon(
-                                                                    imageVector = Icons.Default.ErrorOutline,
-                                                                    contentDescription = "Failed",
-                                                                    tint = errorColor,
-                                                                    modifier = Modifier.size(13.dp)
-                                                                )
+                                                Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 6.dp)) {
+                                                    Text(
+                                                        text = buildMentionAnnotatedString(message.text, primaryTextColor, tealAccent, message.mentionedGroupNames),
+                                                        fontSize = 15.sp,
+                                                        lineHeight = 21.sp,
+                                                        color = primaryTextColor
+                                                    )
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(top = 4.dp),
+                                                        horizontalArrangement = Arrangement.End,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Text(
+                                                            text = formattedTimeStr,
+                                                            fontSize = 11.sp,
+                                                            color = secondaryTextColor
+                                                        )
+                                                        if (message.isSentByMe) {
+                                                            Spacer(modifier = Modifier.width(4.dp))
+                                                            when (message.sendStatus) {
+                                                                "SENDING" -> {
+                                                                    Icon(
+                                                                        imageVector = Icons.Outlined.Schedule,
+                                                                        contentDescription = "Sending",
+                                                                        tint = secondaryTextColor,
+                                                                        modifier = Modifier.size(13.dp)
+                                                                    )
+                                                                }
+                                                                "FAILED" -> {
+                                                                    Row(
+                                                                        verticalAlignment = Alignment.CenterVertically,
+                                                                        modifier = Modifier.clickable { onRetryFailedMessage(message) }
+                                                                    ) {
+                                                                        Text(
+                                                                            text = "Not sent",
+                                                                            fontSize = 11.sp,
+                                                                            color = errorColor
+                                                                        )
+                                                                        Spacer(modifier = Modifier.width(3.dp))
+                                                                        Icon(
+                                                                            imageVector = Icons.Default.ErrorOutline,
+                                                                            contentDescription = "Failed",
+                                                                            tint = errorColor,
+                                                                            modifier = Modifier.size(13.dp)
+                                                                        )
+                                                                    }
+                                                                }
+                                                                else -> {
+                                                                    Icon(
+                                                                        imageVector = Icons.Default.Check,
+                                                                        contentDescription = "Sent",
+                                                                        tint = secondaryTextColor,
+                                                                        modifier = Modifier.size(13.dp)
+                                                                    )
+                                                                }
                                                             }
-                                                        }
-                                                        else -> {
-                                                            Icon(
-                                                                imageVector = Icons.Default.Check,
-                                                                contentDescription = "Sent",
-                                                                tint = secondaryTextColor,
-                                                                modifier = Modifier.size(13.dp)
-                                                            )
                                                         }
                                                     }
                                                 }
@@ -540,56 +614,66 @@ fun MessageBubble(
                                         }
                                     }
                                 }
-                            }
-                        }
-                    } else {
-                        Column(horizontalAlignment = alignment) {
-                            val topOverlapModifier = Modifier
+                            } else {
+                                Column(horizontalAlignment = alignment) {
+                                    val topOverlapModifier = Modifier
 
-                            Surface(
-                                color = bubbleColor,
-                                shape = bubbleShape,
-                                shadowElevation = if (!isDark) 1.5.dp else 1.dp,
-                                tonalElevation = 0.dp,
-                                modifier = topOverlapModifier.widthIn(min = if (message.isGroupMention) 180.dp else 40.dp, max = 272.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .width(IntrinsicSize.Max)
-                                        .padding(start = 8.dp, end = 8.dp, top = 6.dp, bottom = 5.dp)
-                                ) {
-                                    if (message.replyingTo != null) {
-                                        ReplyQuoteInBubble(
-                                            message = message,
-                                            onReplyClick = onReplyClick,
-                                            primaryTextColor = primaryTextColor,
-                                            secondaryTextColor = secondaryTextColor,
-                                            tealAccent = tealAccent,
-                                            isDark = isDark
-                                        )
+                                    Surface(
+                                        color = bubbleColor,
+                                        shape = bubbleShape,
+                                        shadowElevation = if (!isDark) 1.5.dp else 1.dp,
+                                        tonalElevation = 0.dp,
+                                        modifier = topOverlapModifier.widthIn(min = if (message.isGroupMention) 180.dp else 40.dp, max = 272.dp)
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.width(IntrinsicSize.Max)
+                                        ) {
+                                            if (message.replyingTo != null) {
+                                                ReplyQuoteInBubble(
+                                                    message = message,
+                                                    onReplyClick = onReplyClick,
+                                                    primaryTextColor = primaryTextColor,
+                                                    secondaryTextColor = secondaryTextColor,
+                                                    tealAccent = tealAccent,
+                                                    isDark = isDark
+                                                )
+                                            }
+                                            Column(modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 6.dp, bottom = 5.dp)) {
+                                                AttachmentAndTextSection(
+                                                    message = message,
+                                                    player = player,
+                                                    isAnySelected = isAnySelected,
+                                                    onLongClick = onLongClick,
+                                                    onMediaClick = onMediaClick,
+                                                    onCommentsClick = onCommentsClick,
+                                                    onSentToClick = onSentToClick,
+                                                    onLocationClick = onLocationClick,
+                                                    onStopLiveLocation = onStopLiveLocation,
+                                                    onVoteOption = onVoteOption,
+                                                    onViewVotesClick = onViewVotesClick,
+                                                    timeFormatter = timeFormatter,
+                                                    primaryTextColor = primaryTextColor,
+                                                    secondaryTextColor = secondaryTextColor,
+                                                    outlineColor = outlineColor,
+                                                    tealAccent = tealAccent,
+                                                    errorColor = errorColor,
+                                                    isDark = isDark,
+                                                    onRetryFailedMessage = onRetryFailedMessage
+                                                )
+                                            }
+                                        }
                                     }
-                                    AttachmentAndTextSection(
-                                        message = message,
-                                        player = player,
-                                        isAnySelected = isAnySelected,
-                                        onLongClick = onLongClick,
-                                        onMediaClick = onMediaClick,
-                                        onCommentsClick = onCommentsClick,
-                                        onSentToClick = onSentToClick,
-                                        onLocationClick = onLocationClick,
-                                        onStopLiveLocation = onStopLiveLocation,
-                                        onVoteOption = onVoteOption,
-                                        onViewVotesClick = onViewVotesClick,
-                                        timeFormatter = timeFormatter,
-                                        primaryTextColor = primaryTextColor,
-                                        secondaryTextColor = secondaryTextColor,
-                                        outlineColor = outlineColor,
-                                        tealAccent = tealAccent,
-                                        errorColor = errorColor,
-                                        isDark = isDark,
-                                        onRetryFailedMessage = onRetryFailedMessage
-                                    )
                                 }
+                            }
+                            if (groupedTime && (!isGroupedWithNext || message.sendStatus != "SENT")) {
+                                OutsideTimeRow(
+                                    message = message,
+                                    formattedTime = outsideTimeText,
+                                    secondaryTextColor = secondaryTextColor,
+                                    tealAccent = tealAccent,
+                                    errorColor = errorColor,
+                                    onRetryFailedMessage = onRetryFailedMessage
+                                )
                             }
                         }
                     }
@@ -662,12 +746,14 @@ private fun EmojiMessage(
             else -> 24.sp
         }
         Text(text = text, fontSize = emojiFontSize, modifier = Modifier.padding(4.dp))
-        Text(
-            text = time,
-            fontSize = 11.sp,
-            color = secondaryTextColor,
-            modifier = Modifier.padding(horizontal = 4.dp)
-        )
+        if (!LocalGroupedTime.current) {
+            Text(
+                text = time,
+                fontSize = 11.sp,
+                color = secondaryTextColor,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+        }
     }
 }
 
@@ -790,11 +876,15 @@ private fun ReplyQuoteInBubble(
     isDark: Boolean
 ) {
     val replyingTo = message.replyingTo ?: return
-    val isSenderYou = replyingTo.isSentByMe || replyingTo.senderName == "Me"
+    // The quoted message is yours if it says so, or if its sender is you (the quote only carries a name)
+    val myName = remember { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.displayName.orEmpty() }
+    val isSenderYou = replyingTo.isSentByMe || replyingTo.senderName == "Me" ||
+            (message.isSentByMe && replyingTo.senderName == message.senderName) ||
+            (myName.isNotBlank() && replyingTo.senderName == myName)
     val name = if (isSenderYou) "You" else replyingTo.senderName
     // Same per-member colour as the sender names in the chat
     val nameColor = if (isSenderYou) tealAccent else UserColorUtils.getColorForName(replyingTo.senderName, isDark)
-    val quoteBg = if (isDark) Color(0xFF1D242B) else Color(0xFFEEF1F4)
+    val stripBg = if (isDark) Color(0x66000000) else Color(0x1A000000)
     val thumbUri = message.replyingToAttachmentUri ?: replyingTo.attachments.firstOrNull()
     val preview = when {
         replyingTo.isDeleted -> "Message deleted"
@@ -805,14 +895,14 @@ private fun ReplyQuoteInBubble(
         else -> "Attachment"
     }
 
+    // The whole strip is shown at 60% so it reads quieter than the reply below it
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 4.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(quoteBg)
             .clickable { if (!replyingTo.isDeleted) onReplyClick(replyingTo.id, message.replyingToAttachmentUri) }
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .graphicsLayer(alpha = 0.6f)
+            .background(stripBg)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f, fill = false)) {
@@ -826,10 +916,10 @@ private fun ReplyQuoteInBubble(
             )
             Text(
                 text = preview,
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 color = secondaryTextColor,
                 fontStyle = if (replyingTo.isDeleted) FontStyle.Italic else FontStyle.Normal,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
@@ -841,7 +931,7 @@ private fun ReplyQuoteInBubble(
                 contentScale = ContentScale.Crop,
                 error = rememberVectorPainter(Icons.Default.BrokenImage),
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(34.dp)
                     .clip(RoundedCornerShape(6.dp))
                     .background(secondaryTextColor.copy(alpha = 0.15f))
             )
@@ -1393,12 +1483,13 @@ private fun AttachmentAndTextSection(
                         )
                     } else {
                         val cardFillColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
+                        val openPdf = LocalOpenPdf.current
                         Surface(
                             shape = RoundedCornerShape(10.dp),
                             color = cardFillColor,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { FilePickerUtils.openFileInExternalApp(context, firstUri, firstFileName) }
+                                .clickable { openDocument(context, firstUri, firstFileName, openPdf) }
                         ) {
                             Row(
                                 modifier = Modifier
@@ -1810,6 +1901,7 @@ private fun AttachmentAndTextSection(
                                         val isVideo = mimeType?.startsWith("video/") == true || ext == "mp4"
                                         val isAudio = mimeType?.startsWith("audio/") == true || ext in listOf("m4a", "mp3")
                                         val isImage = mimeType?.startsWith("image/") == true || ext in listOf("jpg", "jpeg", "png")
+                                        val openPdf = LocalOpenPdf.current
 
                                         Surface(
                                             shape = RoundedCornerShape(10.dp),
@@ -1819,7 +1911,7 @@ private fun AttachmentAndTextSection(
                                                 .aspectRatio(1f)
                                                 .clickable {
                                                     if (!isImage && !isVideo && !isAudio) {
-                                                        FilePickerUtils.openFileInExternalApp(context, uri, fileName)
+                                                        openDocument(context, uri, fileName, openPdf)
                                                     } else {
                                                         onMediaClick(mediaUris, idx)
                                                     }
@@ -1968,17 +2060,23 @@ private fun AttachmentAndTextSection(
                     acceptedGroupNames = message.mentionedGroupNames
                 )
             }
-            Text(
-                text = annotatedText,
-                fontSize = 15.sp,
-                lineHeight = 21.sp,
-                color = primaryTextColor,
-                modifier = Modifier.padding(bottom = 2.dp)
-            )
+            if (!message.isGroupMention && !LocalGroupedTime.current) {
+                TextWithInlineTime(text = annotatedText, textColor = primaryTextColor) {
+                    InBubbleTime(message, formattedTime, secondaryTextColor, tealAccent, errorColor, onSentToClick)
+                }
+            } else {
+                Text(
+                    text = annotatedText,
+                    fontSize = 15.sp,
+                    lineHeight = 21.sp,
+                    color = primaryTextColor,
+                    modifier = Modifier.padding(bottom = 2.dp)
+                )
+            }
         }
 
-        // In-Bubble Footer Line: 5dp below text
-        Row(
+        // In-Bubble Footer Line: 5dp below text (not needed when the time sits on the text's last line)
+        if ((rawTextToDisplay.isBlank() && !LocalGroupedTime.current) || message.isGroupMention) Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 5.dp),
@@ -2055,37 +2153,104 @@ private fun AttachmentAndTextSection(
             }
 
             // Right end: Link or Warning icon (Sender side only) + Time + Read ticks
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (message.isSentByMe && message.isGroupMention) {
-                    val linkIcon = if (message.isCrossPostFailed) Icons.Default.Warning else Icons.Default.Link
-                    val linkTint = if (message.isCrossPostFailed) errorColor else secondaryTextColor
+            InBubbleTime(message, formattedTime, secondaryTextColor, tealAccent, errorColor, onSentToClick)
+        }
+    }
+}
 
-                    Icon(
-                        imageVector = linkIcon,
-                        contentDescription = "Sent to details",
-                        tint = linkTint,
-                        modifier = Modifier
-                            .size(13.dp)
-                            .clickable { onSentToClick(message) }
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                }
+@Composable
+private fun InBubbleTime(
+    message: ChatMessage,
+    formattedTime: String,
+    secondaryTextColor: Color,
+    tealAccent: Color,
+    errorColor: Color,
+    onSentToClick: (ChatMessage) -> Unit
+) {
+    if (LocalGroupedTime.current) return
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (message.isSentByMe && message.isGroupMention) {
+            val linkIcon = if (message.isCrossPostFailed) Icons.Default.Warning else Icons.Default.Link
+            val linkTint = if (message.isCrossPostFailed) errorColor else secondaryTextColor
 
-                Text(
-                    text = formattedTime,
-                    fontSize = 11.sp,
-                    color = secondaryTextColor
-                )
-                if (message.isSentByMe) {
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        imageVector = Icons.Default.DoneAll,
-                        contentDescription = "Read",
-                        tint = tealAccent,
-                        modifier = Modifier.size(14.dp)
-                    )
-                }
-            }
+            Icon(
+                imageVector = linkIcon,
+                contentDescription = "Sent to details",
+                tint = linkTint,
+                modifier = Modifier
+                    .size(13.dp)
+                    .clickable { onSentToClick(message) }
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+        }
+
+        Text(
+            text = formattedTime,
+            fontSize = 11.sp,
+            color = secondaryTextColor
+        )
+        if (message.isSentByMe) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                imageVector = Icons.Default.DoneAll,
+                contentDescription = "Read",
+                tint = tealAccent,
+                modifier = Modifier.size(14.dp)
+            )
+        }
+    }
+}
+
+/**
+ * Message text with the time on the last line. If the last line has room, the time sits on that
+ * line with a fixed gap; if not, the bubble grows (up to its maximum) or the time drops below.
+ */
+@Composable
+private fun TextWithInlineTime(
+    text: androidx.compose.ui.text.AnnotatedString,
+    textColor: Color,
+    time: @Composable () -> Unit
+) {
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val baseStyle = androidx.compose.material3.LocalTextStyle.current.merge(
+        androidx.compose.ui.text.TextStyle(fontSize = 15.sp, lineHeight = 21.sp)
+    )
+    Layout(
+        content = {
+            Text(
+                text = text,
+                fontSize = 15.sp,
+                lineHeight = 21.sp,
+                color = textColor
+            )
+            Box { time() }
+        }
+    ) { measurables, constraints ->
+        val gap = 10.dp.roundToPx()
+        val timePlaceable = measurables[1].measure(androidx.compose.ui.unit.Constraints())
+        val textPlaceable = measurables[0].measure(constraints.copy(minWidth = 0, minHeight = 0))
+        // Measured here, in the same pass, so the width of the last line is always up to date
+        val result = measurer.measure(
+            text = text,
+            style = baseStyle,
+            constraints = androidx.compose.ui.unit.Constraints(maxWidth = constraints.maxWidth)
+        )
+        val last = kotlin.math.ceil(result.getLineRight(result.lineCount - 1)).toInt()
+        val inlineWidth = last + gap + timePlaceable.width
+        val fitsInline = inlineWidth <= constraints.maxWidth
+        val width: Int
+        val height: Int
+        if (fitsInline) {
+            width = maxOf(textPlaceable.width, inlineWidth)
+            height = maxOf(textPlaceable.height, timePlaceable.height)
+        } else {
+            width = maxOf(textPlaceable.width, timePlaceable.width)
+            height = textPlaceable.height + timePlaceable.height
+        }
+        val w = width.coerceIn(constraints.minWidth, constraints.maxWidth)
+        layout(w, height) {
+            textPlaceable.placeRelative(0, 0)
+            timePlaceable.placeRelative(w - timePlaceable.width, height - timePlaceable.height)
         }
     }
 }
@@ -2101,6 +2266,7 @@ private fun AttachmentTimeFooterLine(
     onRetryFailedMessage: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    if (LocalGroupedTime.current) return
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -2770,13 +2936,14 @@ private fun DocumentRowsNoBubble(
             val ext = fileName.substringAfterLast('.', "").uppercase()
             val sizeBytes = FilePickerUtils.getFileSizeBytes(context, uri)
             val sizeStr = FilePickerUtils.formatFileSize(sizeBytes)
+            val openPdf = LocalOpenPdf.current
 
             Surface(
                 shape = RoundedCornerShape(10.dp),
                 color = cardFillColor,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { FilePickerUtils.openFileInExternalApp(context, uri, fileName) }
+                    .clickable { openDocument(context, uri, fileName, openPdf) }
             ) {
                 Row(
                     modifier = Modifier

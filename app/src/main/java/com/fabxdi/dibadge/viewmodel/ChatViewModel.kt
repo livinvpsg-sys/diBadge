@@ -324,7 +324,21 @@ class ChatViewModel : ViewModel() {
         roomObserveJob = viewModelScope.launch(Dispatchers.IO) {
             dao.getChatMessagesForGroup(groupId).collect { entities ->
                 // Messages the user removed with "Delete for me" are not shown
-                val domainMsgs = entities.filter { !it.isHiddenForMe }.map { it.toDomain() }
+                // Files removed with "Delete for me" from the chat details screen are not shown either
+                val hiddenUrls = try {
+                    context.getSharedPreferences("chat_hidden_urls", Context.MODE_PRIVATE)
+                        .getStringSet("g_$groupId", emptySet()) ?: emptySet()
+                } catch (e: Exception) { emptySet() }
+                val domainMsgs = entities.filter { !it.isHiddenForMe }.map { it.toDomain() }.let { list ->
+                    if (hiddenUrls.isEmpty()) list else list.mapNotNull { m ->
+                        val remaining = m.attachments.filter { it !in hiddenUrls }
+                        when {
+                            remaining.size == m.attachments.size -> m
+                            remaining.isEmpty() && m.text.isBlank() -> null
+                            else -> m.copy(attachments = remaining)
+                        }
+                    }
+                }
                 _messages.value = domainMsgs
                 _messagesLoaded.value = true
             }

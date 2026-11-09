@@ -97,6 +97,7 @@ import com.fabxdi.dibadge.data.HomeEntryEntity
 import com.fabxdi.dibadge.ui.home.AvatarPhotoCache
 import com.fabxdi.dibadge.ui.home.ChatAvatar
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatMessage
+import com.fabxdi.dibadge.ui.home.home_entry.chat.DeleteMessageSheet
 import com.fabxdi.dibadge.ui.my_forms.GroupFormsScreen
 import com.fabxdi.dibadge.ui.theme.AppThemeMode
 import com.fabxdi.dibadge.viewmodel.GroupFolderFile
@@ -123,6 +124,14 @@ data class ChatLinkItem(
 )
 
 
+private fun audioUrlOf(msg: ChatMessage): String? =
+    msg.attachments.firstOrNull { u ->
+        val l = u.lowercase()
+        l.contains("audio") || l.contains(".m4a") || l.contains(".mp3") || l.contains(".wav") ||
+                l.contains(".aac") || l.contains(".ogg") || l.contains(".opus")
+    } ?: msg.attachments.firstOrNull()
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DetailsAudioRow(
     message: ChatMessage,
@@ -132,7 +141,11 @@ private fun DetailsAudioRow(
     secondaryTextColor: Color,
     tealAccent: Color,
     outlineColor: Color,
-    cardFillColor: Color
+    cardFillColor: Color,
+    selected: Boolean = false,
+    selectionMode: Boolean = false,
+    onToggle: () -> Unit = {},
+    onLongPress: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val uri = remember(url) { Uri.parse(url) }
@@ -199,13 +212,15 @@ private fun DetailsAudioRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 64.dp)
+            .combinedClickable(onClick = { if (selectionMode) onToggle() }, onLongClick = onLongPress)
+            .background(if (selected) cardFillColor.copy(alpha = 0.6f) else Color.Transparent)
             .padding(horizontal = 20.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Surface(
             modifier = Modifier
                 .size(40.dp)
-                .clickable { toggle() },
+                .clickable { if (selectionMode) onToggle() else toggle() },
             shape = CircleShape,
             color = cardFillColor,
             border = BorderStroke(1.dp, outlineColor)
@@ -280,6 +295,30 @@ private fun DetailsAudioRow(
                 }
             }
         }
+
+        if (selected) {
+            Spacer(modifier = Modifier.width(10.dp))
+            SelectedTick()
+        }
+    }
+}
+
+/** Small dark circle with a white tick, the same mark used on selected media. */
+@Composable
+private fun SelectedTick() {
+    Surface(
+        modifier = Modifier.size(24.dp),
+        shape = CircleShape,
+        color = Color(0xFF11161A)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = "Selected",
+                tint = Color.White,
+                modifier = Modifier.size(15.dp)
+            )
+        }
     }
 }
 
@@ -292,6 +331,7 @@ fun ChatDetailsScreen(
     onOpenMyForms: () -> Unit = {},
     onReplyMedia: (String) -> Unit = {},
     onShowInChat: (String) -> Unit = {},
+    onDeleteMessage: (messageId: String, forEveryone: Boolean) -> Unit = { _, _ -> },
     detailsViewModel: GroupDetailsViewModel = viewModel()
 ) {
     BackHandler { onBack() }
@@ -497,9 +537,20 @@ fun ChatDetailsScreen(
                         }
                     },
                     actions = {
-                        val allSelectedMediaItems = remember(selectedMediaIds, media, files) {
+                        val selectedLinkUrls = selectedMediaIds.filter { it.startsWith("l:") }
+                            .map { it.removePrefix("l:").substringAfter(":") }
+                        val allSelectedMediaItems = remember(selectedMediaIds, media, files, messages) {
                             val list = mutableListOf<GroupMediaItem>()
                             for (id in selectedMediaIds) {
+                                if (id.startsWith("l:")) continue
+                                if (id.startsWith("a:")) {
+                                    val am = messages.find { it.id == id.removePrefix("a:") }
+                                    val au = am?.let { audioUrlOf(it) }
+                                    if (am != null && au != null) {
+                                        list.add(GroupMediaItem(id = id, url = au, name = FilePickerUtils.getFileName(context, Uri.parse(au)), mediaType = "audio", timestamp = am.timestamp.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()))
+                                    }
+                                    continue
+                                }
                                 val m = media.find { it.id == id }
                                 if (m != null) {
                                     list.add(m)
@@ -513,8 +564,8 @@ fun ChatDetailsScreen(
                             list
                         }
 
-                        // If single selection: show Reply Icon
-                        if (selectedMediaIds.size == 1) {
+                        // If single selection: show Reply Icon (not for links)
+                        if (selectedMediaIds.size == 1 && selectedLinkUrls.isEmpty()) {
                             val selectedItem = allSelectedMediaItems.firstOrNull()
                             IconButton(onClick = {
                                 if (selectedItem != null) {
@@ -542,11 +593,20 @@ fun ChatDetailsScreen(
                             )
                         }
 
-                        // Share Icon
-                        IconButton(onClick = {
-                            shareMultipleMediaItems(context, allSelectedMediaItems)
+                        // Share Icon (links are shared as text)
+                        val shareSelected = {
+                            if (allSelectedMediaItems.isNotEmpty()) {
+                                shareMultipleMediaItems(context, allSelectedMediaItems)
+                            } else if (selectedLinkUrls.isNotEmpty()) {
+                                val send = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, selectedLinkUrls.joinToString("\n"))
+                                }
+                                context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                            }
                             selectedMediaIds = emptySet()
-                        }) {
+                        }
+                        IconButton(onClick = { shareSelected() }) {
                             Icon(
                                 imageVector = Icons.Default.Share,
                                 contentDescription = "Share",
@@ -555,10 +615,7 @@ fun ChatDetailsScreen(
                         }
 
                         // Forward Icon
-                        IconButton(onClick = {
-                            shareMultipleMediaItems(context, allSelectedMediaItems)
-                            selectedMediaIds = emptySet()
-                        }) {
+                        IconButton(onClick = { shareSelected() }) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Reply,
                                 contentDescription = "Forward",
@@ -571,10 +628,10 @@ fun ChatDetailsScreen(
                         if (selectedMediaIds.size == 1) {
                             val selectedItem = allSelectedMediaItems.firstOrNull()
                             IconButton(onClick = {
-                                if (selectedItem != null) {
-                                    val mediaUrl = selectedItem.url
+                                val target = selectedItem?.url ?: selectedLinkUrls.firstOrNull()
+                                if (target != null) {
                                     selectedMediaIds = emptySet()
-                                    onShowInChat(mediaUrl)
+                                    onShowInChat(target)
                                 }
                             }) {
                                 Icon(
@@ -1144,6 +1201,8 @@ fun ChatDetailsScreen(
                                                             l.contains(".aac") || l.contains(".ogg") || l.contains(".opus")
                                                 } ?: audioMsg.attachments.firstOrNull()
                                                 if (audioUrl != null) {
+                                                    val audioKey = "a:" + audioMsg.id
+                                                    val audioSelected = selectedMediaIds.contains(audioKey)
                                                     DetailsAudioRow(
                                                         message = audioMsg,
                                                         url = audioUrl,
@@ -1152,7 +1211,15 @@ fun ChatDetailsScreen(
                                                         secondaryTextColor = secondaryTextColor,
                                                         tealAccent = tealAccent,
                                                         outlineColor = outlineColor,
-                                                        cardFillColor = cardFillColor
+                                                        cardFillColor = cardFillColor,
+                                                        selected = audioSelected,
+                                                        selectionMode = selectedMediaIds.isNotEmpty(),
+                                                        onToggle = {
+                                                            selectedMediaIds = if (audioSelected) selectedMediaIds - audioKey else selectedMediaIds + audioKey
+                                                        },
+                                                        onLongPress = {
+                                                            selectedMediaIds = if (audioSelected) selectedMediaIds - audioKey else selectedMediaIds + audioKey
+                                                        }
                                                     )
                                                 }
                                             }
@@ -1224,7 +1291,8 @@ fun ChatDetailsScreen(
                                             )
 
                                             itemsList.forEach { linkItem ->
-                                                var showLinkMenu by remember { mutableStateOf(false) }
+                                                val linkKey = "l:${linkItem.messageId}:${linkItem.url}"
+                                                val linkSelected = selectedMediaIds.contains(linkKey)
 
                                                 Box {
                                                     Row(
@@ -1233,15 +1301,20 @@ fun ChatDetailsScreen(
                                                             .height(72.dp)
                                                             .combinedClickable(
                                                                 onClick = {
-                                                                    try {
+                                                                    if (selectedMediaIds.isNotEmpty()) {
+                                                                        selectedMediaIds = if (linkSelected) selectedMediaIds - linkKey else selectedMediaIds + linkKey
+                                                                    } else try {
                                                                         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(if (!linkItem.url.startsWith("http")) "https://${linkItem.url}" else linkItem.url))
                                                                         context.startActivity(intent)
                                                                     } catch (e: Exception) {
                                                                         Toast.makeText(context, "Could not open link", Toast.LENGTH_SHORT).show()
                                                                     }
                                                                 },
-                                                                onLongClick = { showLinkMenu = true }
+                                                                onLongClick = {
+                                                                    selectedMediaIds = if (linkSelected) selectedMediaIds - linkKey else selectedMediaIds + linkKey
+                                                                }
                                                             )
+                                                            .background(if (linkSelected) cardFillColor.copy(alpha = 0.6f) else Color.Transparent)
                                                             .padding(horizontal = 20.dp),
                                                         verticalAlignment = Alignment.CenterVertically
                                                     ) {
@@ -1290,30 +1363,12 @@ fun ChatDetailsScreen(
                                                                 overflow = TextOverflow.Ellipsis
                                                             )
                                                         }
+                                                        if (linkSelected) {
+                                                            Spacer(modifier = Modifier.width(10.dp))
+                                                            SelectedTick()
+                                                        }
                                                     }
 
-                                                    DropdownMenu(
-                                                        expanded = showLinkMenu,
-                                                        onDismissRequest = { showLinkMenu = false }
-                                                    ) {
-                                                        DropdownMenuItem(
-                                                            text = { Text("Copy link", fontSize = 14.sp) },
-                                                            onClick = {
-                                                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                                                val clip = ClipData.newPlainText("Link", linkItem.url)
-                                                                clipboard.setPrimaryClip(clip)
-                                                                Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
-                                                                showLinkMenu = false
-                                                            }
-                                                        )
-                                                        DropdownMenuItem(
-                                                            text = { Text("Go to message", fontSize = 14.sp) },
-                                                            onClick = {
-                                                                showLinkMenu = false
-                                                                onShowInChat(linkItem.url)
-                                                            }
-                                                        )
-                                                    }
                                                 }
                                             }
                                         }
@@ -1695,21 +1750,32 @@ fun ChatDetailsScreen(
             )
         }
 
-        // Delete Media Popup
-        DeleteMediaDialog(
-            show = showDeleteMediaDialog,
-            onDismiss = { showDeleteMediaDialog = false },
-            onDeleteForMe = {
-                detailsViewModel.deleteSelectedMediaForMe(context, selectedMediaIds)
-                selectedMediaIds = emptySet()
-                showDeleteMediaDialog = false
-            },
-            onDeleteForAll = {
-                detailsViewModel.deleteSelectedMediaForAll(context, selectedMediaIds)
-                selectedMediaIds = emptySet()
-                showDeleteMediaDialog = false
-            }
-        )
+        // Delete sheet: the same bottom sheet the chat screen uses
+        if (showDeleteMediaDialog && selectedMediaIds.isNotEmpty()) {
+            val pickedFileIds = selectedMediaIds.filter { !it.startsWith("a:") && !it.startsWith("l:") }.toSet()
+            val pickedMessageIds = selectedMediaIds.filter { it.startsWith("a:") || it.startsWith("l:") }
+                .map { it.removeRange(0, 2).substringBefore(":") }.toSet()
+            // Only your own messages can be deleted for everyone
+            val canDeleteForEveryone = pickedMessageIds.all { mid -> messages.find { it.id == mid }?.isSentByMe == true }
+
+            DeleteMessageSheet(
+                selectedCount = selectedMediaIds.size,
+                canDeleteForEveryone = canDeleteForEveryone,
+                onDeleteForEveryone = {
+                    if (pickedFileIds.isNotEmpty()) detailsViewModel.deleteSelectedMediaForAll(context, pickedFileIds)
+                    pickedMessageIds.forEach { onDeleteMessage(it, true) }
+                    selectedMediaIds = emptySet()
+                    showDeleteMediaDialog = false
+                },
+                onDeleteForMe = {
+                    if (pickedFileIds.isNotEmpty()) detailsViewModel.deleteSelectedMediaForMe(context, pickedFileIds)
+                    pickedMessageIds.forEach { onDeleteMessage(it, false) }
+                    selectedMediaIds = emptySet()
+                    showDeleteMediaDialog = false
+                },
+                onDismiss = { showDeleteMediaDialog = false }
+            )
+        }
 
         if (showMembersSheet) {
             val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: "me"

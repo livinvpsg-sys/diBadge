@@ -73,6 +73,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -659,6 +660,7 @@ fun ChatScreen(
     var longPressedMessage by remember { mutableStateOf<ChatMessage?>(null) }
 
     var selectedDocInfoUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedPdfUri by remember { mutableStateOf<Uri?>(null) }
     var isDocInfoPreSend by remember { mutableStateOf(false) }
     var seenThreadIds by remember { mutableStateOf(setOf<String>()) }
     var activePickerTabOverride by remember { mutableStateOf<MentionPickerMode?>(null) }
@@ -830,6 +832,13 @@ fun ChatScreen(
             entry = currentEntry,
             messages = messages,
             onBack = { showGroupDetails = false },
+            onDeleteMessage = { messageId, forEveryone ->
+                if (forEveryone) {
+                    chatViewModel.deleteForEveryone(context, currentEntry.id.toString(), setOf(messageId))
+                } else {
+                    chatViewModel.deleteForMe(context, currentEntry.id.toString(), setOf(messageId))
+                }
+            },
             onOpenMyForms = {
                 showGroupDetails = false
                 onOpenMyForms()
@@ -844,11 +853,29 @@ fun ChatScreen(
             },
             onShowInChat = { mediaUrl: String ->
                 showGroupDetails = false
-                val targetMsg = messages.find { msg -> msg.attachments.contains(mediaUrl) }
+                val targetMsg = messages.find { msg -> msg.attachments.contains(mediaUrl) || msg.text.contains(mediaUrl) }
                 if (targetMsg != null) {
                     highlightedMessageId = targetMsg.id
                 }
             }
+        )
+        return
+    }
+
+    if (showNewPollScreen) {
+        NewPollScreen(
+            isDark = isDark,
+            onCreatePoll = { question, options, allowMultiple, showVoters ->
+                chatViewModel.sendPollMessage(
+                    context = context,
+                    groupId = currentEntry.id.toString(),
+                    question = question,
+                    options = options,
+                    allowMultiple = allowMultiple,
+                    showVoters = showVoters
+                )
+            },
+            onClose = { showNewPollScreen = false }
         )
         return
     }
@@ -919,6 +946,10 @@ fun ChatScreen(
             longPressedMessage = null
         } else if (selectedAttachmentUris.isNotEmpty()) {
             selectedAttachmentUris = emptySet()
+        } else if (attachedFiles.isNotEmpty()) {
+            // Back closes the attachment preview and shows the chat again
+            attachedFiles = emptyList()
+            pendingDurations = emptyMap()
         } else if (selectedMessages.isNotEmpty()) {
             selectedMessages = emptySet()
             selectedAttachmentUri = null
@@ -1581,10 +1612,10 @@ fun ChatScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(pageBgColor)
+                        .background(if (attachedFiles.isNotEmpty()) Color.Black.copy(alpha = 0.45f) else pageBgColor)
                         .navigationBarsPadding()
                         .imePadding()
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .padding(start = 12.dp, end = 12.dp, top = if (attachedFiles.isNotEmpty()) 0.dp else 8.dp, bottom = 8.dp)
                 ) {
                     // Mention Picker Card above field (aligned with message input field bounds: 44dp start, 52dp end)
                     if (showMentionPicker && mentionTriggerInfo != null) {
@@ -1640,48 +1671,68 @@ fun ChatScreen(
 
                     // Attachment Preview Strip above typing box
                     if (attachedFiles.isNotEmpty()) {
-                        AttachmentPreviewStrip(
-                            attachedUris = attachedFiles,
-                            durationsMap = pendingDurations,
-                            selectedUris = selectedAttachmentUris,
-                            isDark = isDark,
-                            pageBgColor = pageBgColor,
-                            cardColor = cardColor,
-                            outlineColor = outlineColor,
-                            primaryTextColor = primaryTextColor,
-                            secondaryTextColor = secondaryTextColor,
-                            errorColor = errorColor,
-                            onToggleSelect = { uri ->
-                                selectedAttachmentUris = if (selectedAttachmentUris.contains(uri)) {
-                                    selectedAttachmentUris - uri
-                                } else {
-                                    selectedAttachmentUris + uri
+                        // The preview sits on the dimmed chat (no light box behind it), edge to edge
+                        Box(
+                            modifier = Modifier
+                                .layout { measurable, constraints ->
+                                    val extra = 24.dp.roundToPx()
+                                    val p = measurable.measure(
+                                        constraints.copy(
+                                            minWidth = constraints.maxWidth + extra,
+                                            maxWidth = constraints.maxWidth + extra
+                                        )
+                                    )
+                                    layout(constraints.maxWidth, p.height) { p.place(-extra / 2, 0) }
                                 }
-                            },
-                            onExitSelectionMode = {
-                                selectedAttachmentUris = emptySet()
-                            },
-                            onDeleteSelected = {
-                                attachedFiles = attachedFiles.filter { !selectedAttachmentUris.contains(it) }
-                                pendingDurations = pendingDurations.filter { !selectedAttachmentUris.contains(Uri.parse(it.key)) }
-                                selectedAttachmentUris = emptySet()
-                            },
-                            onImageClick = { uris, index ->
-                                galleryMedia = uris
-                                galleryInitialIndex = index
-                            },
-                            onAudioClick = { uris, index ->
-                                audioPlayerMedia = uris
-                                audioPlayerInitialIndex = index
-                            },
-                            onFileClick = { uri ->
-                                val fileName = FilePickerUtils.getFileName(context, uri)
-                                val opened = FilePickerUtils.openFileInExternalApp(context, uri, fileName)
-                                if (!opened) {
-                                    Toast.makeText(context, "No longer available", Toast.LENGTH_SHORT).show()
+                        ) {
+                            AttachmentPreviewStrip(
+                                attachedUris = attachedFiles,
+                                durationsMap = pendingDurations,
+                                selectedUris = selectedAttachmentUris,
+                                isDark = isDark,
+                                pageBgColor = Color.Transparent,
+                                cardColor = cardColor,
+                                outlineColor = outlineColor,
+                                primaryTextColor = primaryTextColor,
+                                secondaryTextColor = secondaryTextColor,
+                                errorColor = errorColor,
+                                onToggleSelect = { uri ->
+                                    selectedAttachmentUris = if (selectedAttachmentUris.contains(uri)) {
+                                        selectedAttachmentUris - uri
+                                    } else {
+                                        selectedAttachmentUris + uri
+                                    }
+                                },
+                                onExitSelectionMode = {
+                                    selectedAttachmentUris = emptySet()
+                                },
+                                onDeleteSelected = {
+                                    attachedFiles = attachedFiles.filter { !selectedAttachmentUris.contains(it) }
+                                    pendingDurations = pendingDurations.filter { !selectedAttachmentUris.contains(Uri.parse(it.key)) }
+                                    selectedAttachmentUris = emptySet()
+                                },
+                                onImageClick = { uris, index ->
+                                    galleryMedia = uris
+                                    galleryInitialIndex = index
+                                },
+                                onAudioClick = { uris, index ->
+                                    audioPlayerMedia = uris
+                                    audioPlayerInitialIndex = index
+                                },
+                                onFileClick = { uri ->
+                                    // Open in the in-app document screen (like images open in the in-app viewer)
+                                    val docName = FilePickerUtils.getFileName(context, uri)
+                                    if (docName.substringAfterLast('.', "").equals("pdf", ignoreCase = true)) {
+                                        selectedPdfUri = uri
+                                    } else {
+                                        // Types the app can't show itself: choose an app from outside
+                                        if (!FilePickerUtils.openFileInExternalApp(context, uri, docName)) {
+                                            Toast.makeText(context, "No longer available", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
 
                     // Composer Reply Preview Bar directly above typing box (diBadge style)
@@ -2039,7 +2090,7 @@ fun ChatScreen(
 
                                                 Surface(
                                                     modifier = Modifier
-                                                        .size(40.dp)
+                                                        .size(32.dp)
                                                         .clickable {
                                                             if (isPreviewPlaying) {
                                                                 player.pause()
@@ -2061,15 +2112,14 @@ fun ChatScreen(
                                                             }
                                                         },
                                                     shape = CircleShape,
-                                                    color = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7),
-                                                    border = BorderStroke(1.dp, if (isDark) Color(0xFF2A3037) else Color(0xFFD3D9DF))
+                                                    color = Color.Transparent
                                                 ) {
                                                     Box(contentAlignment = Alignment.Center) {
                                                         Icon(
                                                             imageVector = if (isPreviewPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                                             contentDescription = "Preview recording",
-                                                            tint = primaryTextColor,
-                                                            modifier = Modifier.size(20.dp)
+                                                            tint = tealAccent,
+                                                            modifier = Modifier.size(30.dp)
                                                         )
                                                     }
                                                 }
@@ -2241,6 +2291,101 @@ fun ChatScreen(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            val performSend: () -> Unit = {
+                                val currentText = inputText.trim()
+                                chatViewModel.sendMessage(
+                                    context = context,
+                                    groupId = currentEntry.id.toString(),
+                                    text = currentText,
+                                    attachmentUris = attachedFiles,
+                                    durationsMap = pendingDurations,
+                                    replyingTo = replyingTo,
+                                    replyingToAttachmentUri = replyingToAttachmentUriState
+                                )
+
+                                // Cross-post to mentioned linked groups with mention stripped for receiver
+                                val mentionedLinkedGroups = mutableSetOf<Pair<String, String>>()
+                                if (currentText.contains("@All linked groups") || currentText.contains("@All")) {
+                                    acceptedConnections.forEach { conn ->
+                                        mentionedLinkedGroups.add(conn.otherEntityId to conn.otherEntityName)
+                                    }
+                                } else {
+                                    acceptedConnections.forEach { conn ->
+                                        if (currentText.contains("@${conn.otherEntityName}")) {
+                                            mentionedLinkedGroups.add(conn.otherEntityId to conn.otherEntityName)
+                                        }
+                                    }
+                                }
+
+                                for ((targetGroupId, targetGroupName) in mentionedLinkedGroups) {
+                                    if (targetGroupId != currentEntry.id.toString() && targetGroupId.isNotBlank()) {
+                                        val crossPostText = stripGroupMention(currentText, targetGroupName)
+                                        if (crossPostText.isNotBlank() || attachedFiles.isNotEmpty()) {
+                                            chatViewModel.sendMessage(
+                                                context = context,
+                                                groupId = targetGroupId,
+                                                text = crossPostText,
+                                                attachmentUris = attachedFiles,
+                                                durationsMap = pendingDurations,
+                                                replyingTo = null,
+                                                replyingToAttachmentUri = null
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Process member mentions for de-duplicated notification in sender's group
+                                val mentionedMemberUids = mutableSetOf<String>()
+                                val otherMembers = members.filter { !it.isYou && it.uid != currentUserId }
+
+                                if (currentText.contains("@All")) {
+                                    otherMembers.forEach { mentionedMemberUids.add(it.uid) }
+                                }
+                                otherMembers.forEach { member ->
+                                    if (currentText.contains("@${member.displayName}", ignoreCase = true)) {
+                                        mentionedMemberUids.add(member.uid)
+                                    }
+                                }
+
+                                val textBody = stripGroupMention(currentText)
+                                val notificationBody = if (textBody.isNotBlank()) {
+                                    textBody
+                                } else if (attachedFiles.isNotEmpty()) {
+                                    val category = getAttachmentCategory(context, attachedFiles.first())
+                                    val count = attachedFiles.size
+                                    when (category) {
+                                        AttachmentCategory.IMAGE -> if (count == 1) "1 photo" else "$count photos"
+                                        AttachmentCategory.VIDEO -> if (count == 1) "1 video" else "$count videos"
+                                        AttachmentCategory.AUDIO -> if (count == 1) "1 audio file" else "$count audio files"
+                                        AttachmentCategory.DOCUMENT -> if (count == 1) "1 document" else "$count documents"
+                                    }
+                                } else "Sent a message"
+
+                                val currentSenderName = FirebaseAuth.getInstance().currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Me"
+
+                                for (memberUid in mentionedMemberUids) {
+                                    if (memberUid.isNotBlank()) {
+                                        chatViewModel.sendMemberMentionNotification(
+                                            context = context,
+                                            targetUid = memberUid,
+                                            senderName = currentSenderName,
+                                            groupName = currentEntry.title,
+                                            body = notificationBody
+                                        )
+                                    }
+                                }
+
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                prefs.edit().remove(draftKey).apply()
+
+                                inputText = ""
+                                attachedFiles = emptyList()
+                                showEmojiPicker = false
+                                replyingTo = null
+                                replyingToAttachmentUriState = null
+                                pendingDurations = emptyMap()
+                                selectedAttachmentUris = emptySet()
+                            }
                             if (attachedFiles.isNotEmpty()) {
                                 // 48dp Raised Circle "+" Button (replaces paperclip while attachments ready)
                                 Surface(
@@ -2248,6 +2393,13 @@ fun ChatScreen(
                                         .padding(start = 12.dp)
                                         .size(48.dp)
                                         .clickable {
+                                            if (selectedAttachmentUris.isNotEmpty()) {
+                                                // Selection mode: this button deletes the selected attachments
+                                                attachedFiles = attachedFiles.filter { !selectedAttachmentUris.contains(it) }
+                                                pendingDurations = pendingDurations.filter { !selectedAttachmentUris.contains(Uri.parse(it.key)) }
+                                                selectedAttachmentUris = emptySet()
+                                                return@clickable
+                                            }
                                             if (attachedFiles.size >= 10) {
                                                 Toast.makeText(context, "You can attach up to 10 files", Toast.LENGTH_SHORT).show()
                                             } else {
@@ -2261,14 +2413,14 @@ fun ChatScreen(
                                             }
                                         },
                                     shape = CircleShape,
-                                    color = cardColor,
+                                    color = if (selectedAttachmentUris.isNotEmpty()) Color.White else cardColor,
                                     shadowElevation = if (!isDark) 1.5.dp else 0.dp
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Icon(
-                                            imageVector = Icons.Default.Add,
-                                            contentDescription = "Add more attachments",
-                                            tint = primaryTextColor,
+                                            imageVector = if (selectedAttachmentUris.isNotEmpty()) Icons.Default.Delete else Icons.Default.Add,
+                                            contentDescription = if (selectedAttachmentUris.isNotEmpty()) "Delete selected attachments" else "Add more attachments",
+                                            tint = if (selectedAttachmentUris.isNotEmpty()) errorColor else primaryTextColor,
                                             modifier = Modifier.size(24.dp)
                                         )
                                     }
@@ -2393,7 +2545,7 @@ fun ChatScreen(
 
                                     // Camera Icon (24dp, secondary) - hidden when typing
                                     val textWithoutGroupMentions = stripGroupMention(inputText)
-                                    val isTyping = (textWithoutGroupMentions.isNotEmpty() || attachedFiles.isNotEmpty()) && selectedAttachmentUris.isEmpty()
+                                    val isTyping = textWithoutGroupMentions.isNotEmpty() || attachedFiles.isNotEmpty()
                                     if (!isTyping) {
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Box(
@@ -2416,13 +2568,30 @@ fun ChatScreen(
                                                 modifier = Modifier.size(24.dp)
                                             )
                                         }
+                                    } else if (editingMessage == null) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(CircleShape)
+                                                .clickable { performSend() },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                painter = painterResource(id = R.drawable.ic_send_arrow),
+                                                contentDescription = "Send message",
+                                                tint = tealAccent,
+                                                modifier = Modifier.size(26.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
 
-                            Spacer(modifier = Modifier.width(8.dp))
+                            val slotHidden = editingMessage == null && (attachedFiles.isNotEmpty() || stripGroupMention(inputText).isNotEmpty())
+                            Spacer(modifier = Modifier.width(if (slotHidden) 0.dp else 8.dp))
 
-                            // Microphone OR Send OR Check (Save Edit) Slot
+                            // Microphone OR Check (Save Edit) Slot. Send now lives inside the field. (Save Edit) Slot
                             if (editingMessage != null) {
                                 val isMediaCaptionEdit = editingMessage!!.attachments.isNotEmpty()
                                 val canSaveEdit = if (isMediaCaptionEdit) {
@@ -2461,127 +2630,11 @@ fun ChatScreen(
                                 val isTyping = (textWithoutGroupMentions.isNotEmpty() || attachedFiles.isNotEmpty()) && !isSelectionMode
                                 val isActionEnabled = isSelectionMode || isTyping
 
-                                Box(
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .clickable(enabled = isActionEnabled) {
-                                            if (isSelectionMode) {
-                                                // Delete selected attachments action (immediate delete, no snackbar)
-                                                attachedFiles = attachedFiles.filter { !selectedAttachmentUris.contains(it) }
-                                                pendingDurations = pendingDurations.filter { !selectedAttachmentUris.contains(Uri.parse(it.key)) }
-                                                selectedAttachmentUris = emptySet()
-                                            } else if (isTyping) {
-                                                val currentText = inputText.trim()
-                                                chatViewModel.sendMessage(
-                                                    context = context,
-                                                    groupId = currentEntry.id.toString(),
-                                                    text = currentText,
-                                                    attachmentUris = attachedFiles,
-                                                    durationsMap = pendingDurations,
-                                                    replyingTo = replyingTo,
-                                                    replyingToAttachmentUri = replyingToAttachmentUriState
-                                                )
-
-                                                // Cross-post to mentioned linked groups with mention stripped for receiver
-                                                val mentionedLinkedGroups = mutableSetOf<Pair<String, String>>()
-                                                if (currentText.contains("@All linked groups") || currentText.contains("@All")) {
-                                                    acceptedConnections.forEach { conn ->
-                                                        mentionedLinkedGroups.add(conn.otherEntityId to conn.otherEntityName)
-                                                    }
-                                                } else {
-                                                    acceptedConnections.forEach { conn ->
-                                                        if (currentText.contains("@${conn.otherEntityName}")) {
-                                                            mentionedLinkedGroups.add(conn.otherEntityId to conn.otherEntityName)
-                                                        }
-                                                    }
-                                                }
-
-                                                for ((targetGroupId, targetGroupName) in mentionedLinkedGroups) {
-                                                    if (targetGroupId != currentEntry.id.toString() && targetGroupId.isNotBlank()) {
-                                                        val crossPostText = stripGroupMention(currentText, targetGroupName)
-                                                        if (crossPostText.isNotBlank() || attachedFiles.isNotEmpty()) {
-                                                            chatViewModel.sendMessage(
-                                                                context = context,
-                                                                groupId = targetGroupId,
-                                                                text = crossPostText,
-                                                                attachmentUris = attachedFiles,
-                                                                durationsMap = pendingDurations,
-                                                                replyingTo = null,
-                                                                replyingToAttachmentUri = null
-                                                            )
-                                                        }
-                                                    }
-                                                }
-
-                                                // Process member mentions for de-duplicated notification in sender's group
-                                                val mentionedMemberUids = mutableSetOf<String>()
-                                                val otherMembers = members.filter { !it.isYou && it.uid != currentUserId }
-
-                                                if (currentText.contains("@All")) {
-                                                    otherMembers.forEach { mentionedMemberUids.add(it.uid) }
-                                                }
-                                                otherMembers.forEach { member ->
-                                                    if (currentText.contains("@${member.displayName}", ignoreCase = true)) {
-                                                        mentionedMemberUids.add(member.uid)
-                                                    }
-                                                }
-
-                                                val textBody = stripGroupMention(currentText)
-                                                val notificationBody = if (textBody.isNotBlank()) {
-                                                    textBody
-                                                } else if (attachedFiles.isNotEmpty()) {
-                                                    val category = getAttachmentCategory(context, attachedFiles.first())
-                                                    val count = attachedFiles.size
-                                                    when (category) {
-                                                        AttachmentCategory.IMAGE -> if (count == 1) "1 photo" else "$count photos"
-                                                        AttachmentCategory.VIDEO -> if (count == 1) "1 video" else "$count videos"
-                                                        AttachmentCategory.AUDIO -> if (count == 1) "1 audio file" else "$count audio files"
-                                                        AttachmentCategory.DOCUMENT -> if (count == 1) "1 document" else "$count documents"
-                                                    }
-                                                } else "Sent a message"
-
-                                                val currentSenderName = FirebaseAuth.getInstance().currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Me"
-
-                                                for (memberUid in mentionedMemberUids) {
-                                                    if (memberUid.isNotBlank()) {
-                                                        chatViewModel.sendMemberMentionNotification(
-                                                            context = context,
-                                                            targetUid = memberUid,
-                                                            senderName = currentSenderName,
-                                                            groupName = currentEntry.title,
-                                                            body = notificationBody
-                                                        )
-                                                    }
-                                                }
-
-                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                prefs.edit().remove(draftKey).apply()
-
-                                                inputText = ""
-                                                attachedFiles = emptyList()
-                                                showEmojiPicker = false
-                                                replyingTo = null
-                                                replyingToAttachmentUriState = null
-                                                pendingDurations = emptyMap()
-                                            }
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (isSelectionMode) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "Delete selected attachments",
-                                            tint = errorColor,
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                    } else if (isTyping) {
-                                        Icon(
-                                            painter = painterResource(id = R.drawable.ic_send_arrow),
-                                            contentDescription = "Send message",
-                                            tint = tealAccent,
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                    } else {
+                                if (!isSelectionMode && !isTyping) {
+                                    Box(
+                                        modifier = Modifier.size(44.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()
@@ -2673,6 +2726,9 @@ fun ChatScreen(
                         ) { index ->
                             val rawMsg = dateMessages[index]
                             val isFirstInRun = index == 0 || dateMessages[index - 1].senderName != rawMsg.senderName || dateMessages[index - 1].isSentByMe != rawMsg.isSentByMe
+                            // Messages from the same person in the same minute are shown as one group
+                            val groupedWithPrev = index > 0 && canGroupMessages(dateMessages[index - 1], rawMsg)
+                            val groupedWithNext = index < dateMessages.size - 1 && canGroupMessages(rawMsg, dateMessages[index + 1])
 
                             val isGrpMention = rawMsg.isGroupMention || rawMsg.text.contains("@All") || acceptedConnections.any { rawMsg.text.contains("@${it.otherEntityName}") }
                             val threadIdKey = rawMsg.threadId ?: rawMsg.id
@@ -2716,58 +2772,62 @@ fun ChatScreen(
                                     }
                                 )
                             } else {
-                                MessageBubble(
-                                    message = msgToRender,
-                                    player = player,
-                                    isSelected = selectedMessages.contains(msgToRender.id),
-                                    isAnySelected = selectedMessages.isNotEmpty(),
-                                    isFirstInRun = isFirstInRun,
-                                    isOneToOne = isOneToOne,
-                                    onLongClick = { uri ->
-                                        if (selectedMessages.isEmpty()) {
-                                            longPressedMessage = msgToRender
-                                        } else {
-                                            selectedMessages = if (selectedMessages.contains(msgToRender.id)) selectedMessages - msgToRender.id else selectedMessages + msgToRender.id
-                                        }
-                                    },
-                                    onClick = {
-                                        if (selectedMessages.isNotEmpty()) {
-                                            selectedMessages = if (selectedMessages.contains(msgToRender.id)) selectedMessages - msgToRender.id else selectedMessages + msgToRender.id
-                                        }
-                                    },
-                                    onReplyClick = { originalId, _ ->
-                                        // Tapping the quoted message jumps to the original and highlights it
-                                        val lazyIdx = messageToLazyIndex[originalId]
-                                        if (lazyIdx != null) {
-                                            val headerOffset = if (messages.isNotEmpty() && groupCreatedDateText != null) 1 else 0
-                                            scope.launch {
-                                                listState.animateScrollToItem(lazyIdx + headerOffset)
-                                                highlightedMessageId = originalId
+                                CompositionLocalProvider(LocalOpenPdf provides { pdfUri -> selectedPdfUri = pdfUri }) {
+                                    MessageBubble(
+                                        message = msgToRender,
+                                        player = player,
+                                        isSelected = selectedMessages.contains(msgToRender.id),
+                                        isAnySelected = selectedMessages.isNotEmpty(),
+                                        isFirstInRun = isFirstInRun,
+                                        isGroupedWithPrev = groupedWithPrev,
+                                        isGroupedWithNext = groupedWithNext,
+                                        isOneToOne = isOneToOne,
+                                        onLongClick = { uri ->
+                                            if (selectedMessages.isEmpty()) {
+                                                longPressedMessage = msgToRender
+                                            } else {
+                                                selectedMessages = if (selectedMessages.contains(msgToRender.id)) selectedMessages - msgToRender.id else selectedMessages + msgToRender.id
                                             }
+                                        },
+                                        onClick = {
+                                            if (selectedMessages.isNotEmpty()) {
+                                                selectedMessages = if (selectedMessages.contains(msgToRender.id)) selectedMessages - msgToRender.id else selectedMessages + msgToRender.id
+                                            }
+                                        },
+                                        onReplyClick = { originalId, _ ->
+                                            // Tapping the quoted message jumps to the original and highlights it
+                                            val lazyIdx = messageToLazyIndex[originalId]
+                                            if (lazyIdx != null) {
+                                                val headerOffset = if (messages.isNotEmpty() && groupCreatedDateText != null) 1 else 0
+                                                scope.launch {
+                                                    listState.animateScrollToItem(lazyIdx + headerOffset)
+                                                    highlightedMessageId = originalId
+                                                }
+                                            }
+                                        },
+                                        isHighlighted = highlightedMessageId == msgToRender.id,
+                                        onMediaClick = { mediaUris, startIndex ->
+                                            galleryMedia = mediaUris
+                                            galleryInitialIndex = startIndex
+                                            galleryMessage = msgToRender
+                                        },
+                                        onCommentsClick = { clickedMsg ->
+                                            val tKey = clickedMsg.threadId ?: clickedMsg.id
+                                            seenThreadIds = seenThreadIds + tKey
+                                            selectedCommentMessage = clickedMsg
+                                        },
+                                        onSentToClick = { clickedMsg ->
+                                            selectedSentToMessage = clickedMsg
+                                        },
+                                        onSwipeToReply = { uri ->
+                                            replyingTo = msgToRender
+                                            replyingToAttachmentUriState = uri
+                                        },
+                                        onRetryFailedMessage = { clickedMsg ->
+                                            selectedFailedMessage = clickedMsg
                                         }
-                                    },
-                                    isHighlighted = highlightedMessageId == msgToRender.id,
-                                    onMediaClick = { mediaUris, startIndex ->
-                                        galleryMedia = mediaUris
-                                        galleryInitialIndex = startIndex
-                                        galleryMessage = msgToRender
-                                    },
-                                    onCommentsClick = { clickedMsg ->
-                                        val tKey = clickedMsg.threadId ?: clickedMsg.id
-                                        seenThreadIds = seenThreadIds + tKey
-                                        selectedCommentMessage = clickedMsg
-                                    },
-                                    onSentToClick = { clickedMsg ->
-                                        selectedSentToMessage = clickedMsg
-                                    },
-                                    onSwipeToReply = { uri ->
-                                        replyingTo = msgToRender
-                                        replyingToAttachmentUriState = uri
-                                    },
-                                    onRetryFailedMessage = { clickedMsg ->
-                                        selectedFailedMessage = clickedMsg
-                                    }
-                                )
+                                    )
+                                }
                             }
                         }
                     }
@@ -2792,6 +2852,23 @@ fun ChatScreen(
                         secondaryTextColor = secondaryTextColor,
                         isDark = isDark,
                         modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+
+                // Dim the chat while photos or files are waiting to be sent, so the preview tiles stand out
+                if (attachedFiles.isNotEmpty() && !showMentionPicker) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.45f))
+                            .pointerInput(Unit) {
+                                // Taps on the dimmed chat do nothing while attachments are pending
+                                awaitPointerEventScope {
+                                    while (true) {
+                                        awaitPointerEvent().changes.forEach { it.consume() }
+                                    }
+                                }
+                            }
                     )
                 }
 
@@ -3323,23 +3400,6 @@ fun ChatScreen(
                 )
             }
 
-            if (showNewPollScreen) {
-                NewPollScreen(
-                    isDark = isDark,
-                    onCreatePoll = { question, options, allowMultiple, showVoters ->
-                        chatViewModel.sendPollMessage(
-                            context = context,
-                            groupId = currentEntry.id.toString(),
-                            question = question,
-                            options = options,
-                            allowMultiple = allowMultiple,
-                            showVoters = showVoters
-                        )
-                    },
-                    onClose = { showNewPollScreen = false }
-                )
-            }
-
             if (selectedPollForVotes != null) {
                 val targetPoll = selectedPollForVotes!!
                 val optionGroups = targetPoll.pollOptions.map { opt ->
@@ -3361,6 +3421,22 @@ fun ChatScreen(
 
 
 
+
+            if (selectedPdfUri != null) {
+                val pdfUri = selectedPdfUri!!
+                PdfViewerScreen(
+                    fileUri = pdfUri,
+                    fileName = FilePickerUtils.getFileName(context, pdfUri),
+                    isDark = isDark,
+                    onClose = { selectedPdfUri = null },
+                    onDelete = if (attachedFiles.contains(pdfUri)) {
+                        {
+                            attachedFiles = attachedFiles.filter { it != pdfUri }
+                            selectedPdfUri = null
+                        }
+                    } else null
+                )
+            }
 
             if (selectedDocInfoUri != null) {
                 val uri = selectedDocInfoUri!!
@@ -3394,4 +3470,14 @@ fun ChatScreen(
             }
         }
     }
+}
+
+/** True when two neighbouring messages belong in one group: same person, same minute, normal messages. */
+private fun canGroupMessages(a: ChatMessage, b: ChatMessage): Boolean {
+    fun plain(m: ChatMessage) = !m.isDeleted && !m.isGroupMention && !m.text.contains("@All") &&
+            m.msgType != "systemLibraryAdded" && m.msgType != "system_library_added"
+    return plain(a) && plain(b) &&
+            a.isSentByMe == b.isSentByMe &&
+            a.senderName == b.senderName &&
+            a.timestamp.truncatedTo(java.time.temporal.ChronoUnit.MINUTES) == b.timestamp.truncatedTo(java.time.temporal.ChronoUnit.MINUTES)
 }

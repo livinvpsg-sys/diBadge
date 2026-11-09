@@ -1153,6 +1153,31 @@ class GroupDetailsViewModel : ViewModel() {
                 val prefs = hiddenPrefs(context)
                 val old = prefs.getStringSet("g_$currentGroupId", emptySet()) ?: emptySet()
                 prefs.edit().putStringSet("g_$currentGroupId", old + idsToDelete).apply()
+
+                // Take the same files out of the chat screen on this phone
+                val urls = idsToDelete.mapNotNull { idToSource[it]?.second }.filter { it.isNotBlank() }.toSet()
+                if (urls.isNotEmpty()) {
+                    val chatPrefs = context.getSharedPreferences("chat_hidden_urls", Context.MODE_PRIVATE)
+                    val oldUrls = chatPrefs.getStringSet("g_$currentGroupId", emptySet()) ?: emptySet()
+                    chatPrefs.edit().putStringSet("g_$currentGroupId", oldUrls + urls).apply()
+                    // Touch the saved messages so the chat screen refreshes straight away
+                    val dao = AppDatabase.getDatabase(context).reminderDao()
+                    val msgIds = idsToDelete.mapNotNull { idToSource[it]?.first }.toSet()
+                    withContext(Dispatchers.IO) {
+                        for (mid in msgIds) {
+                            dao.getChatMessageById(mid)?.let { entity ->
+                                val remaining = entity.attachmentsJson.split("|||").filter { it.isNotBlank() && it !in urls }
+                                val hideAll = remaining.isEmpty() && entity.text.isBlank()
+                                dao.insertChatMessage(
+                                    entity.copy(
+                                        attachmentsJson = remaining.joinToString("|||"),
+                                        isHiddenForMe = entity.isHiddenForMe || hideAll
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
