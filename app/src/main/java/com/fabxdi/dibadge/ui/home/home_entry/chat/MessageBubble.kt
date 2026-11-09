@@ -2602,24 +2602,25 @@ private fun VoiceNoteBubble(
                         Spacer(modifier = Modifier.width(8.dp))
                         Surface(
                             modifier = Modifier
-                                .size(38.dp)
+                                .size(40.dp)
                                 .clickable(enabled = !sending) { togglePlay() },
                             shape = CircleShape,
-                            color = tealAccent
+                            color = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7),
+                            border = BorderStroke(1.dp, if (isDark) Color(0xFF2A3037) else Color(0xFFD3D9DF))
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 if (loading || sending) {
                                     CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
+                                        modifier = Modifier.size(22.dp),
                                         strokeWidth = 2.dp,
-                                        color = Color.White
+                                        color = tealAccent
                                     )
                                 } else {
                                     Icon(
                                         imageVector = if (active && !paused) Icons.Default.Pause else Icons.Default.PlayArrow,
                                         contentDescription = if (active && !paused) "Pause audio" else "Play audio",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(24.dp)
+                                        tint = primaryTextColor,
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
                             }
@@ -2668,12 +2669,13 @@ private fun VoiceNoteBubble(
                                 .size(40.dp)
                                 .clickable(enabled = !sending) { togglePlay() },
                             shape = CircleShape,
-                            color = Color.Transparent
+                            color = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7),
+                            border = BorderStroke(1.dp, if (isDark) Color(0xFF2A3037) else Color(0xFFD3D9DF))
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 if (loading || sending) {
                                     CircularProgressIndicator(
-                                        modifier = Modifier.size(24.dp),
+                                        modifier = Modifier.size(22.dp),
                                         strokeWidth = 2.dp,
                                         color = lineColor
                                     )
@@ -2681,8 +2683,8 @@ private fun VoiceNoteBubble(
                                     Icon(
                                         imageVector = if (active && !paused) Icons.Default.Pause else Icons.Default.PlayArrow,
                                         contentDescription = if (active && !paused) "Pause voice message" else "Play voice message",
-                                        tint = lineColor,
-                                        modifier = Modifier.size(36.dp)
+                                        tint = primaryTextColor,
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
                             }

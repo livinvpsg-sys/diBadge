@@ -853,24 +853,6 @@ fun ChatScreen(
         return
     }
 
-    if (showNewPollScreen) {
-        NewPollScreen(
-            isDark = isDark,
-            onCreatePoll = { question, options, allowMultiple, showVoters ->
-                chatViewModel.sendPollMessage(
-                    context = context,
-                    groupId = currentEntry.id.toString(),
-                    question = question,
-                    options = options,
-                    allowMultiple = allowMultiple,
-                    showVoters = showVoters
-                )
-            },
-            onClose = { showNewPollScreen = false }
-        )
-        return
-    }
-
     val groupedMessages = remember(messages) {
         messages.groupBy { it.timestamp.toLocalDate() }.toSortedMap()
     }
@@ -2057,7 +2039,7 @@ fun ChatScreen(
 
                                                 Surface(
                                                     modifier = Modifier
-                                                        .size(32.dp)
+                                                        .size(40.dp)
                                                         .clickable {
                                                             if (isPreviewPlaying) {
                                                                 player.pause()
@@ -2079,14 +2061,15 @@ fun ChatScreen(
                                                             }
                                                         },
                                                     shape = CircleShape,
-                                                    color = Color.Transparent
+                                                    color = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7),
+                                                    border = BorderStroke(1.dp, if (isDark) Color(0xFF2A3037) else Color(0xFFD3D9DF))
                                                 ) {
                                                     Box(contentAlignment = Alignment.Center) {
                                                         Icon(
                                                             imageVector = if (isPreviewPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                                             contentDescription = "Preview recording",
-                                                            tint = tealAccent,
-                                                            modifier = Modifier.size(30.dp)
+                                                            tint = primaryTextColor,
+                                                            modifier = Modifier.size(20.dp)
                                                         )
                                                     }
                                                 }
@@ -3337,6 +3320,23 @@ fun ChatScreen(
                         )
                     },
                     onDismiss = { showShareLocationSheet = false }
+                )
+            }
+
+            if (showNewPollScreen) {
+                NewPollScreen(
+                    isDark = isDark,
+                    onCreatePoll = { question, options, allowMultiple, showVoters ->
+                        chatViewModel.sendPollMessage(
+                            context = context,
+                            groupId = currentEntry.id.toString(),
+                            question = question,
+                            options = options,
+                            allowMultiple = allowMultiple,
+                            showVoters = showVoters
+                        )
+                    },
+                    onClose = { showNewPollScreen = false }
                 )
             }
 

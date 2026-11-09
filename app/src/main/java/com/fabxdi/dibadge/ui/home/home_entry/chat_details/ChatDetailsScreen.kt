@@ -72,6 +72,8 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -120,6 +122,166 @@ data class ChatLinkItem(
     val messageId: String
 )
 
+
+@Composable
+private fun DetailsAudioRow(
+    message: ChatMessage,
+    url: String,
+    player: com.fabxdi.dibadge.util.AudioPlayer,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    tealAccent: Color,
+    outlineColor: Color,
+    cardFillColor: Color
+) {
+    val context = LocalContext.current
+    val uri = remember(url) { Uri.parse(url) }
+    var active by remember(url) { mutableStateOf(false) }
+    var paused by remember(url) { mutableStateOf(false) }
+    var loading by remember(url) { mutableStateOf(false) }
+    var progress by remember(url) { mutableFloatStateOf(0f) }
+    var positionSec by remember(url) { mutableLongStateOf(0L) }
+    var durationSec by remember(url) {
+        mutableLongStateOf(
+            message.attachmentDurations[url]
+                ?: message.attachmentDurations.filterKeys { !it.startsWith("sz_") }.values.firstOrNull()
+                ?: 0L
+        )
+    }
+
+    // Follow the player while this audio is the one playing. Another audio taking over resets this one.
+    LaunchedEffect(active) {
+        while (active) {
+            if (player.currentSource() != url) {
+                active = false; paused = false; loading = false; progress = 0f; positionSec = 0L
+                break
+            }
+            val ready = player.isPrepared()
+            loading = !ready
+            if (ready) {
+                paused = !player.isPlaying()
+                val total = player.getDuration()
+                val cur = player.getCurrentPosition()
+                if (total > 0) {
+                    durationSec = (total / 1000).toLong()
+                    progress = (cur.toFloat() / total).coerceIn(0f, 1f)
+                    positionSec = (cur / 1000).toLong()
+                }
+            }
+            delay(100)
+        }
+    }
+
+    fun fmt(sec: Long) = String.format(Locale.getDefault(), "%d:%02d", sec / 60, sec % 60)
+
+    fun toggle() {
+        if (active && player.currentSource() == url) {
+            if (player.isPlaying()) { player.pause(); paused = true } else { player.resume(); paused = false }
+        } else {
+            player.playFile(uri) { active = false; paused = false; loading = false; progress = 0f; positionSec = 0L }
+            active = true; paused = false; loading = true
+        }
+    }
+
+    val fileName = remember(url) { FilePickerUtils.getFileName(context, uri) }
+    val isVoice = message.isVoiceNote || fileName.startsWith("VOICE_") || message.msgType == "audio"
+    val title = if (isVoice) "Voice message" else fileName
+    val ext = fileName.substringAfterLast('.', "").uppercase()
+    val sizeBytes = message.attachmentDurations["sz_" + url] ?: 0L
+    val subtitle = listOf(
+        if (isVoice) "" else ext,
+        if (durationSec > 0) fmt(durationSec) else "",
+        if (!isVoice && sizeBytes > 0L) FilePickerUtils.formatFileSize(sizeBytes) else "",
+        message.senderName
+    ).filter { it.isNotBlank() }.joinToString(" \u00B7 ")
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp)
+            .padding(horizontal = 20.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(
+            modifier = Modifier
+                .size(40.dp)
+                .clickable { toggle() },
+            shape = CircleShape,
+            color = cardFillColor,
+            border = BorderStroke(1.dp, outlineColor)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                if (loading) {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = primaryTextColor)
+                } else {
+                    Icon(
+                        imageVector = if (active && !paused) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (active && !paused) "Pause audio" else "Play audio",
+                        tint = primaryTextColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 15.sp,
+                color = primaryTextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = if (active) fmt(positionSec) + (if (durationSec > 0) " / " + fmt(durationSec) else "") + " \u00B7 " + message.senderName else subtitle,
+                fontSize = 12.sp,
+                color = secondaryTextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (active) {
+                androidx.compose.foundation.Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(20.dp)
+                        .pointerInput(url) {
+                            detectTapGestures { pos ->
+                                if (player.isPrepared()) {
+                                    val frac = (pos.x / size.width).coerceIn(0f, 1f)
+                                    progress = frac
+                                    player.seekTo((frac * player.getDuration()).toInt())
+                                }
+                            }
+                        }
+                ) {
+                    val cy = size.height / 2f
+                    val x1 = size.width
+                    val knobX = x1 * progress
+                    drawLine(
+                        color = outlineColor,
+                        start = androidx.compose.ui.geometry.Offset(0f, cy),
+                        end = androidx.compose.ui.geometry.Offset(x1, cy),
+                        strokeWidth = 3.dp.toPx(),
+                        cap = androidx.compose.ui.graphics.StrokeCap.Round
+                    )
+                    if (progress > 0f) {
+                        drawLine(
+                            color = tealAccent,
+                            start = androidx.compose.ui.geometry.Offset(0f, cy),
+                            end = androidx.compose.ui.geometry.Offset(knobX, cy),
+                            strokeWidth = 3.dp.toPx(),
+                            cap = androidx.compose.ui.graphics.StrokeCap.Round
+                        )
+                    }
+                    drawCircle(tealAccent, 5.dp.toPx(), androidx.compose.ui.geometry.Offset(knobX, cy))
+                }
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -188,6 +350,9 @@ fun ChatDetailsScreen(
     var selectedActionTab by remember { mutableStateOf<Int?>(null) } // null=None (Media default), 1=Members, 2=Groups, 3=Forms, 4=Folders
     var selectedMediaCategory by remember { mutableStateOf("Media") } // "Media", "Docs"
     var selectedMediaIds by remember { mutableStateOf(setOf<String>()) }
+    // One player for the whole Audio list, so starting one audio pauses the other
+    val detailsAudioPlayer = remember { com.fabxdi.dibadge.util.AudioPlayer(context) }
+    DisposableEffect(Unit) { onDispose { detailsAudioPlayer.stop() } }
     // Pictures that cannot be loaded any more (file deleted). They are left out of the grid.
     var failedMediaUrls by remember { mutableStateOf(setOf<String>()) }
     var selectedViewerMedia by remember { mutableStateOf<GroupMediaItem?>(null) }
@@ -973,81 +1138,23 @@ fun ChatDetailsScreen(
                                             )
 
                                             itemsList.forEach { audioMsg ->
-                                                var isPlayingThis by remember { mutableStateOf(false) }
-
-                                                Row(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .height(64.dp)
-                                                        .clickable {
-                                                            if (audioMsg.attachments.isNotEmpty()) {
-                                                                FilePickerUtils.openFile(context, Uri.parse(audioMsg.attachments.first()))
-                                                            }
-                                                        }
-                                                        .padding(horizontal = 20.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Surface(
-                                                        modifier = Modifier
-                                                            .size(40.dp)
-                                                            .clickable { isPlayingThis = !isPlayingThis },
-                                                        shape = CircleShape,
-                                                        color = cardFillColor,
-                                                        border = BorderStroke(1.dp, outlineColor)
-                                                    ) {
-                                                        Box(contentAlignment = Alignment.Center) {
-                                                            Icon(
-                                                                imageVector = if (isPlayingThis) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                                                contentDescription = "Play audio",
-                                                                tint = primaryTextColor,
-                                                                modifier = Modifier.size(20.dp)
-                                                            )
-                                                        }
-                                                    }
-
-                                                    Spacer(modifier = Modifier.width(14.dp))
-
-                                                    Column(modifier = Modifier.weight(1f)) {
-                                                        val isVoiceMsg = audioMsg.attachments.isEmpty() || audioMsg.attachments.first().contains("audio")
-                                                        val audioTitle = if (isVoiceMsg) "Voice message" else FilePickerUtils.getFileName(context, Uri.parse(audioMsg.attachments.first()))
-                                                        val durationSec = audioMsg.attachmentDurations.values.firstOrNull() ?: 24L
-                                                        val durationStr = String.format(Locale.getDefault(), "%d:%02d", durationSec / 60, durationSec % 60)
-                                                        val audioSubtitle = if (isVoiceMsg) "$durationStr · ${audioMsg.senderName}" else "MP3 · 3.2 MB · ${audioMsg.senderName}"
-
-                                                        Text(
-                                                            text = audioTitle,
-                                                            fontSize = 15.sp,
-                                                            color = primaryTextColor,
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis
-                                                        )
-                                                        Spacer(modifier = Modifier.height(2.dp))
-                                                        Text(
-                                                            text = audioSubtitle,
-                                                            fontSize = 12.sp,
-                                                            color = secondaryTextColor,
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis
-                                                        )
-
-                                                        if (isPlayingThis) {
-                                                            Spacer(modifier = Modifier.height(4.dp))
-                                                            LinearProgressIndicator(
-                                                                progress = { 0.4f },
-                                                                modifier = Modifier
-                                                                    .fillMaxWidth()
-                                                                    .height(2.dp),
-                                                                color = primaryTextColor,
-                                                                trackColor = outlineColor
-                                                            )
-                                                        }
-                                                    }
+                                                val audioUrl = audioMsg.attachments.firstOrNull { u ->
+                                                    val l = u.lowercase()
+                                                    l.contains("audio") || l.contains(".m4a") || l.contains(".mp3") || l.contains(".wav") ||
+                                                            l.contains(".aac") || l.contains(".ogg") || l.contains(".opus")
+                                                } ?: audioMsg.attachments.firstOrNull()
+                                                if (audioUrl != null) {
+                                                    DetailsAudioRow(
+                                                        message = audioMsg,
+                                                        url = audioUrl,
+                                                        player = detailsAudioPlayer,
+                                                        primaryTextColor = primaryTextColor,
+                                                        secondaryTextColor = secondaryTextColor,
+                                                        tealAccent = tealAccent,
+                                                        outlineColor = outlineColor,
+                                                        cardFillColor = cardFillColor
+                                                    )
                                                 }
-                                                HorizontalDivider(
-                                                    thickness = 1.dp,
-                                                    color = outlineColor,
-                                                    modifier = Modifier.padding(start = 74.dp)
-                                                )
                                             }
                                         }
                                     }
