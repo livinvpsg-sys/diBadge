@@ -268,6 +268,7 @@ class GroupDetailsViewModel : ViewModel() {
             return
         }
         listeningGroupId = groupId
+        _groupCode.value = ""
         fsMedia = emptyList(); fsFiles = emptyList()
         chatMedia = emptyList(); chatFiles = emptyList()
         hiddenIds.clear()
@@ -288,12 +289,13 @@ class GroupDetailsViewModel : ViewModel() {
     }
 
     private suspend fun fetchOrCreateGroupCode(groupId: String) {
-        val fallbackCode = generateGroupCode(groupId)
-        _groupCode.value = fallbackCode
+        // Never show another group's code while this group's code loads.
+        _groupCode.value = ""
 
         try {
             val groupDocRef = db.collection("personalGroups").document(groupId)
             val snapshot = groupDocRef.get().await()
+            if (currentGroupId != groupId) return // user moved to another group; drop stale result
 
             if (snapshot.exists()) {
                 val name = (snapshot.getString("name") ?: snapshot.getString("title") ?: _groupName.value).ifBlank { "Group" }
@@ -312,22 +314,32 @@ class GroupDetailsViewModel : ViewModel() {
                 val currentUid = auth.currentUser?.uid ?: ""
                 _isAdmin.value = (creatorId.isBlank() || creatorId == currentUid || ownerId == currentUid || currentUid.isBlank())
 
-                val existingCode = snapshot.getString("code")
-                if (!existingCode.isNullOrEmpty()) {
-                    _groupCode.value = existingCode
-                } else {
-                    val generatedCode = fallbackCode
-                    _groupCode.value = generatedCode
+                var code = snapshot.getString("code").orEmpty()
 
+                // Self-heal: if this code is registered to a different group, it is a duplicate -> regenerate.
+                if (code.isNotEmpty()) {
+                    try {
+                        val reg = db.collection("groupCodes").document(code).get().await()
+                        val owner = reg.getString("entityId")
+                        if (reg.exists() && !owner.isNullOrEmpty() && owner != groupId) code = ""
+                    } catch (_: Exception) { /* offline / rules: keep stored code */ }
+                }
+
+                if (code.isEmpty()) {
+                    code = createUniqueGroupCode()
                     val codeDoc = mapOf(
                         "entityId" to groupId,
                         "entityType" to "personalGroup",
                         "name" to name,
                         "createdAt" to FieldValue.serverTimestamp()
                     )
-                    db.collection("groupCodes").document(generatedCode).set(codeDoc, SetOptions.merge())
-                    groupDocRef.set(mapOf("code" to generatedCode, "creatorId" to creatorId.ifBlank { currentUid }), SetOptions.merge())
+                    try { db.collection("groupCodes").document(code).set(codeDoc, SetOptions.merge()).await() } catch (e: Exception) { e.printStackTrace() }
+                    try {
+                        groupDocRef.set(mapOf("code" to code, "creatorId" to creatorId.ifBlank { currentUid }), SetOptions.merge()).await()
+                    } catch (e: Exception) { e.printStackTrace() }
                 }
+                if (currentGroupId == groupId) _groupCode.value = code
+                android.util.Log.d("GroupCode", "group=$groupId code=$code")
             } else {
                 if (_groupName.value.isBlank()) _groupName.value = "Group #$groupId"
                 _isAdmin.value = true
@@ -1470,17 +1482,23 @@ class GroupDetailsViewModel : ViewModel() {
         }
     }
 
-    private fun generateGroupCode(groupId: String): String {
-        val charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&?"
-        var hash = abs(groupId.hashCode().toLong()) + 17L
+    private fun randomGroupCode(): String {
+        val charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        val rnd = java.security.SecureRandom()
         val sb = StringBuilder()
-        for (i in 0 until 8) {
-            val charIndex = abs((hash + i * 31).toInt()) % charset.length
-            sb.append(charset[charIndex])
-            hash = (hash * 31 + i + 7) % 1000000007
+        repeat(8) { sb.append(charset[rnd.nextInt(charset.length)]) }
+        val c = sb.toString()
+        return "${c.substring(0, 4)}-${c.substring(4, 8)}"
+    }
+
+    private suspend fun createUniqueGroupCode(): String {
+        repeat(5) {
+            val c = randomGroupCode()
+            try {
+                if (!db.collection("groupCodes").document(c).get().await().exists()) return c
+            } catch (_: Exception) { return c }
         }
-        val code = sb.toString()
-        return "${code.substring(0, 4)}-${code.substring(4, 8)}"
+        return randomGroupCode()
     }
 
     private fun CharSequence?.isNull_or_Empty(): Boolean = this == null || this.isEmpty()
@@ -1721,7 +1739,7 @@ class GroupDetailsViewModel : ViewModel() {
     private suspend fun isBlockedEitherWay(me: String, other: String): Boolean {
         return try {
             db.collection("blockedUsers").document(me).collection("blocked").document(other).get().await().exists() ||
-                    db.collection("blockedUsers").document(other).collection("blocked").document(me).get().await().exists()
+                db.collection("blockedUsers").document(other).collection("blocked").document(me).get().await().exists()
         } catch (e: Exception) {
             false
         }
@@ -1850,8 +1868,12 @@ class GroupDetailsViewModel : ViewModel() {
                         } else if (status == "pending") {
                             if (!isInitiator) {
                                 pendingList.add(item)
+                            } else {
+                                // Outgoing invite waiting for a reply: listed with a "Pending" badge
+                                acceptedList.add(item.copy(otherEntityType = "invited"))
                             }
                         }
+                        // "declined" is not listed, so the row disappears from the sender's list
                     }
 
                     _acceptedConnections.value = acceptedList

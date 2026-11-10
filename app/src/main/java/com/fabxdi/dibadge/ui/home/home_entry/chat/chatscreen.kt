@@ -152,12 +152,14 @@ fun ChatScreen(
     }
 
     // Chats opened before are in memory: their bubbles are there on the very first frame
-    remember(currentEntry.id) { chatViewModel.primeFromCache(currentEntry.id.toString()) }
+    remember(currentEntry.id) { chatViewModel.primeFromCache(currentEntry.id.toString()); true }
     val messages by chatViewModel.messages.collectAsState()
     val messagesLoaded by chatViewModel.messagesLoaded.collectAsState()
     val members by detailsViewModel.members.collectAsState()
     val isAdmin by detailsViewModel.isAdmin.collectAsState()
-    val acceptedConnections by detailsViewModel.acceptedConnections.collectAsState()
+    val allConnections by detailsViewModel.acceptedConnections.collectAsState()
+    // Pending invites we sent ("invited") are in the list for the details screen, but are not connected yet
+    val acceptedConnections = remember(allConnections) { allConnections.filter { it.otherEntityType != "invited" } }
     val currentUserId = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
 
     val groupCreatedDateText = remember(currentEntry) {
@@ -200,6 +202,8 @@ fun ChatScreen(
     var showNewPollScreen by remember { mutableStateOf(false) }
     var showForwardSheet by remember { mutableStateOf(false) }
     var longPressedMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    // Where each bubble was last drawn, so the long-press menu can sit on the bubble
+    val bubbleBoundsMap = remember { HashMap<String, androidx.compose.ui.geometry.Rect>() }
 
     var selectedDocInfoUri by remember { mutableStateOf<Uri?>(null) }
     var selectedPdfUri by remember { mutableStateOf<Uri?>(null) }
@@ -317,41 +321,12 @@ fun ChatScreen(
 
     val threadCommentsMap by chatViewModel.threadCommentsMap.collectAsState()
 
-    // Mention picker trigger detection
+    // Mention picker trigger detection (list logic lives in MentionPickerLogic.kt)
     val mentionTriggerInfo = remember(inputText, members, acceptedConnections, currentUserId) {
-        val text = inputText
-        val lastAt = text.lastIndexOf('@')
-        if (lastAt != -1 && (lastAt == 0 || text[lastAt - 1].isWhitespace())) {
-            val afterAt = text.substring(lastAt + 1)
-            if (afterAt.startsWith(" ")) {
-                // LINKED GROUPS mode (@ )
-                val query = afterAt.substring(1).trim().lowercase()
-                if (!afterAt.substring(1).contains("\n")) {
-                    val filteredGroups = if (query.isEmpty()) {
-                        acceptedConnections
-                    } else {
-                        acceptedConnections.filter { it.otherEntityName.lowercase().contains(query) }
-                    }
-                    Triple(MentionPickerMode.LINKED_GROUPS, filteredGroups, lastAt)
-                } else null
-            } else {
-                // MEMBERS mode (@)
-                val query = afterAt.trim().lowercase()
-                if (!afterAt.contains("\n") && !afterAt.contains(" ")) {
-                    val otherMembers = members.filter { !it.isYou && it.uid != currentUserId }
-                    val filteredMembers = if (query.isEmpty()) {
-                        otherMembers
-                    } else {
-                        otherMembers.filter { m ->
-                            m.displayName.lowercase().split(" ").any { word -> word.startsWith(query) } ||
-                                    m.displayName.lowercase().contains(query)
-                        }
-                    }
-                    Triple(MentionPickerMode.MEMBERS, filteredMembers, lastAt)
-                } else null
-            }
-        } else null
+        detectMentionTrigger(inputText, members, acceptedConnections, currentUserId)
     }
+    val mentionHasMembers = remember(members, currentUserId) { members.any { !it.isYou && it.uid != currentUserId } }
+    val mentionHasGroups = acceptedConnections.isNotEmpty()
 
     val showMentionPicker = mentionTriggerInfo != null
 
@@ -1053,7 +1028,12 @@ fun ChatScreen(
                     // Mention Picker Card above field (aligned with message input field bounds: 44dp start, 52dp end)
                     if (showMentionPicker && mentionTriggerInfo != null) {
                         val detectedMode = mentionTriggerInfo.first
-                        val activeMode = activePickerTabOverride ?: detectedMode
+                        val bothKinds = mentionHasMembers && mentionHasGroups
+                        val activeMode = when {
+                            bothKinds -> activePickerTabOverride ?: detectedMode
+                            mentionHasMembers -> MentionPickerMode.MEMBERS
+                            else -> MentionPickerMode.LINKED_GROUPS
+                        }
 
                         val lastAt = mentionTriggerInfo.third
                         val queryText = if (lastAt != -1 && lastAt < inputText.length) {
@@ -1075,6 +1055,7 @@ fun ChatScreen(
 
                         MentionPickerCard(
                             mode = activeMode,
+                            showTabs = bothKinds,
                             members = filteredMembers,
                             linkedGroups = filteredGroups,
                             isDark = isDark,
@@ -2264,7 +2245,19 @@ fun ChatScreen(
                                 )
                             } else rawMsg
 
-                            if (msgToRender.msgType == "systemLibraryAdded" || msgToRender.msgType == "system_library_added") {
+                            if (msgToRender.msgType == "connectionRequest") {
+                                ConnectionRequestCard(
+                                    message = msgToRender,
+                                    cardColor = cardColor,
+                                    outlineColor = outlineColor,
+                                    primaryTextColor = primaryTextColor,
+                                    secondaryTextColor = secondaryTextColor,
+                                    accentColor = tealAccent,
+                                    onRespond = { id, st -> chatViewModel.respondToConnection(id, st) }
+                                )
+                            } else if (msgToRender.msgType == "connectionNotice") {
+                                ConnectionNoticeLine(msgToRender, secondaryTextColor)
+                            } else if (msgToRender.msgType == "systemLibraryAdded" || msgToRender.msgType == "system_library_added") {
                                 SystemLibraryChip(
                                     message = msgToRender,
                                     cardFillColor = cardColor,
@@ -2285,6 +2278,7 @@ fun ChatScreen(
                                         isGroupedWithPrev = groupedWithPrev,
                                         isGroupedWithNext = groupedWithNext,
                                         isOneToOne = isOneToOne,
+                                        onBubbleBounds = { bubbleBoundsMap[msgToRender.id] = it },
                                         onLongClick = { uri ->
                                             if (selectedMessages.isEmpty()) {
                                                 longPressedMessage = msgToRender
@@ -2585,6 +2579,7 @@ fun ChatScreen(
             longPressedMessage?.let { targetMsg ->
                 MessageActionsOverlay(
                     targetMsg = targetMsg,
+                    bubbleBounds = bubbleBoundsMap[targetMsg.id],
                     isDark = isDark,
                     cardColor = cardColor,
                     outlineColor = outlineColor,
@@ -2650,7 +2645,8 @@ fun ChatScreen(
 /** True when two neighbouring messages belong in one group: same person, same minute, normal messages. */
 private fun canGroupMessages(a: ChatMessage, b: ChatMessage): Boolean {
     fun plain(m: ChatMessage) = !m.isDeleted && !m.isGroupMention && !m.text.contains("@All") &&
-            m.msgType != "systemLibraryAdded" && m.msgType != "system_library_added"
+            m.msgType != "systemLibraryAdded" && m.msgType != "system_library_added" &&
+            m.msgType != "connectionRequest" && m.msgType != "connectionNotice"
     return plain(a) && plain(b) &&
             a.isSentByMe == b.isSentByMe &&
             a.senderName == b.senderName &&

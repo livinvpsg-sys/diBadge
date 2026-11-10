@@ -34,6 +34,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 import kotlinx.coroutines.flow.asStateFlow
@@ -299,7 +302,99 @@ class ChatViewModel : ViewModel() {
     }
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
-    val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
+    // Group-connection requests and their results, shown in the chat as small cards / grey lines.
+    // They are built from groupConnections (not stored as messages) so they always match the real status.
+    private val _connItems = MutableStateFlow<List<ChatMessage>>(emptyList())
+    val messages: StateFlow<List<ChatMessage>> =
+        combine(_messages, _connItems) { msgs, conns ->
+            if (conns.isEmpty()) msgs else (msgs + conns).sortedBy { it.timestamp }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private var connListener: ListenerRegistration? = null
+    private val connNameCache = HashMap<String, String>()
+
+    private fun listenToConnections(groupId: String) {
+        connListener?.remove()
+        _connItems.value = emptyList()
+        connListener = db.collection("groupConnections")
+            .whereArrayContains("participants", groupId)
+            .addSnapshotListener { snap, err ->
+                if (err != null || snap == null) return@addSnapshotListener
+                viewModelScope.launch(Dispatchers.IO) {
+                    val myUid = auth.currentUser?.uid ?: ""
+                    var canRespond = true
+                    try {
+                        val g = db.collection("personalGroups").document(groupId).get().await()
+                        if (g.exists()) {
+                            val creator = g.getString("creatorId") ?: g.getString("createdBy") ?: ""
+                            val owner = g.getString("ownerId") ?: creator
+                            canRespond = creator.isBlank() || creator == myUid || owner == myUid || myUid.isBlank()
+                        }
+                    } catch (_: Exception) {}
+
+                    val out = mutableListOf<ChatMessage>()
+                    for (doc in snap.documents) {
+                        val status = doc.getString("status") ?: continue
+                        if (status == "removed") continue
+                        val initiatorId = doc.getString("initiatorId") ?: continue
+                        val targetId = doc.getString("targetId") ?: continue
+                        val iAmTarget = targetId == groupId
+                        val otherId = if (iAmTarget) initiatorId else targetId
+                        val otherType = (if (iAmTarget) doc.getString("initiatorType") else doc.getString("targetType")) ?: "personalGroup"
+
+                        var otherName = connNameCache[otherId] ?: ""
+                        if (otherName.isBlank()) {
+                            try {
+                                val od = if (otherType == "personalGroup") db.collection("personalGroups").document(otherId).get().await()
+                                         else db.collection("projects").document(otherId).get().await()
+                                otherName = od.getString("name") ?: od.getString("title") ?: ""
+                            } catch (_: Exception) {}
+                            if (otherName.isBlank()) otherName = "A group" else connNameCache[otherId] = otherName
+                        }
+
+                        fun ms(key: String): Long = doc.getTimestamp(key)?.toDate()?.time ?: 0L
+                        val created = ms("createdAt").takeIf { it > 0 } ?: System.currentTimeMillis()
+                        val updated = ms("updatedAt").takeIf { it > 0 } ?: created
+
+                        if (iAmTarget) {
+                            out.add(connMessage("connreq_${doc.id}", "connectionRequest", otherName, created, doc.id, status, if (canRespond) 1 else 0))
+                        } else if (status == "accepted") {
+                            out.add(connMessage("connnote_${doc.id}", "connectionNotice", "Now connected to $otherName", updated, doc.id, status, 0))
+                        } else if (status == "declined") {
+                            out.add(connMessage("connnote_${doc.id}", "connectionNotice", "$otherName declined the request", updated, doc.id, status, 0))
+                        }
+                    }
+                    if (groupId == activeGroupId) _connItems.value = out
+                }
+            }
+    }
+
+    private fun connMessage(id: String, type: String, text: String, ms: Long, connId: String, status: String, canRespond: Int) =
+        ChatMessage(
+            id = id,
+            text = text,
+            senderName = "",
+            isSentByMe = false,
+            timestamp = LocalDateTime.ofInstant(Instant.ofEpochMilli(ms), ZoneId.systemDefault()),
+            msgType = type,
+            libraryFileId = connId,
+            libraryRevision = status,
+            libraryCount = canRespond
+        )
+
+    /** Accept or decline a group connection request shown in this chat. */
+    fun respondToConnection(connectionId: String, newStatus: String) {
+        if (connectionId.isBlank()) return
+        viewModelScope.launch {
+            try {
+                db.collection("groupConnections").document(connectionId)
+                    .update("status", newStatus, "updatedAt", FieldValue.serverTimestamp())
+                    .await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
 
     // False until the first read of the local database finishes, so the empty-chat
     // placeholder is not drawn for a moment while saved messages are still loading
@@ -336,6 +431,7 @@ class ChatViewModel : ViewModel() {
             _messagesLoaded.value = cached != null
         }
         activeGroupId = groupId
+        listenToConnections(groupId)
 
         messagesListener?.remove()
         roomObserveJob?.cancel()
@@ -1046,6 +1142,12 @@ class ChatViewModel : ViewModel() {
             "isLiveEnded" to false
         )
 
+        // Live sharing starts at once, even with no internet: the position updates are saved on
+        // the phone and sent when the connection comes back
+        if (isLive) {
+            com.fabxdi.dibadge.util.LiveLocationService.start(context, groupId, messageId, expiresAt)
+        }
+
         viewModelScope.launch {
             try {
                 db.collection("personalGroups")
@@ -1054,10 +1156,6 @@ class ChatViewModel : ViewModel() {
                     .document(messageId)
                     .set(docData)
                     .await()
-                // Keep sending the position until the share ends
-                if (isLive) {
-                    com.fabxdi.dibadge.util.LiveLocationService.start(context, groupId, messageId, expiresAt)
-                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -1381,6 +1479,7 @@ class ChatViewModel : ViewModel() {
     override fun onCleared() {
         super.onCleared()
         messagesListener?.remove()
+        connListener?.remove()
         roomObserveJob?.cancel()
         threadCommentsListeners.values.forEach { it.remove() }
     }

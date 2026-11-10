@@ -495,7 +495,7 @@ fun GroupsBottomSheet(
                             }
 
                             if (isInvitedOutgoing) {
-                                Text("Invited", fontSize = 15.sp, color = secondaryTextColor)
+                                Text("Pending", fontSize = 15.sp, color = secondaryTextColor)
                             }
                         }
 

@@ -118,11 +118,26 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 
-/** The floating action row shown when a message is long-pressed. */
+/**
+ * Shown when a message is long-pressed. The rest of the screen is dimmed but the pressed bubble
+ * stays bright where it is, and the actions take the place of the typing box at the bottom.
+ */
 @Composable
 fun MessageActionsOverlay(
     targetMsg: ChatMessage,
+    bubbleBounds: Rect?,
     isDark: Boolean,
     cardColor: Color,
     outlineColor: Color,
@@ -137,186 +152,130 @@ fun MessageActionsOverlay(
     onDelete: () -> Unit
 ) {
     val context = LocalContext.current
-    val isTargetSentByMe = targetMsg.isSentByMe
+    val density = LocalDensity.current
+    var rootOrigin by remember { mutableStateOf(Offset.Zero) }
+    var rootSize by remember { mutableStateOf(IntSize.Zero) }
+
+    val isMine = targetMsg.isSentByMe
     val hasText = targetMsg.text.isNotBlank()
-    val canEditTarget = isTargetSentByMe && !targetMsg.isDeleted && !targetMsg.isForwarded && !targetMsg.isVoiceNote
-    // Reply, Forward, Select always; Copy if text; Edit if editable; Info and Delete on own messages
-    val actionCount = 3 + (if (hasText) 1 else 0) + (if (canEditTarget) 1 else 0) + (if (isTargetSentByMe) 2 else 0)
-    val actionWidth = when {
-        actionCount <= 5 -> 62.dp
-        actionCount == 6 -> 52.dp
-        else -> 44.dp
-    }
-    val actionLabelSize = if (actionCount >= 7) 10.sp else 11.sp
+    val canEdit = isMine && !targetMsg.isDeleted && !targetMsg.isForwarded && !targetMsg.isVoiceNote
+    val bubble = bubbleBounds?.translate(-rootOrigin)
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = if (isDark) 0.55f else 0.35f))
-            .clickable { onDismiss() }
+            .onGloballyPositioned {
+                rootOrigin = it.positionInWindow()
+                rootSize = it.size
+            }
+            .pointerInput(Unit) { detectTapGestures { onDismiss() } }
     ) {
-        Box(
+        // Dim everything except the pressed bubble
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val path = Path().apply {
+                fillType = PathFillType.EvenOdd
+                addRect(Rect(Offset.Zero, size))
+                if (bubble != null) {
+                    val pad = 2.dp.toPx()
+                    addRoundRect(
+                        RoundRect(
+                            Rect(bubble.left - pad, bubble.top - pad, bubble.right + pad, bubble.bottom + pad),
+                            CornerRadius(14.dp.toPx())
+                        )
+                    )
+                }
+            }
+            drawPath(path, Color.Black.copy(alpha = if (isDark) 0.55f else 0.35f))
+        }
+
+        // Actions, in the place of the typing box
+        Surface(
             modifier = Modifier
+                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(horizontal = if (actionCount >= 6) 8.dp else 24.dp, vertical = 120.dp)
-                .align(if (isTargetSentByMe) Alignment.CenterEnd else Alignment.CenterStart)
+                .height(84.dp)
+                .pointerInput(Unit) { detectTapGestures { } },
+            color = cardColor,
+            shadowElevation = 8.dp
         ) {
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = cardColor,
-                border = BorderStroke(1.dp, outlineColor),
-                shadowElevation = 8.dp
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp, start = 4.dp, end = 4.dp),
+                verticalAlignment = Alignment.Top
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Action: Reply
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .width(actionWidth)
-                            .clickable {
-                                onReply()
-                            }
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Reply,
-                            contentDescription = "Reply",
-                            tint = primaryTextColor,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text("Reply", fontSize = actionLabelSize, color = primaryTextColor)
-                    }
-
-                    // Action: Forward
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .width(actionWidth)
-                            .clickable {
-                                onForward()
-                            }
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Reply,
-                            contentDescription = "Forward",
-                            tint = primaryTextColor,
-                            modifier = Modifier.size(22.dp).graphicsLayer(scaleX = -1f)
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text("Forward", fontSize = actionLabelSize, color = primaryTextColor)
-                    }
-
-                    // Action: Edit (own, editable message)
-                    if (canEditTarget) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .width(actionWidth)
-                                .clickable {
-                                    onEdit()
-                                }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Edit,
-                                contentDescription = "Edit",
-                                tint = primaryTextColor,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text("Edit", fontSize = actionLabelSize, color = primaryTextColor)
-                        }
-                    }
-
-                    // Action: Copy (if text present)
-                    if (hasText) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .width(actionWidth)
-                                .clickable {
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    val clip = ClipData.newPlainText("chat_text", targetMsg.text)
-                                    clipboard.setPrimaryClip(clip)
-                                    Toast.makeText(context, "Text copied", Toast.LENGTH_SHORT).show()
-                                    onDismiss()
-                                }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = "Copy",
-                                tint = primaryTextColor,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text("Copy", fontSize = actionLabelSize, color = primaryTextColor)
-                        }
-                    }
-
-                    // Action: Info (own messages)
-                    if (isTargetSentByMe) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .width(actionWidth)
-                                .clickable {
-                                    onInfo()
-                                }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Info,
-                                contentDescription = "Message info",
-                                tint = primaryTextColor,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text("Info", fontSize = actionLabelSize, color = primaryTextColor)
-                        }
-                    }
-
-                    // Action: Select (starts multi-selection mode)
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .width(actionWidth)
-                            .clickable {
-                                onSelect()
-                            }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = "Select",
-                            tint = primaryTextColor,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text("Select", fontSize = actionLabelSize, color = primaryTextColor)
-                    }
-
-                    // Action: Delete (if sent by me)
-                    if (isTargetSentByMe) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .width(actionWidth)
-                                .clickable {
-                                    onDelete()
-                                }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Delete",
-                                tint = errorColor,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text("Delete", fontSize = actionLabelSize, color = errorColor)
-                        }
-                    }
+                MessageActionItem(
+                    icon = Icons.AutoMirrored.Filled.Reply, label = "Reply",
+                    tint = primaryTextColor, onClick = onReply, modifier = Modifier.weight(1f)
+                )
+                MessageActionItem(
+                    icon = Icons.AutoMirrored.Filled.Reply, label = "Forward",
+                    tint = primaryTextColor, onClick = onForward, mirrored = true, modifier = Modifier.weight(1f)
+                )
+                if (hasText) {
+                    MessageActionItem(
+                        icon = Icons.Default.ContentCopy, label = "Copy", tint = primaryTextColor,
+                        onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("chat_text", targetMsg.text))
+                            Toast.makeText(context, "Text copied", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (canEdit) {
+                    MessageActionItem(
+                        icon = Icons.Outlined.Edit, label = "Edit",
+                        tint = primaryTextColor, onClick = onEdit, modifier = Modifier.weight(1f)
+                    )
+                }
+                if (isMine) {
+                    MessageActionItem(
+                        icon = Icons.Default.Info, label = "Info",
+                        tint = primaryTextColor, onClick = onInfo, modifier = Modifier.weight(1f)
+                    )
+                }
+                MessageActionItem(
+                    icon = Icons.Default.CheckCircle, label = "Select",
+                    tint = primaryTextColor, onClick = onSelect, modifier = Modifier.weight(1f)
+                )
+                if (isMine) {
+                    MessageActionItem(
+                        icon = Icons.Default.Delete, label = "Delete",
+                        tint = errorColor, onClick = onDelete, modifier = Modifier.weight(1f)
+                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MessageActionItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    mirrored: Boolean = false
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable { onClick() }
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier
+                .size(24.dp)
+                .graphicsLayer(scaleX = if (mirrored) -1f else 1f)
+        )
+        Spacer(modifier = Modifier.height(3.dp))
+        Text(text = label, fontSize = 11.sp, color = tint, maxLines = 1)
     }
 }

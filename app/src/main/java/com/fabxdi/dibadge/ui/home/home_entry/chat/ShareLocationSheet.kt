@@ -97,14 +97,14 @@ private object PlacesApi {
         val dLat = Math.toRadians(bLat - aLat)
         val dLng = Math.toRadians(bLng - aLng)
         val x = sin(dLat / 2) * sin(dLat / 2) +
-                cos(Math.toRadians(aLat)) * cos(Math.toRadians(bLat)) * sin(dLng / 2) * sin(dLng / 2)
+            cos(Math.toRadians(aLat)) * cos(Math.toRadians(bLat)) * sin(dLng / 2) * sin(dLng / 2)
         return (r * 2 * atan2(sqrt(x), sqrt(1 - x))).roundToInt()
     }
 
     suspend fun search(query: String, nearLat: Double?, nearLng: Double?): List<PlaceItem> =
         withContext(Dispatchers.IO) {
             var url = "https://nominatim.openstreetmap.org/search?q=${URLEncoder.encode(query, "UTF-8")}" +
-                    "&format=jsonv2&limit=8"
+                "&format=jsonv2&limit=8"
             if (nearLat != null && nearLng != null) {
                 val d = 0.3
                 url += "&viewbox=${nearLng - d},${nearLat + d},${nearLng + d},${nearLat - d}"
@@ -146,12 +146,12 @@ private object PlacesApi {
 
     suspend fun nearby(lat: Double, lng: Double): List<PlaceItem> = withContext(Dispatchers.IO) {
         val q = "[out:json][timeout:10];(" +
-                "node(around:500,$lat,$lng)[\"name\"][\"amenity\"];" +
-                "node(around:500,$lat,$lng)[\"name\"][\"shop\"];" +
-                "node(around:500,$lat,$lng)[\"name\"][\"railway\"=\"station\"];" +
-                "node(around:500,$lat,$lng)[\"name\"][\"tourism\"];" +
-                "node(around:500,$lat,$lng)[\"name\"][\"leisure\"];" +
-                ");out 40;"
+            "node(around:500,$lat,$lng)[\"name\"][\"amenity\"];" +
+            "node(around:500,$lat,$lng)[\"name\"][\"shop\"];" +
+            "node(around:500,$lat,$lng)[\"name\"][\"railway\"=\"station\"];" +
+            "node(around:500,$lat,$lng)[\"name\"][\"tourism\"];" +
+            "node(around:500,$lat,$lng)[\"name\"][\"leisure\"];" +
+            ");out 40;"
         val body = get("https://overpass-api.de/api/interpreter?data=${URLEncoder.encode(q, "UTF-8")}")
             ?: return@withContext emptyList()
         try {
@@ -216,9 +216,17 @@ fun ShareLocationSheet(
     val isReady = locationState.status == LocationStatus.Ready && loc != null
     val statusLine = when (locationState.status) {
         LocationStatus.Ready -> "${loc?.placeName.orEmpty()} · accurate to ${loc?.accuracyMeters ?: 0} m"
-        LocationStatus.Loading -> "Finding your location…"
+        LocationStatus.Loading -> if (locationState.offline) {
+            "No internet"
+        } else {
+            "Finding your location…"
+        }
         LocationStatus.NeedsPermission -> "Allow location access to share where you are"
-        LocationStatus.Unavailable -> "Couldn't get your location. Turn on location and tap to try again"
+        LocationStatus.Unavailable -> if (locationState.offline) {
+            "Turn on location"
+        } else {
+            "Couldn't get your location. Turn on location and tap to try again"
+        }
     }
     val onRowTap: () -> Unit = {
         when (locationState.status) {

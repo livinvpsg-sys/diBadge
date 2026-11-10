@@ -11,6 +11,8 @@ import android.content.pm.PackageManager
 import android.location.Geocoder
 import android.location.Location
 import android.location.LocationManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -45,18 +47,36 @@ class LocationState(
     val status: LocationStatus,
     val location: DeviceLocation?,
     val requestPermission: () -> Unit,
-    val retry: () -> Unit
+    val retry: () -> Unit,
+    /** True when the phone has no working internet. GPS still works; place names and maps do not. */
+    val offline: Boolean = false
 )
 
 object DeviceLocationProvider {
 
     fun hasPermission(context: Context): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
-                PackageManager.PERMISSION_GRANTED ||
-                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
-                PackageManager.PERMISSION_GRANTED
+            PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
 
-    /** Returns null when permission is missing, location is off, or no fix arrives in time. */
+    /** True when the phone has a working internet connection right now. */
+    fun isOnline(context: Context): Boolean = try {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val caps = cm?.activeNetwork?.let { cm.getNetworkCapabilities(it) }
+        caps != null &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    } catch (e: Exception) {
+        true
+    }
+
+    /**
+     * Returns null when permission is missing, location is off, or no fix arrives in time.
+     * GPS needs no internet. Without internet the first fix can take a minute or more (the phone
+     * has no helper data), so the GPS wait is longer then and the place name is just the
+     * coordinates.
+     */
     @SuppressLint("MissingPermission")
     suspend fun fetch(context: Context, timeoutMs: Long = 10_000L): DeviceLocation? {
         if (!hasPermission(context)) return null
@@ -66,9 +86,15 @@ object DeviceLocationProvider {
             .filter { runCatching { lm.isProviderEnabled(it) }.getOrDefault(false) }
         if (providers.isEmpty()) return null
 
+        val online = isOnline(context)
         var fix: Location? = null
         for (provider in providers) {
-            fix = withTimeoutOrNull(timeoutMs) { currentFix(context, lm, provider) }
+            val wait = when {
+                provider == LocationManager.GPS_PROVIDER && !online -> 60_000L
+                provider == LocationManager.NETWORK_PROVIDER && !online -> 3_000L
+                else -> timeoutMs
+            }
+            fix = withTimeoutOrNull(wait) { currentFix(context, lm, provider) }
             if (fix != null) break
         }
         if (fix == null) {
@@ -76,7 +102,13 @@ object DeviceLocationProvider {
                 .maxByOrNull { it.time }
         }
         val loc = fix ?: return null
-        val place = lookupPlaceName(context, loc.latitude, loc.longitude)
+        // Place names come from an online lookup; offline (or if it is slow) show the coordinates
+        val coords = String.format(Locale.US, "%.5f, %.5f", loc.latitude, loc.longitude)
+        val place = if (online) {
+            withTimeoutOrNull(4_000L) { lookupPlaceName(context, loc.latitude, loc.longitude) } ?: coords
+        } else {
+            coords
+        }
         return DeviceLocation(
             lat = loc.latitude,
             lng = loc.longitude,
@@ -132,6 +164,7 @@ fun rememberLocationState(enabled: Boolean = true): LocationState {
         mutableStateOf(if (granted) LocationStatus.Loading else LocationStatus.NeedsPermission)
     }
     var location by remember { mutableStateOf<DeviceLocation?>(null) }
+    var offline by remember { mutableStateOf(false) }
     var attempt by remember { mutableStateOf(0) }
     var askedBefore by remember { mutableStateOf(false) }
 
@@ -150,6 +183,7 @@ fun rememberLocationState(enabled: Boolean = true): LocationState {
             return@LaunchedEffect
         }
         status = LocationStatus.Loading
+        offline = !DeviceLocationProvider.isOnline(context)
         val fix = DeviceLocationProvider.fetch(context)
         location = fix
         status = if (fix != null) LocationStatus.Ready else LocationStatus.Unavailable
@@ -179,6 +213,7 @@ fun rememberLocationState(enabled: Boolean = true): LocationState {
                 )
             }
         },
-        retry = { attempt++ }
+        retry = { attempt++ },
+        offline = offline
     )
 }

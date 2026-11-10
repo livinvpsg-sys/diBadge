@@ -38,6 +38,7 @@ fun MentionPickerCard(
     primaryTextColor: Color,
     secondaryTextColor: Color,
     dimTextColor: Color,
+    showTabs: Boolean = true,
     onTabSelected: (MentionPickerMode) -> Unit,
     onSelectMember: (GroupMember?) -> Unit,
     onSelectLinkedGroup: (GroupConnectionItem?) -> Unit,
@@ -52,75 +53,77 @@ fun MentionPickerCard(
         tonalElevation = 0.dp
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // Two-tab row: Members | Groups
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(38.dp)
-            ) {
-                // Members Tab
-                val isMembersSelected = mode == MentionPickerMode.MEMBERS
-                Box(
+            if (showTabs) {
+                // Two-tab row: Members | Groups
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clickable { onTabSelected(MentionPickerMode.MEMBERS) },
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .height(38.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.SpaceBetween,
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    // Members Tab
+                    val isMembersSelected = mode == MentionPickerMode.MEMBERS
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clickable { onTabSelected(MentionPickerMode.MEMBERS) },
+                        contentAlignment = Alignment.Center
                     ) {
-                        Spacer(modifier = Modifier.height(1.dp))
-                        Text(
-                            text = "Members",
-                            fontSize = 14.sp,
-                            fontWeight = if (isMembersSelected) FontWeight.SemiBold else FontWeight.Medium,
-                            color = if (isMembersSelected) primaryTextColor else dimTextColor
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(2.dp)
-                                .background(if (isMembersSelected) primaryTextColor else Color.Transparent)
-                        )
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.SpaceBetween,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Spacer(modifier = Modifier.height(1.dp))
+                            Text(
+                                text = "Members",
+                                fontSize = 14.sp,
+                                fontWeight = if (isMembersSelected) FontWeight.SemiBold else FontWeight.Medium,
+                                color = if (isMembersSelected) primaryTextColor else dimTextColor
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(2.dp)
+                                    .background(if (isMembersSelected) primaryTextColor else Color.Transparent)
+                            )
+                        }
+                    }
+
+                    // Groups Tab
+                    val isGroupsSelected = mode == MentionPickerMode.LINKED_GROUPS
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clickable { onTabSelected(MentionPickerMode.LINKED_GROUPS) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.SpaceBetween,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Spacer(modifier = Modifier.height(1.dp))
+                            Text(
+                                text = "Groups",
+                                fontSize = 14.sp,
+                                fontWeight = if (isGroupsSelected) FontWeight.SemiBold else FontWeight.Medium,
+                                color = if (isGroupsSelected) primaryTextColor else dimTextColor
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(2.dp)
+                                    .background(if (isGroupsSelected) primaryTextColor else Color.Transparent)
+                            )
+                        }
                     }
                 }
 
-                // Groups Tab
-                val isGroupsSelected = mode == MentionPickerMode.LINKED_GROUPS
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .clickable { onTabSelected(MentionPickerMode.LINKED_GROUPS) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.SpaceBetween,
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Spacer(modifier = Modifier.height(1.dp))
-                        Text(
-                            text = "Groups",
-                            fontSize = 14.sp,
-                            fontWeight = if (isGroupsSelected) FontWeight.SemiBold else FontWeight.Medium,
-                            color = if (isGroupsSelected) primaryTextColor else dimTextColor
-                        )
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(2.dp)
-                                .background(if (isGroupsSelected) primaryTextColor else Color.Transparent)
-                        )
-                    }
-                }
+                // 1dp outline divider under tab row
+                HorizontalDivider(color = outlineColor, thickness = 1.dp)
             }
-
-            // 1dp outline divider under tab row
-            HorizontalDivider(color = outlineColor, thickness = 1.dp)
 
             // Scrollable Content
             Column(

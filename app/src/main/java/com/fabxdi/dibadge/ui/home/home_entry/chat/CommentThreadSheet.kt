@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.SentimentSatisfiedAlt
 import androidx.compose.ui.res.painterResource
@@ -164,15 +165,6 @@ fun CommentThreadSheet(
     val topVisibleDate = remember(listState.firstVisibleItemIndex, rowDates) {
         rowDates.getOrNull(listState.firstVisibleItemIndex.coerceIn(0, (rowDates.size - 1).coerceAtLeast(0)))
             ?: LocalDate.now()
-    }
-
-    val commonEmojis = remember {
-        listOf(
-            "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "😊", "😇",
-            "🙂", "🙃", "😉", "😌", "😋", "😛", "😝", "😜", "🤪", "🤨",
-            "🧐", "🤓", "😎", "🤩", "👍", "👎", "👌", "🤝", "🙏", "👏",
-            "🙌", "👐", "🤲", "💼", "📁", "📂", "📅", "📆", "📈", "📊"
-        )
     }
 
     LaunchedEffect(comments.size) {
@@ -343,29 +335,13 @@ fun CommentThreadSheet(
                     .padding(top = 8.dp, bottom = 20.dp)
             ) {
                 if (showEmojiPicker) {
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
-                            .padding(bottom = 8.dp),
-                        color = cardColor,
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        LazyVerticalGrid(
-                            columns = GridCells.Adaptive(40.dp),
-                            contentPadding = PaddingValues(8.dp),
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            items(commonEmojis.size) { index ->
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clickable { commentInput += commonEmojis[index] },
-                                    contentAlignment = Alignment.Center
-                                ) { Text(text = commonEmojis[index], fontSize = 24.sp) }
-                            }
-                        }
-                    }
+                    FullEmojiPicker(
+                        containerColor = cardColor,
+                        secondaryTextColor = secondaryTextColor,
+                        accentColor = tealAccent,
+                        onEmojiSelected = { emoji -> commentInput += emoji }
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
 
                 Row(
@@ -423,7 +399,9 @@ fun CommentThreadSheet(
                                         color = primaryTextColor
                                     ),
                                     cursorBrush = SolidColor(primaryTextColor),
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .onFocusChanged { if (it.isFocused) showEmojiPicker = false }
                                 )
                             }
                         }
