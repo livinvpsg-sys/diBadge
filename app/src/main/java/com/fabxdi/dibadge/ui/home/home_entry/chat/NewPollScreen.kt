@@ -1,5 +1,8 @@
 package com.fabxdi.dibadge.ui.home.home_entry.chat
 
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,6 +19,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,10 +29,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Calendar
+import java.util.Locale
 
 data class PollOptionInput(
     val id: String,
@@ -40,7 +52,7 @@ private const val MAX_POLL_OPTIONS = 12
 @Composable
 fun NewPollScreen(
     isDark: Boolean,
-    onCreatePoll: (question: String, options: List<String>, allowMultiple: Boolean, showVoters: Boolean) -> Unit,
+    onCreatePoll: (question: String, options: List<String>, allowMultiple: Boolean, showVoters: Boolean, endsAtMillis: Long) -> Unit,
     onClose: () -> Unit
 ) {
     var questionText by remember { mutableStateOf("") }
@@ -54,6 +66,10 @@ fun NewPollScreen(
     }
     var allowMultiple by remember { mutableStateOf(false) }
     var showVoters by remember { mutableStateOf(true) }
+    var endsAt by remember { mutableStateOf(0L) }          // 0 = no end date
+    var endChoice by remember { mutableStateOf(EndChoice.NONE) }
+    var showEndSheet by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     val pageBg = if (isDark) Color(0xFF0F1415) else Color(0xFFF5F8F8)
     val card = if (isDark) Color(0xFF1A2123) else Color.White
@@ -108,7 +124,7 @@ fun NewPollScreen(
                         .background(if (canSend) teal else line)
                         .clickable(enabled = canSend) {
                             val validOptions = optionsList.map { it.text.trim() }.filter { it.isNotBlank() }
-                            onCreatePoll(questionText.trim(), validOptions, allowMultiple, showVoters)
+                            onCreatePoll(questionText.trim(), validOptions, allowMultiple, showVoters, endsAt)
                             onClose()
                         }
                         .padding(horizontal = 22.dp),
@@ -255,10 +271,183 @@ fun NewPollScreen(
                                 onChange = { showVoters = it },
                                 teal = teal, onTeal = onTeal, line = line, textMain = textMain, textSub = textSub
                             )
+                            HorizontalDivider(color = line, thickness = 1.dp)
+                            EndDateRow(
+                                valueText = if (endsAt > 0L) formatPollEnd(endsAt) else "No end date",
+                                hasValue = endsAt > 0L,
+                                onClick = { showEndSheet = true },
+                                teal = teal, textMain = textMain, textSub = textSub
+                            )
                         }
                     }
                 }
                 item { Spacer(Modifier.height(24.dp)) }
+            }
+        }
+    }
+
+    if (showEndSheet) {
+        EndDateSheet(
+            choice = endChoice,
+            card = card, textMain = textMain, textSub = textSub, teal = teal,
+            onPick = { choice, millis ->
+                endChoice = choice
+                endsAt = millis
+                showEndSheet = false
+            },
+            onCustom = {
+                showEndSheet = false
+                val cal = Calendar.getInstance()
+                cal.timeInMillis = if (endsAt > 0L) endsAt else System.currentTimeMillis() + 24L * 3600_000L
+                val dateDialog = DatePickerDialog(
+                    context,
+                    { _, year, month, day ->
+                        TimePickerDialog(
+                            context,
+                            { _, hour, minute ->
+                                val picked = Calendar.getInstance().apply {
+                                    set(year, month, day, hour, minute, 0)
+                                    set(Calendar.MILLISECOND, 0)
+                                }.timeInMillis
+                                if (picked <= System.currentTimeMillis() + 60_000L) {
+                                    Toast.makeText(context, "Choose a time in the future", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    endsAt = picked
+                                    endChoice = EndChoice.CUSTOM
+                                }
+                            },
+                            cal.get(Calendar.HOUR_OF_DAY),
+                            cal.get(Calendar.MINUTE),
+                            false
+                        ).show()
+                    },
+                    cal.get(Calendar.YEAR),
+                    cal.get(Calendar.MONTH),
+                    cal.get(Calendar.DAY_OF_MONTH)
+                )
+                dateDialog.datePicker.minDate = System.currentTimeMillis() - 1000L
+                dateDialog.show()
+            },
+            onDismiss = { showEndSheet = false }
+        )
+    }
+}
+
+private enum class EndChoice { NONE, H1, H24, D3, W1, CUSTOM }
+
+/** "Today, 5:00 pm", "Tomorrow, 6:00 pm" or "12 Nov, 6:00 pm". Also used by the poll card in the chat. */
+fun formatPollEnd(millis: Long): String {
+    val zone = ZoneId.systemDefault()
+    val dt = Instant.ofEpochMilli(millis).atZone(zone).toLocalDateTime()
+    val today = LocalDate.now(zone)
+    val time = dt.format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())).lowercase()
+    val day = when (dt.toLocalDate()) {
+        today -> "Today"
+        today.plusDays(1) -> "Tomorrow"
+        else -> dt.format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))
+    }
+    return "$day, $time"
+}
+
+@Composable
+private fun EndDateRow(
+    valueText: String,
+    hasValue: Boolean,
+    onClick: () -> Unit,
+    teal: Color,
+    textMain: Color,
+    textSub: Color
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(textSub.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.Schedule, contentDescription = null, tint = textSub, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Text("End date", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = textMain, modifier = Modifier.weight(1f))
+        Text(
+            text = valueText,
+            fontSize = 13.sp,
+            fontWeight = if (hasValue) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (hasValue) teal else textSub,
+            maxLines = 1
+        )
+        Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = textSub, modifier = Modifier.size(20.dp))
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EndDateSheet(
+    choice: EndChoice,
+    card: Color,
+    textMain: Color,
+    textSub: Color,
+    teal: Color,
+    onPick: (EndChoice, Long) -> Unit,
+    onCustom: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val now = remember { System.currentTimeMillis() }
+    val hour = 3600_000L
+    val options = listOf(
+        Triple(EndChoice.NONE, "No end date", 0L),
+        Triple(EndChoice.H1, "In 1 hour", now + hour),
+        Triple(EndChoice.H24, "In 24 hours", now + 24 * hour),
+        Triple(EndChoice.D3, "In 3 days", now + 72 * hour),
+        Triple(EndChoice.W1, "In 1 week", now + 168 * hour)
+    )
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = card) {
+        Column(modifier = Modifier.navigationBarsPadding().padding(bottom = 12.dp)) {
+            Text(
+                "End date",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = textMain,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp)
+            )
+            options.forEach { (c, label, millis) ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onPick(c, millis) }
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(label, fontSize = 15.sp, color = textMain)
+                    if (millis > 0L) {
+                        Spacer(Modifier.width(10.dp))
+                        Text(formatPollEnd(millis), fontSize = 12.sp, color = textSub)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    RadioButton(
+                        selected = choice == c,
+                        onClick = null,
+                        colors = RadioButtonDefaults.colors(selectedColor = teal, unselectedColor = textSub)
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onCustom)
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Pick date and time\u2026", fontSize = 15.sp, color = textMain)
+                Spacer(Modifier.weight(1f))
+                Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = textSub, modifier = Modifier.size(20.dp))
             }
         }
     }

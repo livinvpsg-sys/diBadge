@@ -78,6 +78,7 @@ private fun extrasFromDoc(doc: DocumentSnapshot, msgType: String, myUid: String)
                     .put("multi", doc.getBoolean("pollAllowMultiple") ?: false)
                     .put("show", doc.getBoolean("pollShowVoters") ?: true)
                     .put("closed", doc.getBoolean("isPollClosed") ?: false)
+                    .put("ends", doc.getLong("pollEndsAt") ?: 0L)
                     .put("mine", mine)
                     .put("voters", voters)
                     .toString()
@@ -113,6 +114,7 @@ private fun ChatMessage.packExtras(): String? {
                 .put("multi", pollAllowMultiple)
                 .put("show", pollShowVoters)
                 .put("closed", isPollClosed)
+                .put("ends", pollEndsAt)
                 .put("mine", JSONArray(userVotedOptionIds.toList()))
                 .put("voters", JSONObject().also { o -> pollVoters.forEach { (k, v) -> o.put(k, JSONArray(v)) } })
                 .toString()
@@ -148,6 +150,7 @@ private fun ChatMessage.withExtras(json: String?): ChatMessage {
                     pollAllowMultiple = o.optBoolean("multi"),
                     pollShowVoters = o.optBoolean("show", true),
                     isPollClosed = o.optBoolean("closed"),
+                    pollEndsAt = o.optLong("ends", 0L),
                     userVotedOptionIds = (0 until mine.length()).map { mine.getString(it) }.toSet(),
                     pollVoters = voters.keys().asSequence().associateWith { k ->
                         val arr = voters.optJSONArray(k) ?: JSONArray()
@@ -281,6 +284,20 @@ class ChatViewModel : ViewModel() {
     private val auth = FirebaseAuth.getInstance()
     private val storage = FirebaseStorage.getInstance()
 
+    companion object {
+        // Last known messages of each chat, kept for the life of the app process, so a chat that
+        // was opened before shows its bubbles on the very first frame (like WhatsApp does)
+        private val messageCache = java.util.concurrent.ConcurrentHashMap<String, List<ChatMessage>>()
+    }
+
+    /** Puts the saved messages of this chat into view right away, if the chat was opened before. */
+    fun primeFromCache(groupId: String) {
+        if (groupId == activeGroupId) return
+        val cached = messageCache[groupId]
+        _messages.value = cached ?: emptyList()
+        _messagesLoaded.value = cached != null
+    }
+
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
 
@@ -312,8 +329,13 @@ class ChatViewModel : ViewModel() {
     fun listenToChatMessages(context: Context, groupId: String) {
         if (groupId.isBlank()) return
         if (groupId == activeGroupId && messagesListener != null) return
+        // A different chat: show its cached bubbles, or nothing, never the previous chat's bubbles
+        if (groupId != activeGroupId) {
+            val cached = messageCache[groupId]
+            _messages.value = cached ?: emptyList()
+            _messagesLoaded.value = cached != null
+        }
         activeGroupId = groupId
-        _messagesLoaded.value = false
 
         messagesListener?.remove()
         roomObserveJob?.cancel()
@@ -339,6 +361,7 @@ class ChatViewModel : ViewModel() {
                         }
                     }
                 }
+                messageCache[groupId] = domainMsgs
                 _messages.value = domainMsgs
                 _messagesLoaded.value = true
             }
@@ -1000,7 +1023,12 @@ class ChatViewModel : ViewModel() {
         val currentName = auth.currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Me"
         val messageId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
-        val expiresAt = if (isLive) now + durationMins * 60 * 1000L else 0L
+        // durationMins <= 0 means no time limit: it runs until the person stops it
+        val expiresAt = when {
+            !isLive -> 0L
+            durationMins <= 0 -> Long.MAX_VALUE
+            else -> now + durationMins * 60 * 1000L
+        }
 
         val docData = mutableMapOf<String, Any>(
             "id" to messageId,
@@ -1026,6 +1054,27 @@ class ChatViewModel : ViewModel() {
                     .document(messageId)
                     .set(docData)
                     .await()
+                // Keep sending the position until the share ends
+                if (isLive) {
+                    com.fabxdi.dibadge.util.LiveLocationService.start(context, groupId, messageId, expiresAt)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    /** Ends a live-location share: stops the background updates and marks the message as ended. */
+    fun stopLiveLocation(context: Context, groupId: String, messageId: String) {
+        com.fabxdi.dibadge.util.LiveLocationService.stop(context, messageId)
+        viewModelScope.launch {
+            try {
+                db.collection("personalGroups")
+                    .document(groupId)
+                    .collection("messages")
+                    .document(messageId)
+                    .update("isLiveEnded", true)
+                    .await()
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -1035,7 +1084,9 @@ class ChatViewModel : ViewModel() {
     /** Casts, changes or removes the current user's vote on a poll message. */
     fun votePoll(groupId: String, message: ChatMessage, optionId: String) {
         val user = auth.currentUser ?: return
+        // A closed poll, or one past its end time, takes no more votes
         if (message.isPollClosed) return
+        if (message.pollEndsAt > 0L && System.currentTimeMillis() >= message.pollEndsAt) return
         val uid = user.uid
         val name = user.displayName.takeIf { !it.isNullOrBlank() } ?: "Member"
 
@@ -1065,13 +1116,31 @@ class ChatViewModel : ViewModel() {
         }
     }
 
+    /** Ends a poll for everyone. Only the person who created it can do this. */
+    fun closePoll(groupId: String, message: ChatMessage) {
+        if (auth.currentUser == null || !message.isSentByMe || message.isPollClosed) return
+        viewModelScope.launch {
+            try {
+                db.collection("personalGroups")
+                    .document(groupId)
+                    .collection("messages")
+                    .document(message.id)
+                    .update("isPollClosed", true)
+                    .await()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     fun sendPollMessage(
         context: Context,
         groupId: String,
         question: String,
         options: List<String>,
         allowMultiple: Boolean,
-        showVoters: Boolean
+        showVoters: Boolean,
+        endsAtMillis: Long = 0L   // 0 = no end date
     ) {
         val currentUid = auth.currentUser?.uid ?: return
         val currentName = auth.currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Me"
@@ -1096,7 +1165,8 @@ class ChatViewModel : ViewModel() {
             "pollOptions" to pollOptionsData,
             "pollAllowMultiple" to allowMultiple,
             "pollShowVoters" to showVoters,
-            "isPollClosed" to false
+            "isPollClosed" to false,
+            "pollEndsAt" to endsAtMillis
         )
 
         viewModelScope.launch {
