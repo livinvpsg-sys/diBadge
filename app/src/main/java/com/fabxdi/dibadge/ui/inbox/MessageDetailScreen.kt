@@ -941,7 +941,7 @@ fun generateInboxPdf(context: Context, item: InboxEntity, fileName: String): Fil
 
         val grey = android.graphics.Color.GRAY
         val black = android.graphics.Color.BLACK
-        val teal = android.graphics.Color.parseColor("#1B6F69")
+        val teal = android.graphics.Color.parseColor("#3A4694")
 
         val items = mutableListOf<PdfItem>()
 

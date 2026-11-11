@@ -316,13 +316,29 @@ class GroupDetailsViewModel : ViewModel() {
 
                 var code = snapshot.getString("code").orEmpty()
 
-                // Self-heal: if this code is registered to a different group, it is a duplicate -> regenerate.
+                // Old codes could contain symbols (e.g. G%RJ-F$5V) that are hard to type: replace them.
+                if (code.isNotEmpty() && !code.all { it.isLetterOrDigit() || it == '-' }) code = ""
+
+                // Self-heal: a duplicate (registered to another group) is replaced; a missing registration is added,
+                // otherwise other groups can never find this code.
                 if (code.isNotEmpty()) {
                     try {
                         val reg = db.collection("groupCodes").document(code).get().await()
                         val owner = reg.getString("entityId")
-                        if (reg.exists() && !owner.isNullOrEmpty() && owner != groupId) code = ""
-                    } catch (_: Exception) { /* offline / rules: keep stored code */ }
+                        if (reg.exists() && !owner.isNullOrEmpty() && owner != groupId) {
+                            code = ""
+                        } else if (!reg.exists()) {
+                            db.collection("groupCodes").document(code).set(
+                                mapOf(
+                                    "entityId" to groupId,
+                                    "entityType" to "personalGroup",
+                                    "name" to name,
+                                    "createdAt" to FieldValue.serverTimestamp()
+                                ),
+                                SetOptions.merge()
+                            ).await()
+                        }
+                    } catch (e: Exception) { e.printStackTrace() }
                 }
 
                 if (code.isEmpty()) {
@@ -1739,7 +1755,7 @@ class GroupDetailsViewModel : ViewModel() {
     private suspend fun isBlockedEitherWay(me: String, other: String): Boolean {
         return try {
             db.collection("blockedUsers").document(me).collection("blocked").document(other).get().await().exists() ||
-                db.collection("blockedUsers").document(other).collection("blocked").document(me).get().await().exists()
+                    db.collection("blockedUsers").document(other).collection("blocked").document(me).get().await().exists()
         } catch (e: Exception) {
             false
         }
@@ -1921,9 +1937,25 @@ class GroupDetailsViewModel : ViewModel() {
                         status = "lookup"
                     )
                 } else {
-                    _codeLookupResult.value = null
+                    // Fallback: the code may only be stored on the group itself
+                    var found: GroupConnectionItem? = null
+                    try {
+                        val q = db.collection("personalGroups").whereEqualTo("code", code).limit(1).get().await()
+                        val g = q.documents.firstOrNull()
+                        if (g != null && g.id != currentGroupId) {
+                            found = GroupConnectionItem(
+                                connectionId = "",
+                                otherEntityId = g.id,
+                                otherEntityName = g.getString("name") ?: g.getString("title") ?: g.id,
+                                otherEntityType = "personalGroup",
+                                status = "lookup"
+                            )
+                        }
+                    } catch (e: Exception) { e.printStackTrace() }
+                    _codeLookupResult.value = found
                 }
             } catch (e: Exception) {
+                e.printStackTrace()
                 _codeLookupResult.value = null
             }
         }

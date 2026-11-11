@@ -97,14 +97,14 @@ private object PlacesApi {
         val dLat = Math.toRadians(bLat - aLat)
         val dLng = Math.toRadians(bLng - aLng)
         val x = sin(dLat / 2) * sin(dLat / 2) +
-            cos(Math.toRadians(aLat)) * cos(Math.toRadians(bLat)) * sin(dLng / 2) * sin(dLng / 2)
+                cos(Math.toRadians(aLat)) * cos(Math.toRadians(bLat)) * sin(dLng / 2) * sin(dLng / 2)
         return (r * 2 * atan2(sqrt(x), sqrt(1 - x))).roundToInt()
     }
 
     suspend fun search(query: String, nearLat: Double?, nearLng: Double?): List<PlaceItem> =
         withContext(Dispatchers.IO) {
             var url = "https://nominatim.openstreetmap.org/search?q=${URLEncoder.encode(query, "UTF-8")}" +
-                "&format=jsonv2&limit=8"
+                    "&format=jsonv2&limit=8"
             if (nearLat != null && nearLng != null) {
                 val d = 0.3
                 url += "&viewbox=${nearLng - d},${nearLat + d},${nearLng + d},${nearLat - d}"
@@ -146,12 +146,12 @@ private object PlacesApi {
 
     suspend fun nearby(lat: Double, lng: Double): List<PlaceItem> = withContext(Dispatchers.IO) {
         val q = "[out:json][timeout:10];(" +
-            "node(around:500,$lat,$lng)[\"name\"][\"amenity\"];" +
-            "node(around:500,$lat,$lng)[\"name\"][\"shop\"];" +
-            "node(around:500,$lat,$lng)[\"name\"][\"railway\"=\"station\"];" +
-            "node(around:500,$lat,$lng)[\"name\"][\"tourism\"];" +
-            "node(around:500,$lat,$lng)[\"name\"][\"leisure\"];" +
-            ");out 40;"
+                "node(around:500,$lat,$lng)[\"name\"][\"amenity\"];" +
+                "node(around:500,$lat,$lng)[\"name\"][\"shop\"];" +
+                "node(around:500,$lat,$lng)[\"name\"][\"railway\"=\"station\"];" +
+                "node(around:500,$lat,$lng)[\"name\"][\"tourism\"];" +
+                "node(around:500,$lat,$lng)[\"name\"][\"leisure\"];" +
+                ");out 40;"
         val body = get("https://overpass-api.de/api/interpreter?data=${URLEncoder.encode(q, "UTF-8")}")
             ?: return@withContext emptyList()
         try {
@@ -207,7 +207,7 @@ fun ShareLocationSheet(
     val outlineColor = if (isDark) Color(0xFF2A3037) else Color(0xFFD3D9DF)
     val primaryTextColor = if (isDark) Color(0xFFF0F3F5) else Color(0xFF11161A)
     val secondaryTextColor = if (isDark) Color(0xFF8A9199) else Color(0xFF65707A)
-    val tealAccent = if (isDark) Color(0xFF58B5AC) else Color(0xFF1B6F69)
+    val tealAccent = if (isDark) Color(0xFF8F9CD8) else Color(0xFF3A4694)
     val errorColor = if (isDark) Color(0xFFE8837A) else Color(0xFFC4433A)
 
     // Device position (asks for permission when needed)

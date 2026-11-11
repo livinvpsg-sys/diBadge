@@ -125,7 +125,7 @@ fun CommentThreadSheet(
     val primaryTextColor = if (isDark) Color(0xFFF0F3F5) else Color(0xFF11161A)
     val secondaryTextColor = if (isDark) Color(0xFF8A9199) else Color(0xFF65707A)
     val dimTextColor = if (isDark) Color(0xFF6E757C) else Color(0xFF8A929A)
-    val tealAccent = if (isDark) Color(0xFF58B5AC) else Color(0xFF1B6F69)
+    val tealAccent = if (isDark) Color(0xFF8F9CD8) else Color(0xFF3A4694)
 
     val currentUserId = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp

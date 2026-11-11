@@ -469,7 +469,7 @@ fun ConnectionsScreen(
                                                 expandedConnectionId = if (expandedConnectionId == item.id) null else item.id
                                             },
                                             onBlock = { blockTarget = item },
-                                    onDisconnect = { disconnectTarget = item },
+                                            onDisconnect = { disconnectTarget = item },
                                             onChatClick = { onOpenChat(item) }
                                         )
                                     }
@@ -1174,8 +1174,8 @@ private fun ConnectionsChip(
             .heightIn(min = 36.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
-        color = if (selected) primaryTextColor else Color.Transparent,
-        border = if (selected) null else BorderStroke(1.dp, outlineColor)
+        color = Color.Transparent,
+        border = BorderStroke(1.dp, if (selected) tealAccent else outlineColor)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
@@ -1185,7 +1185,7 @@ private fun ConnectionsChip(
                 text = label,
                 fontSize = 13.sp,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (selected) pageBgColor else secondaryTextColor,
+                color = if (selected) tealAccent else secondaryTextColor,
                 maxLines = 1
             )
             Spacer(modifier = Modifier.width(5.dp))
@@ -1194,7 +1194,7 @@ private fun ConnectionsChip(
                 fontSize = 13.sp,
                 fontWeight = if (highlightCount && !selected) FontWeight.Bold else FontWeight.Normal,
                 color = when {
-                    selected -> pageBgColor.copy(alpha = 0.7f)
+                    selected -> tealAccent.copy(alpha = 0.7f)
                     highlightCount -> tealAccent
                     else -> secondaryTextColor
                 }

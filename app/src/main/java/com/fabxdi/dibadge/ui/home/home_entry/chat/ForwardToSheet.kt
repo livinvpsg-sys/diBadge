@@ -56,7 +56,7 @@ fun ForwardToSheet(
     val primaryTextColor = if (isDark) Color(0xFFF0F3F5) else Color(0xFF11161A)
     val secondaryTextColor = if (isDark) Color(0xFF8A9199) else Color(0xFF65707A)
     val dimTextColor = if (isDark) Color(0xFF6E757C) else Color(0xFF8A929A)
-    val tealAccent = if (isDark) Color(0xFF58B5AC) else Color(0xFF1B6F69)
+    val tealAccent = if (isDark) Color(0xFF8F9CD8) else Color(0xFF3A4694)
     val pageBgColor = if (isDark) Color(0xFF0E1114) else Color(0xFFE8ECEF)
 
     val filteredRecent = remember(recentChats, searchQuery) {
@@ -338,7 +338,7 @@ private fun ForwardTargetRow(
         Spacer(modifier = Modifier.width(12.dp))
 
         if (isSelected) {
-            val tealAccent = if (isDark) Color(0xFF58B5AC) else Color(0xFF1B6F69)
+            val tealAccent = if (isDark) Color(0xFF8F9CD8) else Color(0xFF3A4694)
             Surface(
                 modifier = Modifier.size(22.dp),
                 shape = CircleShape,

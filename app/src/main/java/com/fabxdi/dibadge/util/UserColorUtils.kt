@@ -5,9 +5,8 @@ import com.google.firebase.auth.FirebaseAuth
 import java.util.Locale
 
 object UserColorUtils {
-    // Non-teal identity palette (dark / light)
+    // Identity palette (dark / light): no teal and no blue, so avatars never look like the app accent
     private val darkIdentityColors = listOf(
-        Color(0xFF7E9CE0), // Blue
         Color(0xFFB48AD6), // Violet
         Color(0xFFE0B25E), // Amber
         Color(0xFFE08AA6), // Rose
@@ -16,7 +15,6 @@ object UserColorUtils {
     )
 
     private val lightIdentityColors = listOf(
-        Color(0xFF3E5EA8), // Blue
         Color(0xFF7A4AA0), // Violet
         Color(0xFF9A6B12), // Amber
         Color(0xFFA8466A), // Rose
@@ -74,9 +72,9 @@ fun isValidName(name: String): Boolean {
     if (trimmed.length > 40) return false
     return trimmed.all { c ->
         c.isLetter() || c.isWhitespace() || c == '\'' || c == '-' || c == '.' ||
-            // vowel signs, viramas and joiners used in Malayalam, Tamil, Hindi, Thai, ...
-            Character.getType(c).let { it == Character.NON_SPACING_MARK.toInt() || it == Character.COMBINING_SPACING_MARK.toInt() } ||
-            c == '\u200C' || c == '\u200D'
+                // vowel signs, viramas and joiners used in Malayalam, Tamil, Hindi, Thai, ...
+                Character.getType(c).let { it == Character.NON_SPACING_MARK.toInt() || it == Character.COMBINING_SPACING_MARK.toInt() } ||
+                c == '\u200C' || c == '\u200D'
     }
 }
 

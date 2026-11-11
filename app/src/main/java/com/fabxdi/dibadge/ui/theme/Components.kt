@@ -61,7 +61,7 @@ fun DiBadgeStatusPill(
 /**
  * Chip / tab style button.
  * Unselected: 1dp outline border, secondary text.
- * Selected: 1dp primary-text border, primary text, bold. No fill, no accent.
+ * Selected: 1dp accent (indigo) border, accent text, bold. No fill.
  * Disabled: 45% alpha.
  */
 @Composable
@@ -74,8 +74,8 @@ fun DiBadgeButton(
 ) {
     val colors = MaterialTheme.colorScheme
 
-    val borderColor = if (isSelected) colors.onBackground else DiBadgeTheme.colors.controlBorder
-    val contentColor = if (isSelected) colors.onBackground else colors.onSurfaceVariant
+    val borderColor = if (isSelected) DiBadgeTheme.colors.accent else DiBadgeTheme.colors.controlBorder
+    val contentColor = if (isSelected) DiBadgeTheme.colors.accent else colors.onSurfaceVariant
     val alpha = if (isEnabled) 1f else DISABLED_ALPHA
 
     Surface(
@@ -101,7 +101,7 @@ fun DiBadgeButton(
  * Filter chip / tab pill used in the My Tasks header (Today, Assigned to me, Overdue 1).
  * 32dp high, fully rounded, 14dp horizontal padding, 13sp, always one line.
  * Unselected: 1dp outline border, secondary text, regular.
- * Selected: 1dp primary-text border, primary text, bold. No fill, no accent.
+ * Selected: 1dp accent (indigo) border, accent text, bold. No fill.
  * Width is reserved for the bold label so selecting a chip never moves its neighbours.
  */
 @Composable
@@ -112,8 +112,8 @@ fun DiBadgeChip(
     onClick: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
-    val borderColor = if (selected) colors.onBackground else DiBadgeTheme.colors.controlBorder
-    val contentColor = if (selected) colors.onBackground else colors.onSurfaceVariant
+    val borderColor = if (selected) DiBadgeTheme.colors.accent else DiBadgeTheme.colors.controlBorder
+    val contentColor = if (selected) DiBadgeTheme.colors.accent else colors.onSurfaceVariant
     val base = MaterialTheme.typography.labelMedium.copy(fontSize = 13.sp, letterSpacing = 0.sp)
 
     Surface(

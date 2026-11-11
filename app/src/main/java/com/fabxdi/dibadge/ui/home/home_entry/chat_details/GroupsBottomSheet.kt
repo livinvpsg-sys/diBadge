@@ -418,7 +418,11 @@ fun GroupsBottomSheet(
             }
 
             // Connected Groups List / Empty State
-            if (sortedConnectedList.isEmpty() && pendingRequests.isEmpty()) {
+            // While a search shows "No group found", the empty-list message is hidden
+            val showNoGroupFound = searchAttempted && !searchInput.equals(ownGroupCode, ignoreCase = true) && codeLookupResult == null
+            if (showNoGroupFound) {
+                // nothing: only "No group found" and its subtitle are shown
+            } else if (sortedConnectedList.isEmpty() && pendingRequests.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()

@@ -3,7 +3,6 @@ package com.fabxdi.dibadge.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // ---------------------------------------------------------------------------
-// diBadge palette: Slate + muted teal. Values match diBadge-design-spec.md.
 // Do not use these directly in screens: read them from MaterialTheme.colorScheme
 // or DiBadgeTheme.colors so light and dark stay in sync.
 // ---------------------------------------------------------------------------
@@ -15,7 +14,7 @@ val DarkOutline          = Color(0xFF2A3037)
 val DarkOnBackground     = Color(0xFFF0F3F5)
 val DarkOnSurfaceVariant = Color(0xFF8A9199)
 val DarkTabInactive      = Color(0xFF6E757C)
-val DarkAccent           = Color(0xFF58B5AC)
+val DarkAccent           = Color(0xFF8F9CD8)
 val DarkError            = Color(0xFFE8837A)
 val DarkContainer        = Color(0xFF232A31) // selected chips, nav indicators, picker highlights
 val DarkErrorContainer   = Color(0xFF3A1F1D)
@@ -28,7 +27,7 @@ val LightOutline          = Color(0xFFD3D9DF)
 val LightOnBackground     = Color(0xFF11161A)
 val LightOnSurfaceVariant = Color(0xFF5A646D) // 5:1 on the page background (was 4.2:1)
 val LightTabInactive      = Color(0xFF6F7780) // 3.8:1 (was 2.7:1)
-val LightAccent           = Color(0xFF1B6F69)
+val LightAccent           = Color(0xFF3A4694)
 val LightError            = Color(0xFFC4433A)
 val LightContainer        = Color(0xFFDDE2E7)
 val LightErrorContainer   = Color(0xFFF6DAD7)

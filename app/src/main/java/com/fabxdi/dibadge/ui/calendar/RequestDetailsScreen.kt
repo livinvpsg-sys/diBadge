@@ -287,7 +287,7 @@ fun RequestDetailsScreen(
                             try { FilePickerUtils.getFileName(context, parsedUri) } catch (e: Exception) { "Attachment ${index + 1}" }
                         }
                         val isPdf = fileName.endsWith(".pdf", ignoreCase = true) ||
-                            context.contentResolver.getType(parsedUri) == "application/pdf"
+                                context.contentResolver.getType(parsedUri) == "application/pdf"
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -447,7 +447,7 @@ fun RequestStatusPill(
     val (bgColor, textColor, labelText) = when {
         status.equals("Approved", ignoreCase = true) -> Triple(
             if (isDark) Color(0xFF16403D) else Color(0xFFD3E9E6),
-            if (isDark) Color(0xFF58B5AC) else Color(0xFF1B6F69),
+            if (isDark) Color(0xFF8F9CD8) else Color(0xFF3A4694),
             "Approved"
         )
         status.equals("Rejected", ignoreCase = true) -> Triple(

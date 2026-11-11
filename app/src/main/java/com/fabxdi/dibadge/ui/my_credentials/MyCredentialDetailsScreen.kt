@@ -108,7 +108,7 @@ fun MyCredentialDetailsScreen(
                 else -> Triple(
                     "Valid until $dateFormatted",
                     if (isDark) Color(0xFF16403D) else Color(0xFFD3E9E6),
-                    if (isDark) Color(0xFF58B5AC) else Color(0xFF1B6F69)
+                    if (isDark) Color(0xFF8F9CD8) else Color(0xFF3A4694)
                 )
             }
         }

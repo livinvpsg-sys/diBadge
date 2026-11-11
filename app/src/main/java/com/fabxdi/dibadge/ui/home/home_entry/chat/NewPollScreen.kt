@@ -71,13 +71,13 @@ fun NewPollScreen(
     var showEndSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
-    val pageBg = if (isDark) Color(0xFF0F1415) else Color(0xFFF5F8F8)
-    val card = if (isDark) Color(0xFF1A2123) else Color.White
-    val line = if (isDark) Color(0xFF2B3638) else Color(0xFFDCE5E5)
-    val textMain = if (isDark) Color(0xFFE6ECEC) else Color(0xFF10201F)
-    val textSub = if (isDark) Color(0xFF8FA0A0) else Color(0xFF6B7B7B)
-    val teal = if (isDark) Color(0xFF2EC4B6) else Color(0xFF0F9D8F)
-    val onTeal = if (isDark) Color(0xFF06201D) else Color.White
+    val pageBg = if (isDark) Color(0xFF0E1114) else Color(0xFFE8ECEF)
+    val card = if (isDark) Color(0xFF181C21) else Color(0xFFF5F7F9)
+    val line = if (isDark) Color(0xFF2A3037) else Color(0xFFD3D9DF)
+    val textMain = if (isDark) Color(0xFFF0F3F5) else Color(0xFF11161A)
+    val textSub = if (isDark) Color(0xFF8A9199) else Color(0xFF5A646D)
+    val teal = if (isDark) Color(0xFF8F9CD8) else Color(0xFF3A4694)
+    val onTeal = if (isDark) Color(0xFF0E1114) else Color.White
 
     val validOptionCount = optionsList.count { it.text.trim().isNotBlank() }
     val canSend = questionText.trim().isNotBlank() && validOptionCount >= 2
