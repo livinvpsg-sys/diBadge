@@ -202,6 +202,10 @@ fun MyTasksScreen(
 
     val showAssigned = selectedFilter == "Assigned to me"
 
+    // Tapping a task assigned by a group opens its details (read only for the person it is assigned to)
+    var selectedAssignedId by remember { mutableStateOf<String?>(null) }
+    val selectedAssignedTask = assignedTasks.firstOrNull { it.id == selectedAssignedId }
+
     val dayTasksMap = remember(allReminders, monthDays, showAssigned) {
         monthDays.associateWith { date ->
             if (showAssigned) emptyList()
@@ -224,7 +228,7 @@ fun MyTasksScreen(
                     .fillMaxWidth()
                     .background(pageBgColor)
                     .statusBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 8.dp)
+                    .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp)
             ) {
                 // Top Header Row
                 Row(
@@ -289,7 +293,7 @@ fun MyTasksScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = filterOption,
+                                    text = if (filterOption == "All") "My tasks" else filterOption,
                                     fontSize = 13.sp,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                     color = primaryTextColor
@@ -345,7 +349,7 @@ fun MyTasksScreen(
 
                     val nextDate = monthDays.getOrNull(index + 1)
                     val nextHasTasks = nextDate != null &&
-                        (dayTasksMap[nextDate]?.isNotEmpty() == true || assignedMap[nextDate]?.isNotEmpty() == true)
+                            (dayTasksMap[nextDate]?.isNotEmpty() == true || assignedMap[nextDate]?.isNotEmpty() == true)
                     val showBottomDivider = !hasTasks && nextDate != null && !nextHasTasks
 
                     AgendaDayRow(
@@ -363,6 +367,7 @@ fun MyTasksScreen(
                                 onUpdated = {}
                             )
                         },
+                        onAssignedClick = { task -> selectedAssignedId = task.id },
                         showBottomDivider = showBottomDivider,
                         cardBgColor = cardBgColor,
                         outlineColor = outlineColor,
@@ -391,6 +396,20 @@ fun MyTasksScreen(
                 currentYearMonth = newYM
             },
             onDismiss = { showMonthPickerSheet = false }
+        )
+    }
+
+    if (selectedAssignedTask != null) {
+        TaskPreviewSheet(
+            groupId = selectedAssignedTask.groupId,
+            task = selectedAssignedTask,
+            canUserManage = false,
+            userName = myName.ifBlank { "Me" },
+            userUid = myUid,
+            taskViewModel = groupTaskViewModel,
+            onTaskUpdated = {},
+            onTaskDeleted = { selectedAssignedId = null },
+            onDismiss = { selectedAssignedId = null }
         )
     }
 }
@@ -471,7 +490,8 @@ fun AgendaDayRow(
     onTaskToggleDone: (ReminderEntity) -> Unit,
     onTaskClick: (ReminderEntity) -> Unit,
     assignedTasks: List<GroupTaskEntity> = emptyList(),
-    onAssignedToggle: (GroupTaskEntity) -> Unit = {}
+    onAssignedToggle: (GroupTaskEntity) -> Unit = {},
+    onAssignedClick: (GroupTaskEntity) -> Unit = {}
 ) {
     val hasTasks = tasks.isNotEmpty() || assignedTasks.isNotEmpty()
     val isWeekend = date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY
@@ -598,7 +618,8 @@ fun AgendaDayRow(
                                 secondaryTextColor = secondaryTextColor,
                                 errorColor = errorColor,
                                 isDarkTheme = isDarkTheme,
-                                onToggleDone = { onAssignedToggle(task) }
+                                onToggleDone = { onAssignedToggle(task) },
+                                onClick = { onAssignedClick(task) }
                             )
                         }
                     }
@@ -733,31 +754,31 @@ fun AgendaTaskRow(
                 },
             contentAlignment = Alignment.Center
         ) {
-          Box(modifier = Modifier.size(20.dp)) {
-            if (isCompleted) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    shape = CircleShape,
-                    color = tealAccent
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = null,
-                            tint = if (isDarkTheme) Color(0xFF0E1114) else Color.White,
-                            modifier = Modifier.size(13.dp)
-                        )
+            Box(modifier = Modifier.size(20.dp)) {
+                if (isCompleted) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        shape = CircleShape,
+                        color = tealAccent
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                tint = if (isDarkTheme) Color(0xFF0E1114) else Color.White,
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
                     }
+                } else {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        shape = CircleShape,
+                        color = Color.Transparent,
+                        border = BorderStroke(1.5.dp, tealAccent)
+                    ) {}
                 }
-            } else {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    shape = CircleShape,
-                    color = Color.Transparent,
-                    border = BorderStroke(1.5.dp, tealAccent)
-                ) {}
             }
-          }
         }
 
         Spacer(modifier = Modifier.width(4.dp))
@@ -812,9 +833,12 @@ fun AssignedTaskRow(
     secondaryTextColor: Color,
     errorColor: Color,
     isDarkTheme: Boolean,
-    onToggleDone: () -> Unit
+    onToggleDone: () -> Unit,
+    onClick: () -> Unit = {}
 ) {
-    val isOverdue = !task.isCompleted && date.isBefore(LocalDate.now())
+    // Overdue only once the whole task period has passed, not on every earlier day of a long task
+    val taskEnd = task.endDate ?: task.dueDate ?: task.startDate ?: date
+    val isOverdue = !task.isCompleted && taskEnd.isBefore(LocalDate.now())
     val subline = buildString {
         append("From ${task.assignedBy}")
         if (!task.dueTime.isNullOrBlank()) append(" · ${task.dueTime}")
@@ -823,6 +847,7 @@ fun AssignedTaskRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { onClick() }
             .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

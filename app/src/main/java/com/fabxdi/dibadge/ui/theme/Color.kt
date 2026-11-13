@@ -3,36 +3,41 @@ package com.fabxdi.dibadge.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // ---------------------------------------------------------------------------
+// diBadge palette: charcoal / cool grey with indigo.
 // Do not use these directly in screens: read them from MaterialTheme.colorScheme
 // or DiBadgeTheme.colors so light and dark stay in sync.
 // ---------------------------------------------------------------------------
 
-// Dark theme
-val DarkBackground       = Color(0xFF0E1114)
-val DarkSurface          = Color(0xFF181C21) // bottom bar, cards, sheets, dialogs, + button
-val DarkOutline          = Color(0xFF2A3037)
-val DarkOnBackground     = Color(0xFFF0F3F5)
-val DarkOnSurfaceVariant = Color(0xFF8A9199)
-val DarkTabInactive      = Color(0xFF6E757C)
-val DarkAccent           = Color(0xFF8F9CD8)
+// Dark theme: charcoal page, slightly lighter cards, one indigo accent
+val DarkBackground       = Color(0xFF1F1F21)
+val DarkSurface          = Color(0xFF2A2A2D) // cards, chips, message box, sheets, dialogs
+val DarkOutline          = Color(0xFF3A3A3F) // hairline borders and dividers
+val DarkOnBackground     = Color(0xFFF2F2F4)
+val DarkOnSurfaceVariant = Color(0xFFA3A3AA)
+val DarkTabInactive      = Color(0xFF7C7C84)
+val DarkAccent           = Color(0xFF8F9CD8) // indigo text: names, Send, links
+val DarkAccentFill       = Color(0xFF5B6BC4) // filled actions: + button, Approve, own bubbles, badges
 val DarkError            = Color(0xFFE8837A)
-val DarkContainer        = Color(0xFF232A31) // selected chips, nav indicators, picker highlights
+val DarkContainer        = Color(0xFF2C3550) // selected chips, table label cells, avatar tint
 val DarkErrorContainer   = Color(0xFF3A1F1D)
-val DarkControlBorder    = Color(0xFF5E656D) // outlines of chips/buttons/inputs: 3:1 against the page
+val DarkControlBorder    = Color(0xFF5E5E66) // outlines of chips/buttons/inputs
+val DarkRaised           = Color(0xFF34343A) // surfaces above a card (audio tiles, pickers)
 
-// Light theme
-val LightBackground       = Color(0xFFE8ECEF)
-val LightSurface          = Color(0xFFF5F7F9) // bottom bar, cards, sheets, dialogs, + button
-val LightOutline          = Color(0xFFD3D9DF)
-val LightOnBackground     = Color(0xFF11161A)
-val LightOnSurfaceVariant = Color(0xFF5A646D) // 5:1 on the page background (was 4.2:1)
-val LightTabInactive      = Color(0xFF6F7780) // 3.8:1 (was 2.7:1)
+// Light theme: cool light page, white cards, deep indigo accent
+val LightBackground       = Color(0xFFF5F6F8)
+val LightSurface          = Color(0xFFFFFFFF) // cards, message box, sheets, dialogs
+val LightOutline          = Color(0xFFE3E5EA)
+val LightOnBackground     = Color(0xFF15171C)
+val LightOnSurfaceVariant = Color(0xFF667085)
+val LightTabInactive      = Color(0xFF7A8090)
 val LightAccent           = Color(0xFF3A4694)
+val LightAccentFill       = Color(0xFF3A4694)
 val LightError            = Color(0xFFC4433A)
-val LightContainer        = Color(0xFFDDE2E7)
+val LightContainer        = Color(0xFFE4E8F6)
 val LightErrorContainer   = Color(0xFFF6DAD7)
 val LightOnErrorContainer = Color(0xFF7A1F19)
-val LightControlBorder    = Color(0xFF7E868E) // 3.1:1 against the page
+val LightControlBorder    = Color(0xFF7E868E)
+val LightRaised           = Color(0xFFE9EBEF)
 
 // Status colours (unchanged)
 val InfoBlue      = Color(0xFF05C1F5)

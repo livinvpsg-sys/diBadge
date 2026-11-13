@@ -15,7 +15,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import com.fabxdi.dibadge.ui.calendar.GroupScheduleScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.GroupTaskViewModel
 import androidx.compose.foundation.layout.*
@@ -309,7 +308,7 @@ private fun SelectedTick() {
     Surface(
         modifier = Modifier.size(24.dp),
         shape = CircleShape,
-        color = Color(0xFF11161A)
+        color = Color(0xFF15171C)
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
@@ -328,6 +327,7 @@ fun ChatDetailsScreen(
     entry: HomeEntryEntity,
     messages: List<ChatMessage> = emptyList(),
     onBack: () -> Unit,
+    openAction: String? = null,
     onOpenMyForms: () -> Unit = {},
     onReplyMedia: (String) -> Unit = {},
     onShowInChat: (String) -> Unit = {},
@@ -377,13 +377,13 @@ fun ChatDetailsScreen(
     val colors = MaterialTheme.colorScheme
     val isDark = colors.onBackground.red > 0.5f
 
-    val pageBgColor = if (isDark) Color(0xFF0E1114) else Color(0xFFE8ECEF)
-    val cardColor = if (isDark) Color(0xFF181C21) else Color(0xFFF5F7F9)
-    val cardFillColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
-    val outlineColor = if (isDark) Color(0xFF2A3037) else Color(0xFFD3D9DF)
-    val primaryTextColor = if (isDark) Color(0xFFF0F3F5) else Color(0xFF11161A)
-    val secondaryTextColor = if (isDark) Color(0xFF8A9199) else Color(0xFF65707A)
-    val dimTextColor = if (isDark) Color(0xFF6E757C) else Color(0xFF8A929A)
+    val pageBgColor = if (isDark) Color(0xFF1F1F21) else Color(0xFFF5F6F8)
+    val cardColor = if (isDark) Color(0xFF2A2A2D) else Color(0xFFFFFFFF)
+    val cardFillColor = if (isDark) Color(0xFF34343A) else Color(0xFFE9EBEF)
+    val outlineColor = if (isDark) Color(0xFF3A3A3F) else Color(0xFFE3E5EA)
+    val primaryTextColor = if (isDark) Color(0xFFF2F2F4) else Color(0xFF15171C)
+    val secondaryTextColor = if (isDark) Color(0xFFA3A3AA) else Color(0xFF667085)
+    val dimTextColor = if (isDark) Color(0xFF7C7C84) else Color(0xFF8A90A0)
     val errorColor = if (isDark) Color(0xFFE8837A) else Color(0xFFC4433A)
     val tealAccent = if (isDark) Color(0xFF8F9CD8) else Color(0xFF3A4694)
 
@@ -403,13 +403,28 @@ fun ChatDetailsScreen(
     var editDescriptionInput by remember { mutableStateOf("") }
 
     var showAddMemberDialog by remember { mutableStateOf(false) }
-    var showMembersSheet by remember { mutableStateOf(false) }
-    var showGroupsSheet by remember { mutableStateOf(false) }
-    var showTasksSheet by remember { mutableStateOf(false) }
-    var showGroupFormsScreen by remember { mutableStateOf(false) }
+    var showMembersSheet by remember { mutableStateOf(openAction == "members") }
+    var showGroupsSheet by remember { mutableStateOf(openAction == "groups") }
+    var showTasksSheet by remember { mutableStateOf(openAction == "tasks") }
+    var showGroupFormsScreen by remember { mutableStateOf(openAction == "forms") }
     var showGroupCalendarScreen by remember { mutableStateOf(false) }
-    var showCredentialsScreen by remember { mutableStateOf(false) }
-    var showLibraryScreen by remember { mutableStateOf(false) }
+    var showCredentialsScreen by remember { mutableStateOf(openAction == "credentials") }
+    var showLibraryScreen by remember { mutableStateOf(openAction == "library") }
+
+    // Opened from the chat screen's three-dot menu: open that item straight away and return to the chat when it closes
+    val openedFromChat = remember { openAction != null }
+    var sawOpenedItem by remember { mutableStateOf(false) }
+    val anyItemOpen = showMembersSheet || showGroupsSheet || showTasksSheet || showGroupFormsScreen ||
+            showCredentialsScreen || showLibraryScreen || showAddMemberDialog
+    android.util.Log.d("MenuDebug", "4 details composed openAction=$openAction members=$showMembersSheet groups=$showGroupsSheet tasks=$showTasksSheet anyOpen=$anyItemOpen")
+    LaunchedEffect(anyItemOpen) {
+        android.util.Log.d("MenuDebug", "5 anyItemOpen=$anyItemOpen sawOpened=$sawOpenedItem fromChat=$openedFromChat")
+        if (anyItemOpen) sawOpenedItem = true
+        else if (openedFromChat && sawOpenedItem) {
+            android.util.Log.d("MenuDebug", "6 closing back to chat")
+            onBack()
+        }
+    }
     var isMuted by remember { mutableStateOf(false) }
     var showMuteSheet by remember { mutableStateOf(false) }
     var showClearChatDialog by remember { mutableStateOf(false) }
@@ -515,860 +530,863 @@ fun ChatDetailsScreen(
         return
     }
 
-    Scaffold(
-        topBar = {
-            if (selectedMediaIds.isNotEmpty()) {
-                TopAppBar(
-                    title = {
-                        Text(
-                            text = "${selectedMediaIds.size} selected",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = { selectedMediaIds = emptySet() }) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Clear selection",
-                                tint = MaterialTheme.colorScheme.onSurface
+    // When opened from the chat screen's menu, only the requested sheet is shown (over the chat), not this screen
+    if (!openedFromChat) {
+        Scaffold(
+            topBar = {
+                if (selectedMediaIds.isNotEmpty()) {
+                    TopAppBar(
+                        title = {
+                            Text(
+                                text = "${selectedMediaIds.size} selected",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
-                        }
-                    },
-                    actions = {
-                        val selectedLinkUrls = selectedMediaIds.filter { it.startsWith("l:") }
-                            .map { it.removePrefix("l:").substringAfter(":") }
-                        val allSelectedMediaItems = remember(selectedMediaIds, media, files, messages) {
-                            val list = mutableListOf<GroupMediaItem>()
-                            for (id in selectedMediaIds) {
-                                if (id.startsWith("l:")) continue
-                                if (id.startsWith("a:")) {
-                                    val am = messages.find { it.id == id.removePrefix("a:") }
-                                    val au = am?.let { audioUrlOf(it) }
-                                    if (am != null && au != null) {
-                                        list.add(GroupMediaItem(id = id, url = au, name = FilePickerUtils.getFileName(context, Uri.parse(au)), mediaType = "audio", timestamp = am.timestamp.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()))
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = { selectedMediaIds = emptySet() }) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear selection",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        },
+                        actions = {
+                            val selectedLinkUrls = selectedMediaIds.filter { it.startsWith("l:") }
+                                .map { it.removePrefix("l:").substringAfter(":") }
+                            val allSelectedMediaItems = remember(selectedMediaIds, media, files, messages) {
+                                val list = mutableListOf<GroupMediaItem>()
+                                for (id in selectedMediaIds) {
+                                    if (id.startsWith("l:")) continue
+                                    if (id.startsWith("a:")) {
+                                        val am = messages.find { it.id == id.removePrefix("a:") }
+                                        val au = am?.let { audioUrlOf(it) }
+                                        if (am != null && au != null) {
+                                            list.add(GroupMediaItem(id = id, url = au, name = FilePickerUtils.getFileName(context, Uri.parse(au)), mediaType = "audio", timestamp = am.timestamp.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()))
+                                        }
+                                        continue
                                     }
-                                    continue
+                                    val m = media.find { it.id == id }
+                                    if (m != null) {
+                                        list.add(m)
+                                    } else {
+                                        val f = files.find { it.id == id }
+                                        if (f != null) {
+                                            list.add(GroupMediaItem(id = f.id, url = f.downloadUrl, name = f.name, mediaType = "document", timestamp = f.timestamp))
+                                        }
+                                    }
                                 }
-                                val m = media.find { it.id == id }
-                                if (m != null) {
-                                    list.add(m)
-                                } else {
-                                    val f = files.find { it.id == id }
-                                    if (f != null) {
-                                        list.add(GroupMediaItem(id = f.id, url = f.downloadUrl, name = f.name, mediaType = "document", timestamp = f.timestamp))
+                                list
+                            }
+
+                            // If single selection: show Reply Icon (not for links)
+                            if (selectedMediaIds.size == 1 && selectedLinkUrls.isEmpty()) {
+                                val selectedItem = allSelectedMediaItems.firstOrNull()
+                                IconButton(onClick = {
+                                    if (selectedItem != null) {
+                                        val mediaUrl = selectedItem.url
+                                        selectedMediaIds = emptySet()
+                                        onReplyMedia(mediaUrl)
                                     }
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Reply,
+                                        contentDescription = "Reply",
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
                                 }
                             }
-                            list
-                        }
 
-                        // If single selection: show Reply Icon (not for links)
-                        if (selectedMediaIds.size == 1 && selectedLinkUrls.isEmpty()) {
-                            val selectedItem = allSelectedMediaItems.firstOrNull()
+                            // Delete Icon
                             IconButton(onClick = {
-                                if (selectedItem != null) {
-                                    val mediaUrl = selectedItem.url
-                                    selectedMediaIds = emptySet()
-                                    onReplyMedia(mediaUrl)
-                                }
+                                showDeleteMediaDialog = true
                             }) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            // Share Icon (links are shared as text)
+                            val shareSelected = {
+                                if (allSelectedMediaItems.isNotEmpty()) {
+                                    shareMultipleMediaItems(context, allSelectedMediaItems)
+                                } else if (selectedLinkUrls.isNotEmpty()) {
+                                    val send = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_TEXT, selectedLinkUrls.joinToString("\n"))
+                                    }
+                                    context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                }
+                                selectedMediaIds = emptySet()
+                            }
+                            IconButton(onClick = { shareSelected() }) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = "Share",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            // Forward Icon
+                            IconButton(onClick = { shareSelected() }) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.Reply,
-                                    contentDescription = "Reply",
-                                    tint = MaterialTheme.colorScheme.onSurface
+                                    contentDescription = "Forward",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.graphicsLayer { scaleX = -1f }
                                 )
                             }
-                        }
 
-                        // Delete Icon
-                        IconButton(onClick = {
-                            showDeleteMediaDialog = true
-                        }) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Delete",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-
-                        // Share Icon (links are shared as text)
-                        val shareSelected = {
-                            if (allSelectedMediaItems.isNotEmpty()) {
-                                shareMultipleMediaItems(context, allSelectedMediaItems)
-                            } else if (selectedLinkUrls.isNotEmpty()) {
-                                val send = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_TEXT, selectedLinkUrls.joinToString("\n"))
+                            // Show in Chat Icon (Single selection only)
+                            if (selectedMediaIds.size == 1) {
+                                val selectedItem = allSelectedMediaItems.firstOrNull()
+                                IconButton(onClick = {
+                                    val target = selectedItem?.url ?: selectedLinkUrls.firstOrNull()
+                                    if (target != null) {
+                                        selectedMediaIds = emptySet()
+                                        onShowInChat(target)
+                                    }
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.ChatBubble,
+                                        contentDescription = "Show in chat",
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
                                 }
-                                context.startActivity(Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                             }
-                            selectedMediaIds = emptySet()
-                        }
-                        IconButton(onClick = { shareSelected() }) {
-                            Icon(
-                                imageVector = Icons.Default.Share,
-                                contentDescription = "Share",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-
-                        // Forward Icon
-                        IconButton(onClick = { shareSelected() }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Reply,
-                                contentDescription = "Forward",
-                                tint = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.graphicsLayer { scaleX = -1f }
-                            )
-                        }
-
-                        // Show in Chat Icon (Single selection only)
-                        if (selectedMediaIds.size == 1) {
-                            val selectedItem = allSelectedMediaItems.firstOrNull()
-                            IconButton(onClick = {
-                                val target = selectedItem?.url ?: selectedLinkUrls.firstOrNull()
-                                if (target != null) {
-                                    selectedMediaIds = emptySet()
-                                    onShowInChat(target)
-                                }
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Default.ChatBubble,
-                                    contentDescription = "Show in chat",
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background
+                        )
                     )
-                )
-            } else {
-                TopAppBar(
-                    title = {
-                        if (showScrolledTitle.value) {
-                            Text(
-                                text = groupName.ifBlank { "Group" },
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = primaryTextColor,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    },
-                    actions = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(18.dp)
-                        ) {
-                            if (!isOneToOne) {
-                                IconButton(
-                                    onClick = { showGroupCalendarScreen = true },
-                                    modifier = Modifier.size(48.dp)
-                                ) {
-                                    Icon(
-                                        painter = painterResource(id = R.drawable.ic_calendar),
-                                        contentDescription = "Schedule",
-                                        tint = primaryTextColor,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
+                } else {
+                    TopAppBar(
+                        title = {
+                            if (showScrolledTitle.value) {
+                                Text(
+                                    text = groupName.ifBlank { "Group" },
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = primaryTextColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
-
-                            IconButton(
-                                onClick = { showHeaderDropdown = true },
-                                modifier = Modifier.size(48.dp)
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = onBack) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        },
+                        actions = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(18.dp)
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.MoreVert,
-                                        contentDescription = "More options",
-                                        tint = primaryTextColor,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                    if (!isOneToOne && isAdmin && pendingRequests.isNotEmpty()) {
-                                        Box(
-                                            modifier = Modifier
-                                                .align(Alignment.TopEnd)
-                                                .offset(x = 2.dp, y = (-2).dp)
-                                                .size(9.dp)
-                                                .background(tealAccent, shape = CircleShape)
+                                if (!isOneToOne) {
+                                    IconButton(
+                                        onClick = { showGroupCalendarScreen = true },
+                                        modifier = Modifier.size(48.dp)
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(id = R.drawable.ic_calendar),
+                                            contentDescription = "Schedule",
+                                            tint = primaryTextColor,
+                                            modifier = Modifier.size(22.dp)
                                         )
                                     }
                                 }
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = pageBgColor
-                    )
-                )
-            }
-        }
-    ) { innerPadding ->
-        if (isLoading) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-            }
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentAlignment = Alignment.BottomCenter
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background)
-                        .verticalScroll(scrollState)
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    // HEADER SECTION (Centered 88dp round avatar, name, description, member count)
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 0.dp, bottom = 4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        // 88dp Round Avatar (same look as the home list and the chat header)
-                        val entryKey = entry.id.toString()
-                        val avatarPhoto = if (isOneToOne) otherUserPhotoUrl else groupPhotoUrl
-                        val avatarTitle = entry.title
 
-                        // Share the photo with the home list and chat header. A blank photo is only
-                        // removed after a short wait, so the first load doesn't wipe it.
-                        LaunchedEffect(avatarPhoto, entryKey) {
-                            if (avatarPhoto.isNotBlank()) {
-                                AvatarPhotoCache.put(context, entryKey, avatarPhoto)
-                            } else {
-                                delay(1500)
-                                AvatarPhotoCache.put(context, entryKey, "")
-                            }
-                        }
-
-                        ChatAvatar(
-                            title = avatarTitle,
-                            idForColor = entryKey,
-                            size = 88.dp,
-                            photoUrl = avatarPhoto,
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null
+                                IconButton(
+                                    onClick = { showHeaderDropdown = true },
+                                    modifier = Modifier.size(48.dp)
                                 ) {
-                                    if (avatarPhoto.isNotBlank()) {
-                                        showFullscreenAvatarViewer = true
-                                    } else if (!isOneToOne) {
-                                        avatarPickerLauncher.launch("image/*")
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.MoreVert,
+                                            contentDescription = "More options",
+                                            tint = primaryTextColor,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                        if (!isOneToOne && isAdmin && pendingRequests.isNotEmpty()) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(Alignment.TopEnd)
+                                                    .offset(x = 2.dp, y = (-2).dp)
+                                                    .size(9.dp)
+                                                    .background(tealAccent, shape = CircleShape)
+                                            )
+                                        }
                                     }
                                 }
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Name (22sp Medium)
-                        val displayName = if (isOneToOne) (otherUserName.ifBlank { entry.title }) else groupName.ifBlank { "Group" }
-                        Text(
-                            text = displayName,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = primaryTextColor,
-                            textAlign = TextAlign.Center,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.clickable(
-                                enabled = !isOneToOne,
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                editNameInput = groupName
-                                showEditNameDialog = true
                             }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = pageBgColor
                         )
+                    )
+                }
+            }
+        ) { innerPadding ->
+            if (isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.BottomCenter
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                            .verticalScroll(scrollState)
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // HEADER SECTION (Centered 88dp round avatar, name, description, member count)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 0.dp, bottom = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            // 88dp Round Avatar (same look as the home list and the chat header)
+                            val entryKey = entry.id.toString()
+                            val avatarPhoto = if (isOneToOne) otherUserPhotoUrl else groupPhotoUrl
+                            val avatarTitle = entry.title
 
-                        Spacer(modifier = Modifier.height(2.dp))
-
-                        // Line 2: Nickname (if 1-to-1) OR Description (if group)
-                        if (isOneToOne) {
-                            if (otherUserNickname.isNotBlank()) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center,
-                                    modifier = Modifier
-                                        .clickable { showNicknameSheet = true }
-                                        .padding(vertical = 2.dp, horizontal = 6.dp)
-                                ) {
-                                    Text(
-                                        text = otherUserNickname,
-                                        fontSize = 14.sp,
-                                        color = secondaryTextColor,
-                                        textAlign = TextAlign.Center,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Icon(
-                                        imageVector = Icons.Outlined.Edit,
-                                        contentDescription = "Edit nickname",
-                                        tint = secondaryTextColor,
-                                        modifier = Modifier.size(14.dp)
-                                    )
+                            // Share the photo with the home list and chat header. A blank photo is only
+                            // removed after a short wait, so the first load doesn't wipe it.
+                            LaunchedEffect(avatarPhoto, entryKey) {
+                                if (avatarPhoto.isNotBlank()) {
+                                    AvatarPhotoCache.put(context, entryKey, avatarPhoto)
+                                } else {
+                                    delay(1500)
+                                    AvatarPhotoCache.put(context, entryKey, "")
                                 }
-                            } else {
-                                Text(
-                                    text = "Add nickname",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = tealAccent,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier
-                                        .clickable { showNicknameSheet = true }
-                                        .padding(vertical = 2.dp, horizontal = 6.dp)
-                                )
                             }
-                        } else {
-                            val isMemberCountStr = remember(groupSubtitle) {
-                                val sub = groupSubtitle.trim().lowercase()
-                                sub.endsWith("member") || sub.endsWith("members")
-                            }
-                            val displayDescription = if (groupSubtitle == "test" || isMemberCountStr) "" else groupSubtitle
+
+                            ChatAvatar(
+                                title = avatarTitle,
+                                idForColor = entryKey,
+                                size = 88.dp,
+                                photoUrl = avatarPhoto,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        if (avatarPhoto.isNotBlank()) {
+                                            showFullscreenAvatarViewer = true
+                                        } else if (!isOneToOne) {
+                                            avatarPickerLauncher.launch("image/*")
+                                        }
+                                    }
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // Name (22sp Medium)
+                            val displayName = if (isOneToOne) (otherUserName.ifBlank { entry.title }) else groupName.ifBlank { "Group" }
                             Text(
-                                text = displayDescription.ifBlank { "Add group description" },
-                                fontSize = 14.sp,
-                                color = secondaryTextColor,
+                                text = displayName,
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = primaryTextColor,
                                 textAlign = TextAlign.Center,
-                                maxLines = 3,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.clickable(
+                                    enabled = !isOneToOne,
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null
                                 ) {
-                                    editDescriptionInput = displayDescription
-                                    showEditDescriptionDialog = true
+                                    editNameInput = groupName
+                                    showEditNameDialog = true
                                 }
                             )
 
                             Spacer(modifier = Modifier.height(2.dp))
 
-                            // Line 3: Member Count (13sp Secondary)
-                            val memberCountText = if (members.size == 1) "1 member" else "${members.size} members"
-                            Text(
-                                text = memberCountText,
-                                fontSize = 13.sp,
-                                color = secondaryTextColor,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.clickable { showMembersSheet = true }
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    // Tabs: Media | Docs (if 1-to-1) or Media | Docs | Audio | Links (if group)
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(44.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val categories = if (isOneToOne) listOf("Media", "Docs") else listOf("Media", "Docs", "Audio", "Links")
-                            categories.forEach { category ->
-                                val isSelected = selectedMediaCategory == category
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .fillMaxHeight()
-                                        .clickable { selectedMediaCategory = category },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Column(
-                                        modifier = Modifier.fillMaxSize(),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.SpaceBetween
+                            // Line 2: Nickname (if 1-to-1) OR Description (if group)
+                            if (isOneToOne) {
+                                if (otherUserNickname.isNotBlank()) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center,
+                                        modifier = Modifier
+                                            .clickable { showNicknameSheet = true }
+                                            .padding(vertical = 2.dp, horizontal = 6.dp)
                                     ) {
-                                        Spacer(modifier = Modifier.height(2.dp))
                                         Text(
-                                            text = category,
-                                            fontSize = 15.sp,
-                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                            color = if (isSelected) primaryTextColor else secondaryTextColor,
-                                            maxLines = 1
+                                            text = otherUserNickname,
+                                            fontSize = 14.sp,
+                                            color = secondaryTextColor,
+                                            textAlign = TextAlign.Center,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(2.dp)
-                                                .background(if (isSelected) primaryTextColor else Color.Transparent)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Icon(
+                                            imageVector = Icons.Outlined.Edit,
+                                            contentDescription = "Edit nickname",
+                                            tint = secondaryTextColor,
+                                            modifier = Modifier.size(14.dp)
                                         )
                                     }
+                                } else {
+                                    Text(
+                                        text = "Add nickname",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = tealAccent,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier
+                                            .clickable { showNicknameSheet = true }
+                                            .padding(vertical = 2.dp, horizontal = 6.dp)
+                                    )
                                 }
+                            } else {
+                                val isMemberCountStr = remember(groupSubtitle) {
+                                    val sub = groupSubtitle.trim().lowercase()
+                                    sub.endsWith("member") || sub.endsWith("members")
+                                }
+                                val displayDescription = if (groupSubtitle == "test" || isMemberCountStr) "" else groupSubtitle
+                                Text(
+                                    text = displayDescription.ifBlank { "Add group description" },
+                                    fontSize = 14.sp,
+                                    color = secondaryTextColor,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) {
+                                        editDescriptionInput = displayDescription
+                                        showEditDescriptionDialog = true
+                                    }
+                                )
+
+                                Spacer(modifier = Modifier.height(2.dp))
+
+                                // Line 3: Member Count (13sp Secondary)
+                                val memberCountText = if (members.size == 1) "1 member" else "${members.size} members"
+                                Text(
+                                    text = memberCountText,
+                                    fontSize = 13.sp,
+                                    color = secondaryTextColor,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.clickable { showMembersSheet = true }
+                                )
                             }
                         }
 
-                        HorizontalDivider(thickness = 1.dp, color = outlineColor)
-                    }
+                        Spacer(modifier = Modifier.height(20.dp))
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                        // Tabs: Media | Docs (if 1-to-1) or Media | Docs | Audio | Links (if group)
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val categories = if (isOneToOne) listOf("Media", "Docs") else listOf("Media", "Docs", "Audio", "Links")
+                                categories.forEach { category ->
+                                    val isSelected = selectedMediaCategory == category
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight()
+                                            .clickable { selectedMediaCategory = category },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.fillMaxSize(),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = category,
+                                                fontSize = 15.sp,
+                                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                color = if (isSelected) primaryTextColor else secondaryTextColor,
+                                                maxLines = 1
+                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(2.dp)
+                                                    .background(if (isSelected) primaryTextColor else Color.Transparent)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
 
-                    // MEDIA CONTENT (ALWAYS VISIBLE BELOW DIVIDER LINE)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 280.dp)
-                            .padding(top = 4.dp)
-                    ) {
-                        // Media Content
-                        Column(
+                            HorizontalDivider(thickness = 1.dp, color = outlineColor)
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // MEDIA CONTENT (ALWAYS VISIBLE BELOW DIVIDER LINE)
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(bottom = 68.dp)
+                                .heightIn(min = 280.dp)
+                                .padding(top = 4.dp)
                         ) {
-                            when (selectedMediaCategory) {
-                                "Media" -> {
-                                    val mediaItems = media.filter { (it.mediaType == "image" || it.mediaType == "video") && it.url !in failedMediaUrls }
-                                    if (mediaItems.isEmpty()) {
-                                        Box(
-                                            modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = "no media",
-                                                fontSize = 13.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                            )
-                                        }
-                                    } else {
-                                        val groupedMedia = remember(mediaItems) {
-                                            mediaItems.groupBy { formatTimestampToDateHeader(it.timestamp) }
-                                        }
+                            // Media Content
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 68.dp)
+                            ) {
+                                when (selectedMediaCategory) {
+                                    "Media" -> {
+                                        val mediaItems = media.filter { (it.mediaType == "image" || it.mediaType == "video") && it.url !in failedMediaUrls }
+                                        if (mediaItems.isEmpty()) {
+                                            Box(
+                                                modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "no media",
+                                                    fontSize = 13.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                )
+                                            }
+                                        } else {
+                                            val groupedMedia = remember(mediaItems) {
+                                                mediaItems.groupBy { formatTimestampToDateHeader(it.timestamp) }
+                                            }
 
-                                        groupedMedia.forEach { (dateHeader, itemsList) ->
-                                            Text(
-                                                text = dateHeader,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                                                modifier = Modifier.padding(vertical = 8.dp)
-                                            )
+                                            groupedMedia.forEach { (dateHeader, itemsList) ->
+                                                Text(
+                                                    text = dateHeader,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                                    modifier = Modifier.padding(vertical = 8.dp)
+                                                )
 
-                                            itemsList.chunked(3).forEach { rowItems ->
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
-                                                    horizontalArrangement = Arrangement.spacedBy(2.dp)
-                                                ) {
-                                                    rowItems.forEach { item ->
-                                                        val isSelected = selectedMediaIds.contains(item.id)
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .weight(1f)
-                                                                .aspectRatio(1f)
-                                                                .combinedClickable(
-                                                                    onLongClick = {
-                                                                        selectedMediaIds = if (isSelected) {
-                                                                            selectedMediaIds - item.id
-                                                                        } else {
-                                                                            selectedMediaIds + item.id
-                                                                        }
-                                                                    },
-                                                                    onClick = {
-                                                                        if (selectedMediaIds.isNotEmpty()) {
+                                                itemsList.chunked(3).forEach { rowItems ->
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+                                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                                    ) {
+                                                        rowItems.forEach { item ->
+                                                            val isSelected = selectedMediaIds.contains(item.id)
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .weight(1f)
+                                                                    .aspectRatio(1f)
+                                                                    .combinedClickable(
+                                                                        onLongClick = {
                                                                             selectedMediaIds = if (isSelected) {
                                                                                 selectedMediaIds - item.id
                                                                             } else {
                                                                                 selectedMediaIds + item.id
                                                                             }
-                                                                        } else {
-                                                                            selectedViewerMedia = item
+                                                                        },
+                                                                        onClick = {
+                                                                            if (selectedMediaIds.isNotEmpty()) {
+                                                                                selectedMediaIds = if (isSelected) {
+                                                                                    selectedMediaIds - item.id
+                                                                                } else {
+                                                                                    selectedMediaIds + item.id
+                                                                                }
+                                                                            } else {
+                                                                                selectedViewerMedia = item
+                                                                            }
+                                                                        }
+                                                                    )
+                                                            ) {
+                                                                AsyncImage(
+                                                                    model = item.url,
+                                                                    contentDescription = "Media",
+                                                                    modifier = Modifier.fillMaxSize(),
+                                                                    contentScale = ContentScale.Crop,
+                                                                    onError = {
+                                                                        if (item.mediaType == "image") {
+                                                                            failedMediaUrls = failedMediaUrls + item.url
+                                                                            selectedMediaIds = selectedMediaIds - item.id
                                                                         }
                                                                     }
                                                                 )
-                                                        ) {
-                                                            AsyncImage(
-                                                                model = item.url,
-                                                                contentDescription = "Media",
-                                                                modifier = Modifier.fillMaxSize(),
-                                                                contentScale = ContentScale.Crop,
-                                                                onError = {
-                                                                    if (item.mediaType == "image") {
-                                                                        failedMediaUrls = failedMediaUrls + item.url
-                                                                        selectedMediaIds = selectedMediaIds - item.id
-                                                                    }
-                                                                }
-                                                            )
-                                                            if (item.mediaType == "video") {
-                                                                Icon(
-                                                                    imageVector = Icons.Default.PlayArrow,
-                                                                    contentDescription = "Play Video",
-                                                                    tint = Color.White,
-                                                                    modifier = Modifier
-                                                                        .size(28.dp)
-                                                                        .align(Alignment.Center)
-                                                                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                                                        .padding(4.dp)
-                                                                )
-                                                            }
-
-                                                            if (isSelected) {
-                                                                Box(
-                                                                    modifier = Modifier
-                                                                        .fillMaxSize()
-                                                                        .background(Color.Black.copy(alpha = 0.35f)),
-                                                                    contentAlignment = Alignment.TopEnd
-                                                                ) {
-                                                                    Surface(
+                                                                if (item.mediaType == "video") {
+                                                                    Icon(
+                                                                        imageVector = Icons.Default.PlayArrow,
+                                                                        contentDescription = "Play Video",
+                                                                        tint = Color.White,
                                                                         modifier = Modifier
-                                                                            .padding(6.dp)
-                                                                            .size(22.dp),
-                                                                        shape = CircleShape,
-                                                                        color = MaterialTheme.colorScheme.primary
+                                                                            .size(28.dp)
+                                                                            .align(Alignment.Center)
+                                                                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                                                            .padding(4.dp)
+                                                                    )
+                                                                }
+
+                                                                if (isSelected) {
+                                                                    Box(
+                                                                        modifier = Modifier
+                                                                            .fillMaxSize()
+                                                                            .background(Color.Black.copy(alpha = 0.35f)),
+                                                                        contentAlignment = Alignment.TopEnd
                                                                     ) {
-                                                                        Box(contentAlignment = Alignment.Center) {
-                                                                            Icon(
-                                                                                imageVector = Icons.Default.Check,
-                                                                                contentDescription = "Selected",
-                                                                                tint = Color.White,
-                                                                                modifier = Modifier.size(16.dp)
-                                                                            )
+                                                                        Surface(
+                                                                            modifier = Modifier
+                                                                                .padding(6.dp)
+                                                                                .size(22.dp),
+                                                                            shape = CircleShape,
+                                                                            color = MaterialTheme.colorScheme.primary
+                                                                        ) {
+                                                                            Box(contentAlignment = Alignment.Center) {
+                                                                                Icon(
+                                                                                    imageVector = Icons.Default.Check,
+                                                                                    contentDescription = "Selected",
+                                                                                    tint = Color.White,
+                                                                                    modifier = Modifier.size(16.dp)
+                                                                                )
+                                                                            }
                                                                         }
                                                                     }
                                                                 }
                                                             }
                                                         }
-                                                    }
-                                                    repeat(3 - rowItems.size) {
-                                                        Spacer(modifier = Modifier.weight(1f))
+                                                        repeat(3 - rowItems.size) {
+                                                            Spacer(modifier = Modifier.weight(1f))
+                                                        }
                                                     }
                                                 }
+                                                Spacer(modifier = Modifier.height(12.dp))
                                             }
-                                            Spacer(modifier = Modifier.height(12.dp))
                                         }
                                     }
-                                }
 
-                                "Docs" -> {
-                                    val docFiles = (files + media.filter { it.mediaType == "document" }.map {
-                                        GroupFolderFile(
-                                            id = it.id,
-                                            name = it.name.ifBlank { "Document" },
-                                            downloadUrl = it.url,
-                                            timestamp = it.timestamp
-                                        )
-                                    }).distinctBy { it.downloadUrl }
-
-                                    if (docFiles.isEmpty()) {
-                                        Box(
-                                            modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = "no documents",
-                                                fontSize = 13.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                    "Docs" -> {
+                                        val docFiles = (files + media.filter { it.mediaType == "document" }.map {
+                                            GroupFolderFile(
+                                                id = it.id,
+                                                name = it.name.ifBlank { "Document" },
+                                                downloadUrl = it.url,
+                                                timestamp = it.timestamp
                                             )
-                                        }
-                                    } else {
-                                        val groupedDocs = remember(docFiles) {
-                                            docFiles.groupBy { formatTimestampToDateHeader(it.timestamp) }
-                                        }
+                                        }).distinctBy { it.downloadUrl }
 
-                                        groupedDocs.forEach { (dateHeader, filesList) ->
-                                            Text(
-                                                text = dateHeader,
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
-                                                modifier = Modifier.padding(vertical = 8.dp)
-                                            )
+                                        if (docFiles.isEmpty()) {
+                                            Box(
+                                                modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "no documents",
+                                                    fontSize = 13.sp,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                )
+                                            }
+                                        } else {
+                                            val groupedDocs = remember(docFiles) {
+                                                docFiles.groupBy { formatTimestampToDateHeader(it.timestamp) }
+                                            }
 
-                                            filesList.chunked(3).forEach { rowFiles ->
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                                ) {
-                                                    rowFiles.forEach { file ->
-                                                        val isSelected = selectedMediaIds.contains(file.id)
-                                                        DocumentTileItem(
-                                                            file = file,
-                                                            isSelected = isSelected,
-                                                            onLongClick = {
-                                                                selectedMediaIds = if (isSelected) {
-                                                                    selectedMediaIds - file.id
-                                                                } else {
-                                                                    selectedMediaIds + file.id
-                                                                }
-                                                            },
-                                                            onClick = {
-                                                                if (selectedMediaIds.isNotEmpty()) {
+                                            groupedDocs.forEach { (dateHeader, filesList) ->
+                                                Text(
+                                                    text = dateHeader,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                                    modifier = Modifier.padding(vertical = 8.dp)
+                                                )
+
+                                                filesList.chunked(3).forEach { rowFiles ->
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                                    ) {
+                                                        rowFiles.forEach { file ->
+                                                            val isSelected = selectedMediaIds.contains(file.id)
+                                                            DocumentTileItem(
+                                                                file = file,
+                                                                isSelected = isSelected,
+                                                                onLongClick = {
                                                                     selectedMediaIds = if (isSelected) {
                                                                         selectedMediaIds - file.id
                                                                     } else {
                                                                         selectedMediaIds + file.id
                                                                     }
-                                                                } else {
-                                                                    FilePickerUtils.openFile(context, Uri.parse(file.downloadUrl))
+                                                                },
+                                                                onClick = {
+                                                                    if (selectedMediaIds.isNotEmpty()) {
+                                                                        selectedMediaIds = if (isSelected) {
+                                                                            selectedMediaIds - file.id
+                                                                        } else {
+                                                                            selectedMediaIds + file.id
+                                                                        }
+                                                                    } else {
+                                                                        FilePickerUtils.openFile(context, Uri.parse(file.downloadUrl))
+                                                                    }
                                                                 }
+                                                            )
+                                                        }
+                                                        repeat(3 - rowFiles.size) {
+                                                            Spacer(modifier = Modifier.width(100.dp))
+                                                        }
+                                                    }
+                                                }
+                                                Spacer(modifier = Modifier.height(12.dp))
+                                            }
+                                        }
+                                    }
+
+                                    "Audio" -> {
+                                        val audioItems = remember(messages) {
+                                            messages.filter { msg ->
+                                                msg.msgType == "audio" || msg.attachments.any { uriStr ->
+                                                    uriStr.contains("audio") || uriStr.endsWith(".m4a") || uriStr.endsWith(".mp3") || uriStr.endsWith(".wav")
+                                                }
+                                            }.sortedByDescending { it.timestamp }
+                                        }
+
+                                        if (audioItems.isEmpty()) {
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(top = 80.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Headphones,
+                                                    contentDescription = null,
+                                                    tint = dimTextColor,
+                                                    modifier = Modifier.size(44.dp)
+                                                )
+                                                Spacer(modifier = Modifier.height(12.dp))
+                                                Text(
+                                                    text = "No audio yet",
+                                                    fontSize = 16.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = primaryTextColor
+                                                )
+                                                Spacer(modifier = Modifier.height(6.dp))
+                                                Text(
+                                                    text = "Voice messages and audio files shared in this chat appear here",
+                                                    fontSize = 13.sp,
+                                                    color = secondaryTextColor,
+                                                    textAlign = TextAlign.Center,
+                                                    modifier = Modifier.padding(horizontal = 32.dp)
+                                                )
+                                            }
+                                        } else {
+                                            val groupedAudio = remember(audioItems) {
+                                                audioItems.groupBy { formatTimestampToDateHeader(it.timestamp.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()) }
+                                            }
+
+                                            groupedAudio.forEach { (dateHeader, itemsList) ->
+                                                Text(
+                                                    text = dateHeader,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = secondaryTextColor,
+                                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 20.dp)
+                                                )
+
+                                                itemsList.forEach { audioMsg ->
+                                                    val audioUrl = audioMsg.attachments.firstOrNull { u ->
+                                                        val l = u.lowercase()
+                                                        l.contains("audio") || l.contains(".m4a") || l.contains(".mp3") || l.contains(".wav") ||
+                                                                l.contains(".aac") || l.contains(".ogg") || l.contains(".opus")
+                                                    } ?: audioMsg.attachments.firstOrNull()
+                                                    if (audioUrl != null) {
+                                                        val audioKey = "a:" + audioMsg.id
+                                                        val audioSelected = selectedMediaIds.contains(audioKey)
+                                                        DetailsAudioRow(
+                                                            message = audioMsg,
+                                                            url = audioUrl,
+                                                            player = detailsAudioPlayer,
+                                                            primaryTextColor = primaryTextColor,
+                                                            secondaryTextColor = secondaryTextColor,
+                                                            tealAccent = tealAccent,
+                                                            outlineColor = outlineColor,
+                                                            cardFillColor = cardFillColor,
+                                                            selected = audioSelected,
+                                                            selectionMode = selectedMediaIds.isNotEmpty(),
+                                                            onToggle = {
+                                                                selectedMediaIds = if (audioSelected) selectedMediaIds - audioKey else selectedMediaIds + audioKey
+                                                            },
+                                                            onLongPress = {
+                                                                selectedMediaIds = if (audioSelected) selectedMediaIds - audioKey else selectedMediaIds + audioKey
                                                             }
                                                         )
                                                     }
-                                                    repeat(3 - rowFiles.size) {
-                                                        Spacer(modifier = Modifier.width(100.dp))
-                                                    }
-                                                }
-                                            }
-                                            Spacer(modifier = Modifier.height(12.dp))
-                                        }
-                                    }
-                                }
-
-                                "Audio" -> {
-                                    val audioItems = remember(messages) {
-                                        messages.filter { msg ->
-                                            msg.msgType == "audio" || msg.attachments.any { uriStr ->
-                                                uriStr.contains("audio") || uriStr.endsWith(".m4a") || uriStr.endsWith(".mp3") || uriStr.endsWith(".wav")
-                                            }
-                                        }.sortedByDescending { it.timestamp }
-                                    }
-
-                                    if (audioItems.isEmpty()) {
-                                        Column(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(top = 80.dp),
-                                            horizontalAlignment = Alignment.CenterHorizontally
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Outlined.Headphones,
-                                                contentDescription = null,
-                                                tint = dimTextColor,
-                                                modifier = Modifier.size(44.dp)
-                                            )
-                                            Spacer(modifier = Modifier.height(12.dp))
-                                            Text(
-                                                text = "No audio yet",
-                                                fontSize = 16.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = primaryTextColor
-                                            )
-                                            Spacer(modifier = Modifier.height(6.dp))
-                                            Text(
-                                                text = "Voice messages and audio files shared in this chat appear here",
-                                                fontSize = 13.sp,
-                                                color = secondaryTextColor,
-                                                textAlign = TextAlign.Center,
-                                                modifier = Modifier.padding(horizontal = 32.dp)
-                                            )
-                                        }
-                                    } else {
-                                        val groupedAudio = remember(audioItems) {
-                                            audioItems.groupBy { formatTimestampToDateHeader(it.timestamp.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()) }
-                                        }
-
-                                        groupedAudio.forEach { (dateHeader, itemsList) ->
-                                            Text(
-                                                text = dateHeader,
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = secondaryTextColor,
-                                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 20.dp)
-                                            )
-
-                                            itemsList.forEach { audioMsg ->
-                                                val audioUrl = audioMsg.attachments.firstOrNull { u ->
-                                                    val l = u.lowercase()
-                                                    l.contains("audio") || l.contains(".m4a") || l.contains(".mp3") || l.contains(".wav") ||
-                                                            l.contains(".aac") || l.contains(".ogg") || l.contains(".opus")
-                                                } ?: audioMsg.attachments.firstOrNull()
-                                                if (audioUrl != null) {
-                                                    val audioKey = "a:" + audioMsg.id
-                                                    val audioSelected = selectedMediaIds.contains(audioKey)
-                                                    DetailsAudioRow(
-                                                        message = audioMsg,
-                                                        url = audioUrl,
-                                                        player = detailsAudioPlayer,
-                                                        primaryTextColor = primaryTextColor,
-                                                        secondaryTextColor = secondaryTextColor,
-                                                        tealAccent = tealAccent,
-                                                        outlineColor = outlineColor,
-                                                        cardFillColor = cardFillColor,
-                                                        selected = audioSelected,
-                                                        selectionMode = selectedMediaIds.isNotEmpty(),
-                                                        onToggle = {
-                                                            selectedMediaIds = if (audioSelected) selectedMediaIds - audioKey else selectedMediaIds + audioKey
-                                                        },
-                                                        onLongPress = {
-                                                            selectedMediaIds = if (audioSelected) selectedMediaIds - audioKey else selectedMediaIds + audioKey
-                                                        }
-                                                    )
                                                 }
                                             }
                                         }
                                     }
-                                }
 
-                                "Links" -> {
-                                    val linkList = remember(messages) {
-                                        val list = mutableListOf<ChatLinkItem>()
-                                        messages.sortedByDescending { it.timestamp }.forEach { msg ->
-                                            UrlExtractor.extractUrls(msg.text).forEach { url ->
-                                                val domain = UrlExtractor.extractDomain(url)
-                                                list.add(
-                                                    ChatLinkItem(
-                                                        url = url,
-                                                        domain = domain,
-                                                        senderName = msg.senderName,
-                                                        timestamp = msg.timestamp,
-                                                        messageId = msg.id
+                                    "Links" -> {
+                                        val linkList = remember(messages) {
+                                            val list = mutableListOf<ChatLinkItem>()
+                                            messages.sortedByDescending { it.timestamp }.forEach { msg ->
+                                                UrlExtractor.extractUrls(msg.text).forEach { url ->
+                                                    val domain = UrlExtractor.extractDomain(url)
+                                                    list.add(
+                                                        ChatLinkItem(
+                                                            url = url,
+                                                            domain = domain,
+                                                            senderName = msg.senderName,
+                                                            timestamp = msg.timestamp,
+                                                            messageId = msg.id
+                                                        )
                                                     )
+                                                }
+                                            }
+                                            list
+                                        }
+
+                                        if (linkList.isEmpty()) {
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(top = 80.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Link,
+                                                    contentDescription = null,
+                                                    tint = dimTextColor,
+                                                    modifier = Modifier.size(44.dp)
+                                                )
+                                                Spacer(modifier = Modifier.height(12.dp))
+                                                Text(
+                                                    text = "No links yet",
+                                                    fontSize = 16.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = primaryTextColor
+                                                )
+                                                Spacer(modifier = Modifier.height(6.dp))
+                                                Text(
+                                                    text = "Links shared in this chat appear here",
+                                                    fontSize = 13.sp,
+                                                    color = secondaryTextColor,
+                                                    textAlign = TextAlign.Center,
+                                                    modifier = Modifier.padding(horizontal = 32.dp)
                                                 )
                                             }
-                                        }
-                                        list
-                                    }
+                                        } else {
+                                            val groupedLinks = remember(linkList) {
+                                                linkList.groupBy { formatTimestampToDateHeader(it.timestamp.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()) }
+                                            }
 
-                                    if (linkList.isEmpty()) {
-                                        Column(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(top = 80.dp),
-                                            horizontalAlignment = Alignment.CenterHorizontally
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Outlined.Link,
-                                                contentDescription = null,
-                                                tint = dimTextColor,
-                                                modifier = Modifier.size(44.dp)
-                                            )
-                                            Spacer(modifier = Modifier.height(12.dp))
-                                            Text(
-                                                text = "No links yet",
-                                                fontSize = 16.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = primaryTextColor
-                                            )
-                                            Spacer(modifier = Modifier.height(6.dp))
-                                            Text(
-                                                text = "Links shared in this chat appear here",
-                                                fontSize = 13.sp,
-                                                color = secondaryTextColor,
-                                                textAlign = TextAlign.Center,
-                                                modifier = Modifier.padding(horizontal = 32.dp)
-                                            )
-                                        }
-                                    } else {
-                                        val groupedLinks = remember(linkList) {
-                                            linkList.groupBy { formatTimestampToDateHeader(it.timestamp.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()) }
-                                        }
+                                            groupedLinks.forEach { (dateHeader, itemsList) ->
+                                                Text(
+                                                    text = dateHeader,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = secondaryTextColor,
+                                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 20.dp)
+                                                )
 
-                                        groupedLinks.forEach { (dateHeader, itemsList) ->
-                                            Text(
-                                                text = dateHeader,
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = secondaryTextColor,
-                                                modifier = Modifier.padding(vertical = 8.dp, horizontal = 20.dp)
-                                            )
+                                                itemsList.forEach { linkItem ->
+                                                    val linkKey = "l:${linkItem.messageId}:${linkItem.url}"
+                                                    val linkSelected = selectedMediaIds.contains(linkKey)
 
-                                            itemsList.forEach { linkItem ->
-                                                val linkKey = "l:${linkItem.messageId}:${linkItem.url}"
-                                                val linkSelected = selectedMediaIds.contains(linkKey)
-
-                                                Box {
-                                                    Row(
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .height(72.dp)
-                                                            .combinedClickable(
-                                                                onClick = {
-                                                                    if (selectedMediaIds.isNotEmpty()) {
+                                                    Box {
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .height(72.dp)
+                                                                .combinedClickable(
+                                                                    onClick = {
+                                                                        if (selectedMediaIds.isNotEmpty()) {
+                                                                            selectedMediaIds = if (linkSelected) selectedMediaIds - linkKey else selectedMediaIds + linkKey
+                                                                        } else try {
+                                                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(if (!linkItem.url.startsWith("http")) "https://${linkItem.url}" else linkItem.url))
+                                                                            context.startActivity(intent)
+                                                                        } catch (e: Exception) {
+                                                                            Toast.makeText(context, "Could not open link", Toast.LENGTH_SHORT).show()
+                                                                        }
+                                                                    },
+                                                                    onLongClick = {
                                                                         selectedMediaIds = if (linkSelected) selectedMediaIds - linkKey else selectedMediaIds + linkKey
-                                                                    } else try {
-                                                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(if (!linkItem.url.startsWith("http")) "https://${linkItem.url}" else linkItem.url))
-                                                                        context.startActivity(intent)
-                                                                    } catch (e: Exception) {
-                                                                        Toast.makeText(context, "Could not open link", Toast.LENGTH_SHORT).show()
                                                                     }
-                                                                },
-                                                                onLongClick = {
-                                                                    selectedMediaIds = if (linkSelected) selectedMediaIds - linkKey else selectedMediaIds + linkKey
-                                                                }
-                                                            )
-                                                            .background(if (linkSelected) cardFillColor.copy(alpha = 0.6f) else Color.Transparent)
-                                                            .padding(horizontal = 20.dp),
-                                                        verticalAlignment = Alignment.CenterVertically
-                                                    ) {
-                                                        Surface(
-                                                            modifier = Modifier.size(40.dp),
-                                                            shape = RoundedCornerShape(10.dp),
-                                                            color = cardFillColor,
-                                                            border = BorderStroke(1.dp, outlineColor)
-                                                        ) {
-                                                            Box(contentAlignment = Alignment.Center) {
-                                                                Icon(
-                                                                    imageVector = Icons.Outlined.Link,
-                                                                    contentDescription = "Link",
-                                                                    tint = secondaryTextColor,
-                                                                    modifier = Modifier.size(20.dp)
                                                                 )
+                                                                .background(if (linkSelected) cardFillColor.copy(alpha = 0.6f) else Color.Transparent)
+                                                                .padding(horizontal = 20.dp),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Surface(
+                                                                modifier = Modifier.size(40.dp),
+                                                                shape = RoundedCornerShape(10.dp),
+                                                                color = cardFillColor,
+                                                                border = BorderStroke(1.dp, outlineColor)
+                                                            ) {
+                                                                Box(contentAlignment = Alignment.Center) {
+                                                                    Icon(
+                                                                        imageVector = Icons.Outlined.Link,
+                                                                        contentDescription = "Link",
+                                                                        tint = secondaryTextColor,
+                                                                        modifier = Modifier.size(20.dp)
+                                                                    )
+                                                                }
+                                                            }
+
+                                                            Spacer(modifier = Modifier.width(14.dp))
+
+                                                            Column(modifier = Modifier.weight(1f)) {
+                                                                Text(
+                                                                    text = linkItem.domain,
+                                                                    fontSize = 15.sp,
+                                                                    fontWeight = FontWeight.Medium,
+                                                                    color = primaryTextColor,
+                                                                    maxLines = 1,
+                                                                    overflow = TextOverflow.Ellipsis
+                                                                )
+                                                                Spacer(modifier = Modifier.height(2.dp))
+                                                                Text(
+                                                                    text = linkItem.url,
+                                                                    fontSize = 12.sp,
+                                                                    color = secondaryTextColor,
+                                                                    maxLines = 1,
+                                                                    overflow = TextOverflow.Ellipsis
+                                                                )
+                                                                Spacer(modifier = Modifier.height(2.dp))
+                                                                val timeStr = linkItem.timestamp.format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()))
+                                                                Text(
+                                                                    text = "${linkItem.senderName} · $timeStr",
+                                                                    fontSize = 12.sp,
+                                                                    color = dimTextColor,
+                                                                    maxLines = 1,
+                                                                    overflow = TextOverflow.Ellipsis
+                                                                )
+                                                            }
+                                                            if (linkSelected) {
+                                                                Spacer(modifier = Modifier.width(10.dp))
+                                                                SelectedTick()
                                                             }
                                                         }
 
-                                                        Spacer(modifier = Modifier.width(14.dp))
-
-                                                        Column(modifier = Modifier.weight(1f)) {
-                                                            Text(
-                                                                text = linkItem.domain,
-                                                                fontSize = 15.sp,
-                                                                fontWeight = FontWeight.Medium,
-                                                                color = primaryTextColor,
-                                                                maxLines = 1,
-                                                                overflow = TextOverflow.Ellipsis
-                                                            )
-                                                            Spacer(modifier = Modifier.height(2.dp))
-                                                            Text(
-                                                                text = linkItem.url,
-                                                                fontSize = 12.sp,
-                                                                color = secondaryTextColor,
-                                                                maxLines = 1,
-                                                                overflow = TextOverflow.Ellipsis
-                                                            )
-                                                            Spacer(modifier = Modifier.height(2.dp))
-                                                            val timeStr = linkItem.timestamp.format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()))
-                                                            Text(
-                                                                text = "${linkItem.senderName} · $timeStr",
-                                                                fontSize = 12.sp,
-                                                                color = dimTextColor,
-                                                                maxLines = 1,
-                                                                overflow = TextOverflow.Ellipsis
-                                                            )
-                                                        }
-                                                        if (linkSelected) {
-                                                            Spacer(modifier = Modifier.width(10.dp))
-                                                            SelectedTick()
-                                                        }
                                                     }
-
                                                 }
                                             }
                                         }
@@ -1377,32 +1395,33 @@ fun ChatDetailsScreen(
                             }
                         }
                     }
-                }
 
-                // Custom Pure Text Toast Overlay (Horizontally Centered at Bottom)
-                if (customToastMessage != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 60.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.surface,
-                            shape = RoundedCornerShape(24.dp),
-                            shadowElevation = 6.dp
+                    // Custom Pure Text Toast Overlay (Horizontally Centered at Bottom)
+                    if (customToastMessage != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 60.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = customToastMessage ?: "",
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
-                            )
+                            Surface(
+                                color = MaterialTheme.colorScheme.surface,
+                                shape = RoundedCornerShape(24.dp),
+                                shadowElevation = 6.dp
+                            ) {
+                                Text(
+                                    text = customToastMessage ?: "",
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
+                                )
+                            }
                         }
                     }
                 }
             }
+
         }
 
         // Edit Name Popup
@@ -1778,6 +1797,7 @@ fun ChatDetailsScreen(
         }
 
         if (showMembersSheet) {
+            android.util.Log.d("MenuDebug", "7 members sheet composed")
             val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: "me"
             val userMember = members.find { it.uid == currentUserId || it.isYou }
             val userRole = userMember?.role?.lowercase() ?: (if (isAdmin) "owner" else "member")

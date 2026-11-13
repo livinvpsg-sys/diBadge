@@ -268,8 +268,8 @@ fun StatusLabelPill(
     hasPending: Boolean,
     isDark: Boolean
 ) {
-    val approvedFill = if (isDark) Color(0xFF16403D) else Color(0xFFD3E9E6)
-    val approvedFg = if (isDark) Color(0xFF58B5AC) else Color(0xFF1B6F69)
+    val approvedFill = if (isDark) Color(0xFF262E57) else Color(0xFFDDE1F4)
+    val approvedFg = if (isDark) Color(0xFF8F9CD8) else Color(0xFF3A4694)
 
     val pendingFill = if (isDark) Color(0xFF262D35) else Color(0xFFDDE3E8)
     val pendingFg = if (isDark) Color(0xFFA3AEB8) else Color(0xFF4A5661)

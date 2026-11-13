@@ -1,4 +1,4 @@
-package com.fabxdi.dibadge.ui.calendar
+package com.fabxdi.dibadge.ui.home.home_entry.chat_details
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.data.GroupTaskEntity
 import com.fabxdi.dibadge.ui.components.DiBadgeFab
+import com.fabxdi.dibadge.ui.my_tasks.TaskPreviewSheet
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.GroupMember
 import com.fabxdi.dibadge.viewmodel.GroupTaskViewModel
@@ -989,7 +990,7 @@ fun TaskBarItem(
 }
 
 @Composable
-fun StatusIcon(status: TaskStatus, isDark: Boolean = true, tealAccent: Color = Color(0xFF1F8A70), modifier: Modifier = Modifier) {
+fun StatusIcon(status: TaskStatus, isDark: Boolean = true, tealAccent: Color = Color(0xFF3A4694), modifier: Modifier = Modifier) {
     val color = getStatusTextColor(status, isDark, tealAccent)
     when (status) {
         TaskStatus.ONGOING -> {
@@ -1039,7 +1040,7 @@ fun StatusIcon(status: TaskStatus, isDark: Boolean = true, tealAccent: Color = C
     }
 }
 
-fun getStatusTextColor(status: TaskStatus, isDark: Boolean = true, tealAccent: Color = Color(0xFF1F8A70)): Color {
+fun getStatusTextColor(status: TaskStatus, isDark: Boolean = true, tealAccent: Color = Color(0xFF3A4694)): Color {
     return when (status) {
         TaskStatus.COMPLETED -> Color(0xFF8A94A0)
         TaskStatus.DELAYED -> Color(0xFFD32F2F)

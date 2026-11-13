@@ -349,7 +349,7 @@ fun DayPopupSheet(
                             }
 
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("$totalHrs hrs", fontSize = 14.sp, color = secondaryTextColor)
+                                Text(formatHours(totalHrs), fontSize = 14.sp, color = secondaryTextColor)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 if (!isExpanded) {
                                     Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = secondaryTextColor, modifier = Modifier.size(20.dp))
@@ -380,7 +380,7 @@ fun DayPopupSheet(
                                         contentAlignment = Alignment.CenterStart
                                     ) {
                                         Text(
-                                            text = "${if (isApproved) "Approved" else "Pending"} · $hrs hrs",
+                                            text = "${if (isApproved) "Approved" else "Pending"} · ${formatHours(hrs)}",
                                             fontSize = 14.sp,
                                             fontWeight = FontWeight.Medium,
                                             color = if (isApproved) tealAccent else slatePendingColor
@@ -561,44 +561,33 @@ fun MonthSummarySheet(
             Spacer(modifier = Modifier.height(12.dp))
             HorizontalDivider(thickness = 1.dp, color = outlineColor)
 
-            // Leave Row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Leave", fontSize = 15.sp, color = primaryTextColor, modifier = Modifier.weight(1f))
-                Text("${approvedLeaveDays.toInt()} days", fontSize = 14.sp, color = primaryTextColor, modifier = Modifier.weight(1f), alignment = Alignment.Center)
-                Text("${pendingLeaveDays.toInt()} days", fontSize = 14.sp, color = primaryTextColor, modifier = Modifier.weight(1f), alignment = Alignment.CenterEnd)
-            }
+            // Only rows that have something approved or pending are shown
+            fun daysText(d: Double): String = "${d.toInt()} ${if (d.toInt() == 1) "day" else "days"}"
+            val summaryRows = listOfNotNull(
+                if (approvedLeaveDays > 0 || pendingLeaveDays > 0)
+                    Triple("Leave", daysText(approvedLeaveDays), daysText(pendingLeaveDays)) else null,
+                if (approvedOtHours > 0 || pendingOtHours > 0)
+                    Triple("Extra hours", formatHours(approvedOtHours), formatHours(pendingOtHours)) else null,
+                if (approvedClaimAmount > 0 || pendingClaimAmount > 0)
+                    Triple(
+                        "Claims",
+                        "S$" + String.format(Locale.US, "%.2f", approvedClaimAmount),
+                        "S$" + String.format(Locale.US, "%.2f", pendingClaimAmount)
+                    ) else null
+            )
 
-            HorizontalDivider(thickness = 1.dp, color = outlineColor)
-
-            // Extra hours Row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Extra hours", fontSize = 15.sp, color = primaryTextColor, modifier = Modifier.weight(1f))
-                Text("$approvedOtHours hrs", fontSize = 14.sp, color = primaryTextColor, modifier = Modifier.weight(1f), alignment = Alignment.Center)
-                Text("$pendingOtHours hrs", fontSize = 14.sp, color = primaryTextColor, modifier = Modifier.weight(1f), alignment = Alignment.CenterEnd)
-            }
-
-            HorizontalDivider(thickness = 1.dp, color = outlineColor)
-
-            // Claims Row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Claims", fontSize = 15.sp, color = primaryTextColor, modifier = Modifier.weight(1f))
-                Text("S$${String.format(Locale.US, "%.2f", approvedClaimAmount)}", fontSize = 14.sp, color = primaryTextColor, modifier = Modifier.weight(1f), alignment = Alignment.Center)
-                Text("S$${String.format(Locale.US, "%.2f", pendingClaimAmount)}", fontSize = 14.sp, color = primaryTextColor, modifier = Modifier.weight(1f), alignment = Alignment.CenterEnd)
+            summaryRows.forEachIndexed { index, (label, approvedText, pendingText) ->
+                if (index > 0) HorizontalDivider(thickness = 1.dp, color = outlineColor)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(label, fontSize = 15.sp, color = primaryTextColor, modifier = Modifier.weight(1f))
+                    Text(approvedText, fontSize = 14.sp, color = primaryTextColor, modifier = Modifier.weight(1f), alignment = Alignment.Center)
+                    Text(pendingText, fontSize = 14.sp, color = primaryTextColor, modifier = Modifier.weight(1f), alignment = Alignment.CenterEnd)
+                }
             }
         }
     }

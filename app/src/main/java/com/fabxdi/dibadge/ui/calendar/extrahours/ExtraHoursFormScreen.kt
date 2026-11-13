@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.data.LeaveEntity
 import com.fabxdi.dibadge.data.OvertimeEntity
+import com.fabxdi.dibadge.ui.calendar.formatHours
 import com.fabxdi.dibadge.ui.calendar.rememberOrganizationName
 import com.fabxdi.dibadge.ui.components.DiBadgeDatePicker
 import com.fabxdi.dibadge.ui.components.DiBadgeTimePicker
@@ -299,7 +300,7 @@ fun ExtraHoursFormScreen(
                         }
                     }
                     Text(
-                        text = if (calculatedHours > 0) "$calculatedHours hrs" else "0 hrs",
+                        text = if (calculatedHours > 0) formatHours(calculatedHours) else "0 min",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = tealAccent

@@ -1,4 +1,4 @@
-package com.fabxdi.dibadge.ui.calendar
+package com.fabxdi.dibadge.ui.home.home_entry.chat_details
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border

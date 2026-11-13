@@ -114,35 +114,42 @@ fun buildMentionAnnotatedString(
     text: String,
     primaryTextColor: Color,
     tealAccent: Color,
-    acceptedGroupNames: List<String> = emptyList()
+    acceptedGroupNames: List<String> = emptyList(),
+    memberNames: List<String> = emptyList()
 ): AnnotatedString {
+    // Only real names are highlighted, so words typed after a mention keep the normal colour
+    val groupNames = (acceptedGroupNames + listOf("All linked groups", "All")).filter { it.isNotBlank() }
+    val people = memberNames.filter { it.isNotBlank() }
+    val candidates = (groupNames.map { it to true } + people.map { it to false })
+        .sortedByDescending { it.first.length }
+    fun isWordChar(c: Char) = c.isLetterOrDigit() || c == '_'
     return buildAnnotatedString {
-        val pattern = Regex("""@([A-Za-z0-9_]+(?:\s+[A-Za-z0-9_]+)*)""")
-        var lastIndex = 0
-
-        pattern.findAll(text).forEach { matchResult ->
-            val range = matchResult.range
-            val mentionText = matchResult.value
-            val nameWithoutAt = matchResult.groupValues[1]
-
-            if (range.first > lastIndex) {
-                append(text.substring(lastIndex, range.first))
+        var i = 0
+        while (i < text.length) {
+            if (text[i] != '@') {
+                append(text[i]); i++; continue
             }
-
-            val isGroupMentionName = nameWithoutAt.equals("All linked groups", ignoreCase = true) ||
-                    acceptedGroupNames.any { it.equals(nameWithoutAt, ignoreCase = true) }
-
-            val spanColor = if (isGroupMentionName) tealAccent else primaryTextColor
-
-            withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = spanColor)) {
-                append(mentionText)
+            val hit = candidates.firstOrNull { (name, _) ->
+                text.regionMatches(i + 1, name, 0, name.length, ignoreCase = true) &&
+                        (i + 1 + name.length >= text.length || !isWordChar(text[i + 1 + name.length]))
             }
-
-            lastIndex = range.last + 1
-        }
-
-        if (lastIndex < text.length) {
-            append(text.substring(lastIndex))
+            val len: Int
+            val color: Color
+            if (hit != null) {
+                len = 1 + hit.first.length
+                color = if (hit.second) tealAccent else primaryTextColor
+            } else {
+                var j = i + 1
+                while (j < text.length && isWordChar(text[j])) j++
+                len = j - i
+                color = primaryTextColor
+            }
+            if (len > 1) {
+                withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = color)) {
+                    append(text.substring(i, i + len))
+                }
+            } else append('@')
+            i += len
         }
     }
 }
@@ -271,20 +278,19 @@ fun MessageBubble(
     val isDark = DiBadgeTheme.colors.isDark
 
     // Theme tokens
-    val primaryTextColor = if (isDark) Color(0xFFF0F3F5) else Color(0xFF11161A)
-    val secondaryTextColor = if (isDark) Color(0xFF8A9199) else Color(0xFF65707A)
-    val outlineColor = if (isDark) Color(0xFF2A3037) else Color(0xFFD3D9DF)
-    val cardFillColor = if (isDark) Color(0xFF181C21) else Color(0xFFF5F7F9)
+    val primaryTextColor = if (isDark) Color(0xFFF2F2F4) else Color(0xFF15171C)
+    val secondaryTextColor = if (isDark) Color(0xFFA3A3AA) else Color(0xFF667085)
+    val outlineColor = if (isDark) Color(0xFF3A3A3F) else Color(0xFFE3E5EA)
+    val cardFillColor = if (isDark) Color(0xFF2A2A2D) else Color(0xFFFFFFFF)
     val tealAccent = if (isDark) Color(0xFF8F9CD8) else Color(0xFF3A4694)
     val errorColor = if (isDark) Color(0xFFE8837A) else Color(0xFFC4433A)
 
-    // Bubble Colors:
-    // Light Theme: Incoming #E8ECEF (chat bg), Own #FFFFFF (both raised with soft shadow)
-    // Dark Theme: Incoming #181C21, Own #272F39
+    // Bubble Colors: incoming = card colour, own = soft indigo tint (text stays the normal text colour)
+    // Dark: incoming #2A2A2D, own #2C3550. Light: incoming #FFFFFF, own #E4E8F6
     val bubbleColor = if (message.isSentByMe) {
-        if (isDark) Color(0xFF272F39) else Color(0xFFFFFFFF)
+        if (isDark) Color(0xFF2C3550) else Color(0xFFE4E8F6)
     } else {
-        if (isDark) Color(0xFF181C21) else Color(0xFFE8ECEF)
+        if (isDark) Color(0xFF2A2A2D) else Color(0xFFFFFFFF)
     }
 
     // Corner radius: 14dp corners with 2dp corner at tail
@@ -383,7 +389,7 @@ fun MessageBubble(
                                     Icon(
                                         imageVector = Icons.Default.Check,
                                         contentDescription = "Selected",
-                                        tint = if (isDark) Color(0xFF0E1114) else Color(0xFFFFFFFF),
+                                        tint = if (isDark) Color(0xFF1F1F21) else Color(0xFFFFFFFF),
                                         modifier = Modifier.size(13.dp)
                                     )
                                 }
@@ -406,20 +412,29 @@ fun MessageBubble(
                     // Label above bubble
                     if (message.isGroupMention && !message.isSentByMe) {
                         // Incoming Cross-Posted Group-Mention Bubble: Group name in identity name color + 13dp link icon
-                        val groupDisplayName = message.sendingGroupName ?: message.senderName
-                        val groupTitleColor = remember(groupDisplayName, isDark) {
-                            UserColorUtils.getIdentityColor(groupDisplayName, isDark)
+                        val groupDisplayName = message.sendingGroupName
+                        val senderColor = remember(message.senderName, isDark) {
+                            UserColorUtils.getColorForName(message.senderName, isDark)
                         }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(start = 36.dp, bottom = 2.dp)
                         ) {
                             Text(
-                                text = groupDisplayName,
+                                text = message.senderName,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = groupTitleColor
+                                color = senderColor
                             )
+                            if (!groupDisplayName.isNullOrBlank()) {
+                                Text(
+                                    text = "  \u00B7  $groupDisplayName",
+                                    fontSize = 12.sp,
+                                    color = secondaryTextColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                             Spacer(modifier = Modifier.width(4.dp))
                             Icon(
                                 imageVector = Icons.Default.Link,
@@ -827,7 +842,7 @@ private fun ReplyPreviewAboveBubble(
     val isSenderYou = replyingTo.isSentByMe || replyingTo.senderName == "Me"
     val displayName = if (isSenderYou) "yourself" else replyingTo.senderName
     val captionText = "Replied to $displayName"
-    val raisedSurfaceColor = if (isDark) Color(0xFF222831) else Color(0xFFE8ECEF)
+    val raisedSurfaceColor = if (isDark) Color(0xFF34343A) else Color(0xFFF5F6F8)
 
     Column(
         horizontalAlignment = alignment,
@@ -1032,7 +1047,7 @@ private fun AttachmentAndTextSection(
         if (message.isVoiceNote || isMicRecording(message)) {
             // Voice Message Bubble
             val audioColor = if (isDark) Color(0xFFE87DA3) else Color(0xFFB0446A)
-            val cardFillColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
+            val cardFillColor = if (isDark) Color(0xFF34343A) else Color(0xFFE9EBEF)
             var isPlaying by remember { mutableStateOf(false) }
             var playSpeed by remember { mutableFloatStateOf(1.0f) }
             var progressFraction by remember { mutableFloatStateOf(0f) }
@@ -1104,7 +1119,7 @@ private fun AttachmentAndTextSection(
                             Icon(
                                 imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                 contentDescription = "Play voice message",
-                                tint = if (isDark) Color(0xFF0E1114) else Color(0xFFE8ECEF),
+                                tint = if (isDark) Color(0xFF1F1F21) else Color(0xFFF5F6F8),
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -1206,7 +1221,7 @@ private fun AttachmentAndTextSection(
             } else {
                 "${message.locationLat}° N, ${message.locationLng}° E"
             }
-            val cardFillColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
+            val cardFillColor = if (isDark) Color(0xFF34343A) else Color(0xFFE9EBEF)
             // A live share is over when it was stopped, or its end time has passed (no limit = Long.MAX_VALUE)
             val liveOver = message.isLiveEnded ||
                     (message.liveExpiresAt in 1 until Long.MAX_VALUE && System.currentTimeMillis() > message.liveExpiresAt)
@@ -1299,7 +1314,7 @@ private fun AttachmentAndTextSection(
             }
             val pollEnded = pollEndsAt > 0L && nowMs >= pollEndsAt
             val pollClosed = message.isPollClosed || pollEnded
-            val cardFillColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
+            val cardFillColor = if (isDark) Color(0xFF34343A) else Color(0xFFE9EBEF)
 
             Column(
                 modifier = Modifier
@@ -1555,7 +1570,7 @@ private fun AttachmentAndTextSection(
                             modifier = Modifier.fillMaxWidth()
                         )
                     } else {
-                        val cardFillColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
+                        val cardFillColor = if (isDark) Color(0xFF34343A) else Color(0xFFE9EBEF)
                         val openPdf = LocalOpenPdf.current
                         Surface(
                             shape = RoundedCornerShape(10.dp),
@@ -1949,7 +1964,7 @@ private fun AttachmentAndTextSection(
                             .padding(bottom = 6.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        val cardFillColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
+                        val cardFillColor = if (isDark) Color(0xFF34343A) else Color(0xFFE9EBEF)
                         val audioColor = if (isDark) Color(0xFFE87DA3) else Color(0xFFB0446A)
 
                         val pageCount = (n + 1) / 2
@@ -2193,7 +2208,7 @@ private fun AttachmentAndTextSection(
                             Spacer(modifier = Modifier.width(4.dp))
 
                             val badgeText = if (message.commentCount > 99) "99+" else message.commentCount.toString()
-                            val onTealColor = if (isDark) Color(0xFF0E1114) else Color.White
+                            val onTealColor = if (isDark) Color(0xFF1F1F21) else Color.White
 
                             Surface(
                                 shape = CircleShape,
@@ -2861,8 +2876,8 @@ private fun VoiceNoteBubble(
                                 .size(40.dp)
                                 .clickable(enabled = !sending) { togglePlay() },
                             shape = CircleShape,
-                            color = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7),
-                            border = BorderStroke(1.dp, if (isDark) Color(0xFF2A3037) else Color(0xFFD3D9DF))
+                            color = if (isDark) Color(0xFF34343A) else Color(0xFFE9EBEF),
+                            border = BorderStroke(1.dp, if (isDark) Color(0xFF3A3A3F) else Color(0xFFE3E5EA))
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 if (loading || sending) {
@@ -2944,8 +2959,8 @@ private fun VoiceNoteBubble(
                                 .size(40.dp)
                                 .clickable(enabled = !sending) { togglePlay() },
                             shape = CircleShape,
-                            color = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7),
-                            border = BorderStroke(1.dp, if (isDark) Color(0xFF2A3037) else Color(0xFFD3D9DF))
+                            color = if (isDark) Color(0xFF34343A) else Color(0xFFE9EBEF),
+                            border = BorderStroke(1.dp, if (isDark) Color(0xFF3A3A3F) else Color(0xFFE3E5EA))
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 if (loading || sending) {

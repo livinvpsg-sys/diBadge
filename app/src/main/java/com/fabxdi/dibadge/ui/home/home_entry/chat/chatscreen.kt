@@ -86,7 +86,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -167,6 +169,11 @@ fun ChatScreen(
     }
 
     var inputText by remember { mutableStateOf("") }
+    // Keeps the cursor: after a mention is picked it moves to the end of the inserted name
+    var inputField by remember { mutableStateOf(TextFieldValue("")) }
+    LaunchedEffect(inputText) {
+        if (inputField.text != inputText) inputField = TextFieldValue(inputText, TextRange(inputText.length))
+    }
     var showEmojiPicker by remember { mutableStateOf(false) }
     var showAttachmentOptions by remember { mutableStateOf(false) }
     var attachedFiles by remember { mutableStateOf<List<Uri>>(emptyList()) }
@@ -193,6 +200,8 @@ fun ChatScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var deleteModeForMeOnly by remember { mutableStateOf(false) }
     var showGroupDetails by remember { mutableStateOf(false) }
+    var detailsOpenAction by remember { mutableStateOf<String?>(null) }
+    var menuSheetAction by remember { mutableStateOf<String?>(null) }
     var showMessageOptionsSheet by remember { mutableStateOf(false) }
     var selectedCommentMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var selectedSentToMessage by remember { mutableStateOf<ChatMessage?>(null) }
@@ -214,7 +223,9 @@ fun ChatScreen(
 
     val isOneToOne = remember(currentEntry, members) {
         val subLower = currentEntry.subtitle.trim().lowercase()
-        subLower in listOf("direct", "chat", "one-to-one") || (members.size <= 2 && !subLower.endsWith("member") && !subLower.endsWith("members") && subLower != "project group" && subLower != "group")
+        // Same rule as the chat details screen: only a chat marked direct is one-to-one.
+        // (A group with one or two members and an empty description used to be mistaken for one.)
+        subLower in listOf("direct", "chat", "one-to-one")
     }
 
     val otherMember = remember(members, currentUserId) {
@@ -339,12 +350,12 @@ fun ChatScreen(
     }
 
     // Theme Tokens
-    val pageBgColor = if (isDark) Color(0xFF0E1114) else Color(0xFFE8ECEF)
-    val cardColor = if (isDark) Color(0xFF181C21) else Color(0xFFF5F7F9)
-    val outlineColor = if (isDark) Color(0xFF2A3037) else Color(0xFFD3D9DF)
-    val primaryTextColor = if (isDark) Color(0xFFF0F3F5) else Color(0xFF11161A)
-    val secondaryTextColor = if (isDark) Color(0xFF8A9199) else Color(0xFF65707A)
-    val dimTextColor = if (isDark) Color(0xFF6E757C) else Color(0xFF8A929A)
+    val pageBgColor = if (isDark) Color(0xFF1F1F21) else Color(0xFFF5F6F8)
+    val cardColor = if (isDark) Color(0xFF2A2A2D) else Color(0xFFFFFFFF)
+    val outlineColor = if (isDark) Color(0xFF3A3A3F) else Color(0xFFE3E5EA)
+    val primaryTextColor = if (isDark) Color(0xFFF2F2F4) else Color(0xFF15171C)
+    val secondaryTextColor = if (isDark) Color(0xFFA3A3AA) else Color(0xFF667085)
+    val dimTextColor = if (isDark) Color(0xFF7C7C84) else Color(0xFF8A90A0)
     val tealAccent = if (isDark) Color(0xFF8F9CD8) else Color(0xFF3A4694)
     val errorColor = if (isDark) Color(0xFFE8837A) else Color(0xFFC4433A)
 
@@ -352,7 +363,8 @@ fun ChatScreen(
         ChatDetailsScreen(
             entry = currentEntry,
             messages = messages,
-            onBack = { showGroupDetails = false },
+            openAction = detailsOpenAction,
+            onBack = { showGroupDetails = false; detailsOpenAction = null },
             onDeleteMessage = { messageId, forEveryone ->
                 if (forEveryone) {
                     chatViewModel.deleteForEveryone(context, currentEntry.id.toString(), setOf(messageId))
@@ -380,7 +392,8 @@ fun ChatScreen(
                 }
             }
         )
-        return
+        // Members, Groups and Tasks open as sheets over the chat; everything else takes the whole screen
+        if (detailsOpenAction == null || detailsOpenAction in listOf("forms", "credentials", "library")) return
     }
 
     if (showNewPollScreen) {
@@ -962,12 +975,19 @@ fun ChatScreen(
                 },
                 onInfo = { selectedSentToMessage = it },
                 onDelete = { showDeleteDialog = true },
-                onOpenDetails = { showGroupDetails = true },
+                onOpenDetails = { detailsOpenAction = null; showGroupDetails = true },
                 onOpenSearch = { isSearchOpen = true },
                 onCloseSearch = { closeSearch() },
                 onSearchQueryChange = { searchQuery = it },
                 onSearchOlder = { searchOlder() },
-                onSearchNewer = { searchNewer() }
+                onSearchNewer = { searchNewer() },
+                onMenuAction = { action ->
+                    if (action in listOf("members", "groups", "tasks", "forms", "credentials", "library")) {
+                        menuSheetAction = action
+                    } else {
+                        detailsOpenAction = action; showGroupDetails = true
+                    }
+                }
             )
         },
         bottomBar = {
@@ -1741,6 +1761,7 @@ fun ChatScreen(
                         ) {
                             val performSend: () -> Unit = {
                                 val currentText = inputText.trim()
+                                val originalMsgId = java.util.UUID.randomUUID().toString()
                                 chatViewModel.sendMessage(
                                     context = context,
                                     groupId = currentEntry.id.toString(),
@@ -1748,7 +1769,8 @@ fun ChatScreen(
                                     attachmentUris = attachedFiles,
                                     durationsMap = pendingDurations,
                                     replyingTo = replyingTo,
-                                    replyingToAttachmentUri = replyingToAttachmentUriState
+                                    replyingToAttachmentUri = replyingToAttachmentUriState,
+                                    messageId = originalMsgId
                                 )
 
                                 // Cross-post to mentioned linked groups with mention stripped for receiver
@@ -1765,6 +1787,16 @@ fun ChatScreen(
                                     }
                                 }
 
+                                val threadGroupIds = mentionedLinkedGroups
+                                    .map { it.first }
+                                    .filter { it.isNotBlank() && it != currentEntry.id.toString() }
+                                if (threadGroupIds.isNotEmpty()) {
+                                    chatViewModel.createSharedThread(
+                                        originalMsgId,
+                                        listOf(currentEntry.id.toString()) + threadGroupIds
+                                    )
+                                }
+
                                 for ((targetGroupId, targetGroupName) in mentionedLinkedGroups) {
                                     if (targetGroupId != currentEntry.id.toString() && targetGroupId.isNotBlank()) {
                                         val crossPostText = stripGroupMention(currentText, targetGroupName)
@@ -1776,7 +1808,9 @@ fun ChatScreen(
                                                 attachmentUris = attachedFiles,
                                                 durationsMap = pendingDurations,
                                                 replyingTo = null,
-                                                replyingToAttachmentUri = null
+                                                replyingToAttachmentUri = null,
+                                                crossPostThreadId = originalMsgId,
+                                                crossPostSourceName = currentEntry.title
                                             )
                                         }
                                     }
@@ -1958,26 +1992,11 @@ fun ChatScreen(
                                             )
                                         }
                                         BasicTextField(
-                                            value = inputText,
+                                            value = inputField,
                                             onValueChange = { newValue ->
-                                                if (newValue.length <= 4000) {
-                                                    val oldValue = inputText
-                                                    if (newValue.length < oldValue.length) {
-                                                        val pattern = Regex("""@([A-Za-z0-9_]+(?:\s+[A-Za-z0-9_]+)*)\s?""")
-                                                        var handled = false
-                                                        pattern.findAll(oldValue).forEach { match ->
-                                                            val range = match.range
-                                                            if (newValue.length in (range.first + 1)..range.last) {
-                                                                inputText = oldValue.removeRange(range.first, range.last + 1)
-                                                                handled = true
-                                                            }
-                                                        }
-                                                        if (!handled) {
-                                                            inputText = newValue
-                                                        }
-                                                    } else {
-                                                        inputText = newValue
-                                                    }
+                                                if (newValue.text.length <= 4000) {
+                                                    inputField = newValue
+                                                    inputText = newValue.text
                                                 }
                                             },
                                             maxLines = 5,
@@ -1991,7 +2010,8 @@ fun ChatScreen(
                                                     text = annotatedString.text,
                                                     primaryTextColor = primaryTextColor,
                                                     tealAccent = tealAccent,
-                                                    acceptedGroupNames = acceptedGroupNames
+                                                    acceptedGroupNames = acceptedGroupNames,
+                                                    memberNames = members.map { it.displayName }
                                                 )
                                                 TransformedText(formatted, OffsetMapping.Identity)
                                             },
@@ -2639,6 +2659,15 @@ fun ChatScreen(
                 onDismissFailed = { selectedFailedMessage = null }
             )
         }
+    }
+    // Members / Groups / Tasks sheets and Forms / Credentials / Library screens open over the chat
+    menuSheetAction?.let { act ->
+        com.fabxdi.dibadge.ui.home.home_entry.chat_details.ChatMenuSheetHost(
+            entry = currentEntry,
+            action = act,
+            onClose = { menuSheetAction = null },
+            onOpenMyForms = onOpenMyForms
+        )
     }
 }
 

@@ -20,6 +20,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fabxdi.dibadge.data.GroupTaskEntity
 import com.fabxdi.dibadge.ui.components.DiBadgeFab
+import com.fabxdi.dibadge.ui.home.home_entry.chat_details.MonthTimelineView
+import com.fabxdi.dibadge.ui.home.home_entry.chat_details.NewScheduleSheet
+import com.fabxdi.dibadge.ui.home.home_entry.chat_details.buildScheduleMonths
+import com.fabxdi.dibadge.ui.home.home_entry.chat_details.rememberMonthPager
+import com.fabxdi.dibadge.ui.my_tasks.TaskPreviewSheet
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.GroupTaskViewModel
 import com.google.firebase.auth.FirebaseAuth

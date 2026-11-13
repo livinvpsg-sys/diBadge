@@ -1833,13 +1833,20 @@ class GroupDetailsViewModel : ViewModel() {
         }
     }
 
+    private var connectionsListener: com.google.firebase.firestore.ListenerRegistration? = null
+
     private fun listenToConnections(groupId: String) {
-        db.collection("groupConnections")
+        // Stop the previous group's listener, otherwise its results overwrite this group's list
+        connectionsListener?.remove()
+        _acceptedConnections.value = emptyList()
+        _pendingRequests.value = emptyList()
+        connectionsListener = db.collection("groupConnections")
             .whereArrayContains("participants", groupId)
             .addSnapshotListener { snapshot, error ->
                 if (error != null || snapshot == null) return@addSnapshotListener
 
                 viewModelScope.launch {
+                    if (groupId != currentGroupId) return@launch
                     val acceptedList = mutableListOf<GroupConnectionItem>()
                     val pendingList = mutableListOf<GroupConnectionItem>()
 
@@ -1892,6 +1899,7 @@ class GroupDetailsViewModel : ViewModel() {
                         // "declined" is not listed, so the row disappears from the sender's list
                     }
 
+                    if (groupId != currentGroupId) return@launch
                     _acceptedConnections.value = acceptedList
                     _pendingRequests.value = pendingList
                 }

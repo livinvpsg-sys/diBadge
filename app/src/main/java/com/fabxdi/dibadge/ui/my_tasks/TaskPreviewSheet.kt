@@ -1,4 +1,4 @@
-package com.fabxdi.dibadge.ui.calendar
+package com.fabxdi.dibadge.ui.my_tasks
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -35,6 +35,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.data.GroupTaskEntity
+import com.fabxdi.dibadge.ui.home.home_entry.chat_details.TaskStatus
+import com.fabxdi.dibadge.ui.home.home_entry.chat_details.getTaskStatus
 import com.fabxdi.dibadge.ui.components.DiBadgeDatePicker
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.GroupTaskViewModel
@@ -474,8 +476,8 @@ data class StatusLabelColors(
 fun StatusLabelBadge(status: TaskStatus, isDark: Boolean, tealAccent: Color) {
     val style = when (status) {
         TaskStatus.ONGOING -> {
-            val bg = if (isDark) Color(0xFF1F4A46) else Color(0xFFBFE3DF)
-            val textCol = if (isDark) Color(0xFFBFE3DF) else Color(0xFF1F4A46)
+            val bg = if (isDark) Color(0xFF262E57) else Color(0xFFDDE1F4)
+            val textCol = if (isDark) Color(0xFFDDE1F4) else Color(0xFF2A3470)
             StatusLabelColors(bg, tealAccent, textCol, "Ongoing")
         }
         TaskStatus.UPCOMING -> {

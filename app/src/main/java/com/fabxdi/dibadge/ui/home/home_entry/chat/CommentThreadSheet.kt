@@ -78,7 +78,7 @@ private fun ReplyDateHeader(
         else -> date.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault()))
     }
 
-    val pillBgColor = if (isDark) Color(0xFF222831) else Color(0xFFDDE2E7)
+    val pillBgColor = if (isDark) Color(0xFF34343A) else Color(0xFFE9EBEF)
 
     Box(
         modifier = modifier
@@ -119,13 +119,13 @@ fun CommentThreadSheet(
     val diBadgeColors = DiBadgeTheme.colors
     val isDark = DiBadgeTheme.colors.isDark
 
-    val cardColor = if (isDark) Color(0xFF181C21) else Color(0xFFF5F7F9)
-    val cardFillColor = if (isDark) Color(0xFF181C21) else Color(0xFFF5F7F9)
-    val outlineColor = if (isDark) Color(0xFF2A3037) else Color(0xFFD3D9DF)
-    val primaryTextColor = if (isDark) Color(0xFFF0F3F5) else Color(0xFF11161A)
-    val secondaryTextColor = if (isDark) Color(0xFF8A9199) else Color(0xFF65707A)
-    val dimTextColor = if (isDark) Color(0xFF6E757C) else Color(0xFF8A929A)
-    val tealAccent = if (isDark) Color(0xFF8F9CD8) else Color(0xFF3A4694)
+    val cardColor = if (isDark) Color(0xFF2A2A2D) else Color(0xFFFFFFFF)
+    val cardFillColor = if (isDark) Color(0xFF2A2A2D) else Color(0xFFFFFFFF)
+    val outlineColor = if (isDark) Color(0xFF3A3A3F) else Color(0xFFE3E5EA)
+    val primaryTextColor = if (isDark) Color(0xFFF2F2F4) else Color(0xFF15171C)
+    val secondaryTextColor = if (isDark) Color(0xFFA3A3AA) else Color(0xFF667085)
+    val dimTextColor = if (isDark) Color(0xFF7C7C84) else Color(0xFF8A90A0)
+    val tealAccent = if (isDark) Color(0xFF58B5AC) else Color(0xFF1B6F69)
 
     val currentUserId = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
@@ -354,7 +354,7 @@ fun CommentThreadSheet(
                             .weight(1f)
                             .heightIn(min = 48.dp, max = 110.dp),
                         shape = RoundedCornerShape(24.dp),
-                        color = if (isDark) Color(0xFF222831) else Color(0xFFE8ECEF)
+                        color = if (isDark) Color(0xFF34343A) else Color(0xFFF5F6F8)
                     ) {
                         Row(
                             modifier = Modifier

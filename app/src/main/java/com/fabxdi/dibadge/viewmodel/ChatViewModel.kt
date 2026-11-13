@@ -305,8 +305,21 @@ class ChatViewModel : ViewModel() {
     // Group-connection requests and their results, shown in the chat as small cards / grey lines.
     // They are built from groupConnections (not stored as messages) so they always match the real status.
     private val _connItems = MutableStateFlow<List<ChatMessage>>(emptyList())
+    // Copies of a group-mention message that were posted into a linked group: they share the sender's
+    // thread (so replies show on both sides) and remember which group and person they came from.
+    private class CrossPostInfo(val threadId: String, val sourceGroupName: String?)
+    private val _crossPosts = MutableStateFlow<Map<String, CrossPostInfo>>(emptyMap())
     val messages: StateFlow<List<ChatMessage>> =
-        combine(_messages, _connItems) { msgs, conns ->
+        combine(_messages, _connItems, _crossPosts) { msgs0, conns, cross ->
+            val msgs = if (cross.isEmpty()) msgs0 else msgs0.map { m ->
+                val info = cross[m.id]
+                if (info == null) m else m.copy(
+                    isGroupMention = true,
+                    isSentByMe = false,
+                    threadId = info.threadId,
+                    sendingGroupName = info.sourceGroupName
+                )
+            }
             if (conns.isEmpty()) msgs else (msgs + conns).sortedBy { it.timestamp }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -346,7 +359,7 @@ class ChatViewModel : ViewModel() {
                         if (otherName.isBlank()) {
                             try {
                                 val od = if (otherType == "personalGroup") db.collection("personalGroups").document(otherId).get().await()
-                                         else db.collection("projects").document(otherId).get().await()
+                                else db.collection("projects").document(otherId).get().await()
                                 otherName = od.getString("name") ?: od.getString("title") ?: ""
                             } catch (_: Exception) {}
                             if (otherName.isBlank()) otherName = "A group" else connNameCache[otherId] = otherName
@@ -356,7 +369,9 @@ class ChatViewModel : ViewModel() {
                         val created = ms("createdAt").takeIf { it > 0 } ?: System.currentTimeMillis()
                         val updated = ms("updatedAt").takeIf { it > 0 } ?: created
 
-                        if (iAmTarget) {
+                        if (iAmTarget && status == "accepted") {
+                            out.add(connMessage("connnote_${doc.id}", "connectionNotice", "Connected to $otherName", created, doc.id, status, 0))
+                        } else if (iAmTarget) {
                             out.add(connMessage("connreq_${doc.id}", "connectionRequest", otherName, created, doc.id, status, if (canRespond) 1 else 0))
                         } else if (status == "accepted") {
                             out.add(connMessage("connnote_${doc.id}", "connectionNotice", "Now connected to $otherName", updated, doc.id, status, 0))
@@ -482,6 +497,7 @@ class ChatViewModel : ViewModel() {
                     val currentName = auth.currentUser?.displayName ?: "Me"
 
                     val entitiesToInsert = mutableListOf<ChatMessageEntity>()
+                    val crossPostsFound = mutableMapOf<String, CrossPostInfo>()
 
                     snapshot.documents.forEach { doc ->
                         try {
@@ -489,7 +505,13 @@ class ChatViewModel : ViewModel() {
                             val text = doc.getString("text") ?: ""
                             val senderName = doc.getString("senderName") ?: "User"
                             val senderUid = doc.getString("senderUid") ?: ""
-                            val isSentByMe = if (senderUid.isNotBlank()) senderUid == currentUid else senderName == currentName || senderName == "Me"
+                            // A group-mention copy posted here from another group is always shown as received
+                            val crossThread = doc.getString("crossPostThreadId")
+                            if (!crossThread.isNullOrBlank()) {
+                                crossPostsFound[id] = CrossPostInfo(crossThread, doc.getString("crossPostSourceName"))
+                            }
+                            val isSentByMe = if (!crossThread.isNullOrBlank()) false
+                            else if (senderUid.isNotBlank()) senderUid == currentUid else senderName == currentName || senderName == "Me"
                             val attachments = (doc.get("attachments") as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
 
                             val durationsMap = (doc.get("attachmentDurations") as? Map<*, *>)?.mapNotNull { (k, v) ->
@@ -560,6 +582,10 @@ class ChatViewModel : ViewModel() {
                         }
                     }
 
+                    if (crossPostsFound.isNotEmpty()) {
+                        _crossPosts.value = _crossPosts.value + crossPostsFound
+                    }
+
                     if (entitiesToInsert.isNotEmpty()) {
                         viewModelScope.launch(Dispatchers.IO) {
                             dao.insertChatMessages(entitiesToInsert)
@@ -621,12 +647,19 @@ class ChatViewModel : ViewModel() {
         attachmentUris: List<Uri>,
         durationsMap: Map<String, Long>,
         replyingTo: ChatMessage?,
-        replyingToAttachmentUri: String?
+        replyingToAttachmentUri: String?,
+        messageId: String? = null,
+        // Set when this message is a copy of a group-mention message being posted into a linked group
+        crossPostThreadId: String? = null,
+        crossPostSourceName: String? = null
     ) {
         if (groupId.isBlank()) return
         if (text.isBlank() && attachmentUris.isEmpty()) return
 
-        val msgId = UUID.randomUUID().toString()
+        val msgId = messageId ?: UUID.randomUUID().toString()
+        if (!crossPostThreadId.isNullOrBlank()) {
+            _crossPosts.value = _crossPosts.value + (msgId to CrossPostInfo(crossPostThreadId, crossPostSourceName))
+        }
         val ts = System.currentTimeMillis()
 
         val currentUid = auth.currentUser?.uid ?: ""
@@ -697,6 +730,11 @@ class ChatViewModel : ViewModel() {
                     "timestamp" to ts,
                     "isEdited" to false
                 )
+
+                if (!crossPostThreadId.isNullOrBlank()) {
+                    docData["crossPostThreadId"] = crossPostThreadId
+                    if (!crossPostSourceName.isNullOrBlank()) docData["crossPostSourceName"] = crossPostSourceName
+                }
 
                 if (replyingTo != null) {
                     docData["replyingToId"] = replyingTo.id
@@ -1034,6 +1072,28 @@ class ChatViewModel : ViewModel() {
             }
 
         threadCommentsListeners[threadId] = listener
+    }
+
+    /**
+     * Registers which groups can see the replies of a group-mention message. The rules check
+     * that the signed-in user belongs to one of these groups. Max 8 groups.
+     */
+    fun createSharedThread(threadId: String, groupIds: List<String>) {
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
+        val ids = groupIds.filter { it.isNotBlank() }.distinct().take(8)
+        if (threadId.isBlank() || ids.isEmpty()) return
+        val data = hashMapOf<String, Any>(
+            "groupIds" to ids,
+            "createdBy" to uid,
+            "createdAt" to System.currentTimeMillis()
+        )
+        viewModelScope.launch {
+            try {
+                db.collection("sharedThreads").document(threadId).set(data).await()
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "createSharedThread failed", e)
+            }
+        }
     }
 
     fun postComment(threadId: String, text: String, senderName: String, senderUid: String, groupName: String? = null) {

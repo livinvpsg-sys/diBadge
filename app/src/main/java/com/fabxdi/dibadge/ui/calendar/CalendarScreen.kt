@@ -107,8 +107,8 @@ fun CalendarScreen(
         allClaims.filter { YearMonth.from(it.date) == currentYearMonth }
     }
 
-    val approvedLeaveDays = monthLeaves.filter { it.status.equals("Approved", ignoreCase = true) }.sumOf { 1.0 }
-    val pendingLeaveDays = monthLeaves.filter { it.status.equals("Pending", ignoreCase = true) }.sumOf { 1.0 }
+    val approvedLeaveDays = monthLeaves.filter { it.status.equals("Approved", ignoreCase = true) }.sumOf { leaveDaysInMonth(it, currentYearMonth) }
+    val pendingLeaveDays = monthLeaves.filter { it.status.equals("Pending", ignoreCase = true) }.sumOf { leaveDaysInMonth(it, currentYearMonth) }
 
     val approvedOtHours = monthOvertimes.filter { it.status.equals("Approved", ignoreCase = true) }.sumOf {
         val hrs = Duration.between(it.startTime, it.endTime).toMinutes() / 60.0
@@ -121,6 +121,11 @@ fun CalendarScreen(
 
     val approvedClaimAmount = monthClaims.filter { it.status.equals("Approved", ignoreCase = true) }.sumOf { it.amount }
     val pendingClaimAmount = monthClaims.filter { it.status.equals("Pending", ignoreCase = true) }.sumOf { it.amount }
+
+    // The month summary is only offered when the month has something approved or pending
+    val hasMonthSummary = approvedLeaveDays > 0 || pendingLeaveDays > 0 ||
+            approvedOtHours > 0 || pendingOtHours > 0 ||
+            approvedClaimAmount > 0 || pendingClaimAmount > 0
 
     if (showLeaveForm) {
         LeaveFormScreen(
@@ -201,7 +206,7 @@ fun CalendarScreen(
                     .fillMaxWidth()
                     .background(pageBgColor)
                     .statusBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 8.dp)
+                    .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -305,27 +310,29 @@ fun CalendarScreen(
                     )
                 }
 
-                // Dedicated Bottom Handle Bar Touch Area (Swipe Up & Tap)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .navigationBarsPadding()
-                        .clickable { showSummarySheet = true }
-                        .pointerInput(Unit) {
-                            detectVerticalDragGestures { _, dragAmount ->
-                                if (dragAmount < -15f) {
-                                    showSummarySheet = true
+                if (hasMonthSummary) {
+                    // Dedicated Bottom Handle Bar Touch Area (Swipe Up & Tap)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .navigationBarsPadding()
+                            .clickable { showSummarySheet = true }
+                            .pointerInput(Unit) {
+                                detectVerticalDragGestures { _, dragAmount ->
+                                    if (dragAmount < -15f) {
+                                        showSummarySheet = true
+                                    }
                                 }
-                            }
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Surface(
-                        modifier = Modifier.size(width = 40.dp, height = 4.dp),
-                        shape = RoundedCornerShape(2.dp),
-                        color = secondaryTextColor.copy(alpha = 0.50f)
-                    ) {}
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(width = 40.dp, height = 4.dp),
+                            shape = RoundedCornerShape(2.dp),
+                            color = secondaryTextColor.copy(alpha = 0.50f)
+                        ) {}
+                    }
                 }
             }
         }
@@ -391,7 +398,7 @@ fun CalendarScreen(
         )
     }
 
-    if (showSummarySheet) {
+    if (showSummarySheet && hasMonthSummary) {
         MonthSummarySheet(
             monthTitle = currentYearMonth.format(monthYearFormatter),
             approvedLeaveDays = approvedLeaveDays,

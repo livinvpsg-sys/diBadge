@@ -218,7 +218,7 @@ fun RequestDetailsScreen(
 
                         val hrs = Duration.between(requestItem.startTime, requestItem.endTime).toMinutes() / 60.0
                         val finalHrs = if (hrs < 0) hrs + 24.0 else hrs
-                        DetailValueRow("Hours", "$finalHrs hrs", secondaryTextColor, secondaryTextColor)
+                        DetailValueRow("Hours", formatHours(finalHrs), secondaryTextColor, secondaryTextColor)
 
                         if (requestItem.description.isNotBlank()) {
                             HorizontalDivider(thickness = 1.dp, color = outlineColor)
@@ -446,7 +446,7 @@ fun RequestStatusPill(
 
     val (bgColor, textColor, labelText) = when {
         status.equals("Approved", ignoreCase = true) -> Triple(
-            if (isDark) Color(0xFF16403D) else Color(0xFFD3E9E6),
+            if (isDark) Color(0xFF262E57) else Color(0xFFDDE1F4),
             if (isDark) Color(0xFF8F9CD8) else Color(0xFF3A4694),
             "Approved"
         )
