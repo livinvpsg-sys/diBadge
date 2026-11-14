@@ -5,12 +5,14 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fabxdi.dibadge.data.AppDatabase
 import com.fabxdi.dibadge.data.GroupTaskEntity
+import com.fabxdi.dibadge.data.TaskCheckItem
+import com.fabxdi.dibadge.data.encodeTaskChecklist
+import com.fabxdi.dibadge.data.parseTaskChecklist
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.time.LocalDate
@@ -21,16 +23,17 @@ class GroupTaskViewModel(application: Application) : AndroidViewModel(applicatio
     private val auth = FirebaseAuth.getInstance()
     private val firestore = FirebaseFirestore.getInstance()
 
+    /** Tasks assigned to the signed-in user, across all groups (used by My Tasks). */
+    fun getTasksAssignedToMe(uid: String, name: String): Flow<List<GroupTaskEntity>> {
+        return groupTaskDao.getTasksAssignedToUser(uid, name)
+    }
+
     fun getTasksForGroup(groupId: String): Flow<List<GroupTaskEntity>> {
         viewModelScope.launch(Dispatchers.IO) {
             syncGroupTasksFromFirestore(groupId)
         }
         return groupTaskDao.getTasksForGroup(groupId)
     }
-
-    /** Tasks (from any group already synced to this phone) assigned to the signed-in user. */
-    fun getTasksAssignedToMe(uid: String, name: String): Flow<List<GroupTaskEntity>> =
-        if (uid.isBlank()) flowOf(emptyList()) else groupTaskDao.getTasksAssignedToUser(uid, name)
 
     fun createScheduleTask(
         groupId: String,
@@ -148,8 +151,12 @@ class GroupTaskViewModel(application: Application) : AndroidViewModel(applicatio
         assignerUid: String,
         dueDate: LocalDate?,
         dueTime: String?,
-        note: String
+        note: String,
+        priority: String = "medium",
+        remindBeforeMinutes: Int = -1,
+        checklist: List<String> = emptyList()
     ) {
+        val checklistJson = encodeTaskChecklist(checklist.map { TaskCheckItem(it) })
         viewModelScope.launch(Dispatchers.IO) {
             val tasksToCreate = assignees.map { member ->
                 GroupTaskEntity(
@@ -163,7 +170,10 @@ class GroupTaskViewModel(application: Application) : AndroidViewModel(applicatio
                     dueDate = dueDate,
                     dueTime = dueTime,
                     note = note.trim(),
-                    isCompleted = false
+                    isCompleted = false,
+                    priority = priority,
+                    checklistJson = checklistJson,
+                    remindBeforeMinutes = remindBeforeMinutes
                 )
             }
 
@@ -178,6 +188,23 @@ class GroupTaskViewModel(application: Application) : AndroidViewModel(applicatio
                         .set(task.toFirestoreMap(), SetOptions.merge())
                 } catch (e: Exception) {}
             }
+        }
+    }
+
+    /** Ticks or unticks one checklist line of a task. */
+    fun toggleChecklistItem(groupId: String, taskId: String, index: Int) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val task = groupTaskDao.getTaskById(taskId) ?: return@launch
+            val items = parseTaskChecklist(task.checklistJson).toMutableList()
+            if (index !in items.indices) return@launch
+            items[index] = items[index].copy(done = !items[index].done)
+            val updated = task.copy(checklistJson = encodeTaskChecklist(items))
+            groupTaskDao.insertGroupTask(updated)
+            try {
+                firestore.collection("groups").document(groupId)
+                    .collection("tasks").document(taskId)
+                    .set(updated.toFirestoreMap(), SetOptions.merge())
+            } catch (e: Exception) {}
         }
     }
 
@@ -218,7 +245,10 @@ fun GroupTaskEntity.toFirestoreMap(): Map<String, Any?> {
         "isCompleted" to isCompleted,
         "completedBy" to completedBy,
         "completedAt" to completedAt,
-        "createdAt" to createdAt
+        "createdAt" to createdAt,
+        "priority" to priority,
+        "checklistJson" to checklistJson,
+        "remindBeforeMinutes" to remindBeforeMinutes
     )
 }
 
@@ -239,6 +269,9 @@ fun Map<String, Any?>.toGroupTaskEntity(documentId: String): GroupTaskEntity? {
     val completedByVal = this["completedBy"] as? String
     val completedAtVal = (this["completedAt"] as? Long)
     val createdAtVal = (this["createdAt"] as? Long) ?: System.currentTimeMillis()
+    val priorityVal = this["priority"] as? String ?: "medium"
+    val checklistVal = this["checklistJson"] as? String ?: "[]"
+    val remindVal = (this["remindBeforeMinutes"] as? Number)?.toInt() ?: -1
 
     return GroupTaskEntity(
         id = idVal,
@@ -256,6 +289,9 @@ fun Map<String, Any?>.toGroupTaskEntity(documentId: String): GroupTaskEntity? {
         completedAt = completedAtVal,
         createdAt = createdAtVal,
         startDate = startDateVal ?: dueDateVal,
-        endDate = endDateVal ?: dueDateVal
+        endDate = endDateVal ?: dueDateVal,
+        priority = priorityVal,
+        checklistJson = checklistVal,
+        remindBeforeMinutes = remindVal
     )
 }

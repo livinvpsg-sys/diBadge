@@ -126,37 +126,25 @@ fun CredentialsScreen(
 
     Scaffold(
         topBar = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(colors.background)
-                    .statusBarsPadding()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onBack, modifier = Modifier.size(44.dp)) {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "Credentials",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = primaryTextColor
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
                             tint = primaryTextColor
                         )
                     }
-
-                    Spacer(modifier = Modifier.width(4.dp))
-
-                    Text(
-                        text = "Credentials",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = primaryTextColor,
-                        modifier = Modifier.weight(1f)
-                    )
-
+                },
+                actions = {
                     if (canUserManage) {
                         Text(
                             text = "Request",
@@ -169,7 +157,6 @@ fun CredentialsScreen(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                     }
-
                     Text(
                         text = "Add",
                         fontSize = 15.sp,
@@ -179,9 +166,12 @@ fun CredentialsScreen(
                             .clickable { showAddSheet = true }
                             .padding(horizontal = 8.dp, vertical = 8.dp)
                     )
-                }
-                HorizontalDivider(thickness = 1.dp, color = outlineColor)
-            }
+                    Spacer(modifier = Modifier.width(8.dp))
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
+            )
         }
     ) { innerPadding ->
         Box(

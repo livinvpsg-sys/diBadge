@@ -1673,16 +1673,36 @@ fun ChatDetailsScreen(
                 currentRole = resolvedUserRole,
                 currentUserName = currentUserName,
                 currentUserUid = currentUserId,
-                onAssignTaskConfirmed = { title, assignees, dueDate, dueTime, note ->
+                linkedGroups = acceptedConnections
+                    .filter { it.otherEntityType == "personalGroup" && it.otherEntityId != entry.id.toString() }
+                    .map { LinkedGroupOption(id = it.otherEntityId, name = it.otherEntityName) },
+                loadLinkedMembers = { gid -> fetchGroupMembersForTask(gid) },
+                onAssignTaskConfirmed = { input ->
                     groupTaskViewModel.assignTasks(
-                        title = title,
+                        title = input.title,
                         groupId = entry.id.toString(),
-                        assignees = assignees,
+                        assignees = input.assignees,
                         assignerName = currentUserName,
                         assignerUid = currentUserId,
-                        dueDate = dueDate,
-                        dueTime = dueTime,
-                        note = note
+                        dueDate = input.dueDate,
+                        dueTime = input.dueTime,
+                        note = input.note,
+                        priority = input.priority,
+                        remindBeforeMinutes = input.remindBeforeMinutes,
+                        checklist = input.checklist
+                    )
+                },
+                onToggleChecklistItem = { task, index ->
+                    groupTaskViewModel.toggleChecklistItem(entry.id.toString(), task.id, index)
+                },
+                onMarkDone = { task, done ->
+                    groupTaskViewModel.updateTaskCompletion(
+                        groupId = entry.id.toString(),
+                        taskId = task.id,
+                        isCompleted = done,
+                        userName = currentUserName,
+                        userUid = currentUserId,
+                        onUpdated = {}
                     )
                 },
                 onDismiss = { showTasksSheet = false }

@@ -116,8 +116,8 @@ fun GroupFormsScreen(
                 title = {
                     Text(
                         text = "Forms (${submissionsList.size})",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Medium,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Normal,
                         color = primaryTextColor
                     )
                 },

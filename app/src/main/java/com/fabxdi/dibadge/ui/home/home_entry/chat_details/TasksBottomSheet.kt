@@ -24,6 +24,18 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.data.GroupTaskEntity
+import com.fabxdi.dibadge.data.TaskCheckItem
+import com.fabxdi.dibadge.data.encodeTaskChecklist
+import com.fabxdi.dibadge.data.parseTaskChecklist
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.outlined.CalendarToday
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.filled.Check
+import java.time.temporal.ChronoUnit
 import com.fabxdi.dibadge.ui.theme.AppThemeMode
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.GroupMember
@@ -82,8 +94,8 @@ fun resolveUserRole(
     ownerId: String = ""
 ): String {
     val uid = currentUserId.trim()
-    val userMember = members.find { 
-        it.uid == uid || it.id == uid || it.isYou || it.displayName.contains("(You)", ignoreCase = true) 
+    val userMember = members.find {
+        it.uid == uid || it.id == uid || it.isYou || it.displayName.contains("(You)", ignoreCase = true)
     }
 
     val rawRole = userMember?.role?.trim()?.lowercase() ?: ""
@@ -150,11 +162,17 @@ fun TasksBottomSheet(
     currentRole: String = "admin", // "owner", "admin", "member"
     currentUserName: String = "",
     currentUserUid: String = "me",
-    onAssignTaskConfirmed: (title: String, assignees: List<GroupMember>, dueDate: LocalDate?, dueTime: String?, note: String) -> Unit,
+    linkedGroups: List<LinkedGroupOption> = emptyList(),
+    loadLinkedMembers: suspend (String) -> List<GroupMember> = { emptyList() },
+    onAssignTaskConfirmed: (NewTaskInput) -> Unit,
+    onToggleChecklistItem: (task: GroupTaskEntity, index: Int) -> Unit = { _, _ -> },
+    onMarkDone: (task: GroupTaskEntity, done: Boolean) -> Unit = { _, _ -> },
     onDismiss: () -> Unit
 ) {
     var showAssignTaskSheet by remember { mutableStateOf(false) }
-    var selectedTaskForDetails by remember { mutableStateOf<GroupTaskEntity?>(null) }
+    var selectedTaskId by remember { mutableStateOf<String?>(null) }
+    // look the task up in the live list so ticks and status changes show at once
+    val selectedTaskForDetails = tasks.firstOrNull { it.id == selectedTaskId }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -179,11 +197,13 @@ fun TasksBottomSheet(
     if (showAssignTaskSheet) {
         AssignTaskSheet(
             members = members,
-            onAssignConfirmed = { title, assignees, dueDate, dueTime, note ->
+            linkedGroups = linkedGroups,
+            loadLinkedMembers = loadLinkedMembers,
+            onAssignConfirmed = { input ->
                 showAssignTaskSheet = false
-                onAssignTaskConfirmed(title, assignees, dueDate, dueTime, note)
+                onAssignTaskConfirmed(input)
                 coroutineScope.launch {
-                    val nameStr = if (assignees.size == 1) assignees.first().name else "${assignees.size} people"
+                    val nameStr = if (input.assignees.size == 1) input.assignees.first().name else "${input.assignees.size} people"
                     snackbarHostState.showSnackbar("Task assigned to $nameStr")
                 }
             },
@@ -304,7 +324,7 @@ fun TasksBottomSheet(
                             secondaryTextColor = secondaryTextColor,
                             outlineColor = outlineColor,
                             isDark = isDark,
-                            onClick = { selectedTaskForDetails = task }
+                            onClick = { selectedTaskId = task.id }
                         )
                     }
                 }
@@ -319,35 +339,281 @@ fun TasksBottomSheet(
     }
 
     if (selectedTaskForDetails != null) {
-        val task = selectedTaskForDetails!!
-        AlertDialog(
-            onDismissRequest = { selectedTaskForDetails = null },
-            title = { Text(text = task.title, color = primaryTextColor, fontSize = 18.sp, fontWeight = FontWeight.Bold) },
-            text = {
-                Column {
-                    Text("Assigned to: ${task.assignedTo}", fontSize = 14.sp, color = secondaryTextColor)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Assigned by: ${task.assignedBy}", fontSize = 14.sp, color = secondaryTextColor)
-                    if (task.dueDate != null) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        val timeStr = if (!task.dueTime.isNullOrBlank()) ", ${task.dueTime}" else ""
-                        val dueText = task.dueDate.format(DateTimeFormatter.ofPattern("EEE d MMM yyyy", Locale.getDefault()))
-                        Text("Due: $dueText$timeStr", fontSize = 14.sp, color = secondaryTextColor)
-                    }
-                    if (task.note.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Note: ${task.note}", fontSize = 14.sp, color = primaryTextColor)
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { selectedTaskForDetails = null }) {
-                    Text("Close", color = tealAccent, fontWeight = FontWeight.Bold)
-                }
-            },
-            containerColor = cardBgColor,
-            shape = RoundedCornerShape(20.dp)
+        val task = selectedTaskForDetails
+        val canComplete = canAssign ||
+                task.assignedToUid == currentUserUid ||
+                task.assignedByUid == currentUserUid
+        TaskDetailsSheet(
+            task = task,
+            today = today,
+            canComplete = canComplete,
+            canTick = task.assignedToUid == currentUserUid || canAssign,
+            onToggleChecklistItem = { index -> onToggleChecklistItem(task, index) },
+            onMarkDone = { onMarkDone(task, !task.isCompleted) },
+            onDismiss = { selectedTaskId = null }
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TaskDetailsSheet(
+    task: GroupTaskEntity,
+    today: LocalDate,
+    canComplete: Boolean,
+    canTick: Boolean,
+    onToggleChecklistItem: (Int) -> Unit,
+    onMarkDone: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val diBadgeColors = DiBadgeTheme.colors
+    val primaryTextColor = colors.onBackground
+    val secondaryTextColor = colors.onSurfaceVariant
+    val cardBgColor = colors.surface
+    val outlineColor = colors.outline
+    val tealAccent = diBadgeColors.accent
+    val dimColor = diBadgeColors.tabInactive
+    val isDark = diBadgeColors.isDark
+
+    val checklist = remember(task.checklistJson) { parseTaskChecklist(task.checklistJson) }
+    val doneCount = checklist.count { it.done }
+
+    val statusLabel = when {
+        task.isCompleted -> "Done"
+        task.dueDate != null && task.dueDate.isBefore(today) -> "Overdue"
+        else -> "Pending"
+    }
+    val overdueColor = if (isDark) Color(0xFFE8837A) else Color(0xFFC4433A)
+    val statusColor = if (statusLabel == "Overdue") overdueColor else secondaryTextColor
+
+    val daysText = remember(task.dueDate, task.isCompleted) {
+        val d = task.dueDate
+        if (d == null || task.isCompleted) null
+        else {
+            val diff = ChronoUnit.DAYS.between(today, d)
+            when {
+                diff > 1L -> "$diff days left"
+                diff == 1L -> "1 day left"
+                diff == 0L -> "Due today"
+                diff == -1L -> "1 day overdue"
+                else -> "${-diff} days overdue"
+            }
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        containerColor = cardBgColor,
+        scrimColor = Color.Black.copy(alpha = 0.55f),
+        tonalElevation = 0.dp,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp, bottom = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    modifier = Modifier.size(width = 32.dp, height = 4.dp),
+                    shape = RoundedCornerShape(2.dp),
+                    color = secondaryTextColor.copy(alpha = 0.40f)
+                ) {}
+            }
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 28.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Text(
+                text = task.title,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Medium,
+                color = primaryTextColor
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = Color.Transparent,
+                    border = BorderStroke(1.dp, outlineColor)
+                ) {
+                    Text(
+                        text = "${priorityLabel(task.priority)} priority",
+                        fontSize = 12.sp,
+                        color = secondaryTextColor,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = Color.Transparent,
+                    border = BorderStroke(1.dp, if (statusLabel == "Overdue") overdueColor else outlineColor)
+                ) {
+                    Text(
+                        text = statusLabel,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = statusColor,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider(thickness = 1.dp, color = outlineColor)
+
+            DetailInfoRow(Icons.Outlined.Person, dimColor) {
+                Column {
+                    Text(task.assignedTo, fontSize = 16.sp, color = primaryTextColor)
+                    Text("Assigned by ${task.assignedBy}", fontSize = 13.sp, color = secondaryTextColor)
+                }
+            }
+            HorizontalDivider(thickness = 1.dp, color = outlineColor)
+
+            if (task.dueDate != null) {
+                DetailInfoRow(Icons.Outlined.CalendarToday, dimColor) {
+                    val timeStr = if (!task.dueTime.isNullOrBlank()) ", ${task.dueTime}" else ""
+                    val dueText = task.dueDate.format(DateTimeFormatter.ofPattern("EEE d MMM yyyy", Locale.getDefault()))
+                    Column {
+                        Text("$dueText$timeStr", fontSize = 16.sp, color = primaryTextColor)
+                        if (daysText != null) {
+                            Text(
+                                daysText,
+                                fontSize = 13.sp,
+                                color = if (statusLabel == "Overdue") overdueColor else secondaryTextColor
+                            )
+                        }
+                    }
+                }
+                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+            }
+
+            if (task.dueDate != null && task.remindBeforeMinutes >= 0) {
+                DetailInfoRow(Icons.Outlined.NotificationsNone, dimColor) {
+                    Text(reminderLabel(task.remindBeforeMinutes), fontSize = 16.sp, color = primaryTextColor)
+                }
+                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+            }
+
+            if (task.note.isNotBlank()) {
+                DetailInfoRow(Icons.Outlined.Description, dimColor) {
+                    Text(task.note, fontSize = 16.sp, color = primaryTextColor)
+                }
+                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+            }
+
+            if (checklist.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(14.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Checklist", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = primaryTextColor)
+                    Text("$doneCount of ${checklist.size}", fontSize = 13.sp, color = secondaryTextColor)
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                checklist.forEachIndexed { index, item ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 44.dp)
+                            .clickable(enabled = canTick) { onToggleChecklistItem(index) },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(22.dp),
+                            shape = RoundedCornerShape(5.dp),
+                            color = if (item.done) tealAccent else Color.Transparent,
+                            border = BorderStroke(1.5.dp, if (item.done) tealAccent else dimColor)
+                        ) {
+                            if (item.done) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Done",
+                                        tint = if (isDark) Color(0xFF0E1114) else Color.White,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = item.text,
+                            fontSize = 16.sp,
+                            color = if (item.done) secondaryTextColor else primaryTextColor
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Close",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = secondaryTextColor,
+                    modifier = Modifier
+                        .clickable { onDismiss() }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+                if (canComplete) {
+                    Spacer(modifier = Modifier.width(28.dp))
+                    Text(
+                        text = if (task.isCompleted) "Mark as not done" else "Mark as done",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = tealAccent,
+                        modifier = Modifier
+                            .clickable { onMarkDone() }
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailInfoRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    iconTint: Color,
+    content: @Composable () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 14.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = iconTint,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        content()
     }
 }
 
@@ -456,7 +722,7 @@ fun TasksBottomSheetListLightPreview() {
                 ),
                 members = listOf(GroupMember("u1", "Anita Sharma"), GroupMember("u2", "Rahul Verma")),
                 currentRole = "admin",
-                onAssignTaskConfirmed = { _, _, _, _, _ -> },
+                onAssignTaskConfirmed = { },
                 onDismiss = {}
             )
         }
@@ -482,7 +748,7 @@ fun TasksBottomSheetListDarkPreview() {
                 ),
                 members = listOf(GroupMember("u1", "Anita Sharma"), GroupMember("u2", "Rahul Verma")),
                 currentRole = "admin",
-                onAssignTaskConfirmed = { _, _, _, _, _ -> },
+                onAssignTaskConfirmed = { },
                 onDismiss = {}
             )
         }
@@ -501,7 +767,7 @@ fun TasksBottomSheetMemberViewLightPreview() {
                 ),
                 members = listOf(GroupMember("u1", "Anita Sharma")),
                 currentRole = "member",
-                onAssignTaskConfirmed = { _, _, _, _, _ -> },
+                onAssignTaskConfirmed = { },
                 onDismiss = {}
             )
         }
@@ -518,7 +784,7 @@ fun TasksBottomSheetEmptyLightPreview() {
                 tasks = emptyList(),
                 members = listOf(GroupMember("u1", "Anita Sharma")),
                 currentRole = "member",
-                onAssignTaskConfirmed = { _, _, _, _, _ -> },
+                onAssignTaskConfirmed = { },
                 onDismiss = {}
             )
         }

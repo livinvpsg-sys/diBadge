@@ -95,7 +95,9 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.fabxdi.dibadge.data.GroupTaskEntity
 import com.fabxdi.dibadge.data.HomeEntryEntity
+import com.fabxdi.dibadge.viewmodel.GroupTaskViewModel
 import com.fabxdi.dibadge.ui.components.AttachmentList
 import com.fabxdi.dibadge.ui.home.AvatarPhotoCache
 import com.fabxdi.dibadge.ui.home.ChatAvatar
@@ -477,14 +479,29 @@ fun ChatTopBar(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.Center
                     ) {
-                        Text(
-                            text = headerTitle,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = primaryTextColor,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        // Schedule status badge (groups only; nothing when the group has no schedule)
+                        val scheduleStatus: ScheduleStatus? = if (isOneToOne) null else {
+                            val taskVm: GroupTaskViewModel = viewModel()
+                            val groupTasks by remember(entryKey) { taskVm.getTasksForGroup(entryKey) }
+                                .collectAsState(initial = emptyList())
+                            remember(groupTasks) { computeScheduleStatus(groupTasks, LocalDate.now()) }
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = headerTitle,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = primaryTextColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            if (scheduleStatus != null) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                ScheduleStatusBadge(status = scheduleStatus, secondaryTextColor = secondaryTextColor)
+                            }
+                        }
 
                         if (isOneToOne) {
                             if (otherUserNickname.isNotBlank()) {
@@ -619,5 +636,64 @@ fun ChatTopBar(
                 }
             }
         }
+    }
+}
+
+enum class ScheduleStatus(val label: String) {
+    ONGOING("Ongoing"),
+    OVERDUE("Overdue"),
+    UPCOMING("Upcoming"),
+    COMPLETED("Completed")
+}
+
+/**
+ * Looks only at schedule items (group tasks that have a start date).
+ * Picks one status: ongoing, then overdue, then upcoming, then completed. Null when there is no schedule.
+ */
+fun computeScheduleStatus(tasks: List<GroupTaskEntity>, today: LocalDate): ScheduleStatus? {
+    val items = tasks.filter { it.startDate != null }
+    if (items.isEmpty()) return null
+    fun end(t: GroupTaskEntity): LocalDate = t.endDate ?: t.dueDate ?: t.startDate!!
+    val open = items.filter { !it.isCompleted }
+    return when {
+        open.any { !it.startDate!!.isAfter(today) && !end(it).isBefore(today) } -> ScheduleStatus.ONGOING
+        open.any { end(it).isBefore(today) } -> ScheduleStatus.OVERDUE
+        open.any { it.startDate!!.isAfter(today) } -> ScheduleStatus.UPCOMING
+        else -> ScheduleStatus.COMPLETED
+    }
+}
+
+@Composable
+private fun ScheduleStatusBadge(status: ScheduleStatus, secondaryTextColor: Color) {
+    val isDark = DiBadgeTheme.colors.isDark
+    val color = when (status) {
+        ScheduleStatus.OVERDUE -> if (isDark) Color(0xFFE8837A) else Color(0xFFC4433A)
+        ScheduleStatus.ONGOING -> if (isDark) Color(0xFF6FCF97) else Color(0xFF2E9E5B)
+        ScheduleStatus.UPCOMING -> DiBadgeTheme.colors.accent
+        ScheduleStatus.COMPLETED -> secondaryTextColor
+    }
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(color.copy(alpha = 0.12f))
+            .border(1.dp, color.copy(alpha = 0.35f), RoundedCornerShape(50))
+            .padding(start = 6.dp, end = 8.dp, top = 1.dp, bottom = 1.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Spacer(modifier = Modifier.width(5.dp))
+        Text(
+            text = status.label,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            color = color,
+            maxLines = 1,
+            softWrap = false
+        )
     }
 }

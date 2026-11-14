@@ -176,13 +176,13 @@ fun GroupLibraryScreen(
 
     Scaffold(
         topBar = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(colors.background)
-                    .statusBarsPadding()
-            ) {
-                if (isSearching) {
+            if (isSearching) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(colors.background)
+                        .statusBarsPadding()
+                ) {
                     // Search Top Bar
                     Row(
                         modifier = Modifier
@@ -272,42 +272,36 @@ fun GroupLibraryScreen(
                             focusRequester.requestFocus()
                         }
                     }
-                } else {
-                    // Standard Top Bar
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp)
-                            .padding(horizontal = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = onBack, modifier = Modifier.size(44.dp)) {
+                    HorizontalDivider(thickness = 1.dp, color = outlineColor)
+                }
+            } else {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = LIBRARY_TITLE,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = primaryTextColor
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Back",
                                 tint = primaryTextColor
                             )
                         }
-
-                        Spacer(modifier = Modifier.width(4.dp))
-
-                        Text(
-                            text = LIBRARY_TITLE,
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = primaryTextColor,
-                            modifier = Modifier.weight(1f)
-                        )
-
+                    },
+                    actions = {
                         Box {
-                            IconButton(onClick = { showMenu = true }, modifier = Modifier.size(40.dp)) {
+                            IconButton(onClick = { showMenu = true }) {
                                 Icon(
                                     imageVector = Icons.Default.MoreVert,
                                     contentDescription = "Options",
                                     tint = primaryTextColor
                                 )
                             }
-
                             DropdownMenu(
                                 expanded = showMenu,
                                 onDismissRequest = { showMenu = false },
@@ -395,32 +389,33 @@ fun GroupLibraryScreen(
                                     }
                                 }
                             }
+
                         }
-                    }
-                }
-                HorizontalDivider(thickness = 1.dp, color = outlineColor)
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background
+                    )
+                )
             }
         },
         floatingActionButton = {
             if (canUpload && !isSearching) {
                 Surface(
                     modifier = Modifier
-                        .padding(end = 4.dp, bottom = 12.dp)
-                        .size(56.dp)
+                        .size(52.dp)
                         .clickable {
                             targetCategoryForUpload = null
                             showUploadSheet = true
                         },
-                    shape = RoundedCornerShape(18.dp),
-                    color = cardBgColor,
-                    border = BorderStroke(1.dp, outlineColor),
+                    shape = CircleShape,
+                    color = diBadgeColors.fabContainer,
                     shadowElevation = 4.dp
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.Upload,
                             contentDescription = "Upload",
-                            tint = primaryTextColor,
+                            tint = diBadgeColors.fabIcon,
                             modifier = Modifier.size(24.dp)
                         )
                     }

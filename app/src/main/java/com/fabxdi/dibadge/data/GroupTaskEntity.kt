@@ -21,7 +21,13 @@ data class GroupTaskEntity(
     val completedAt: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val startDate: LocalDate? = null,
-    val endDate: LocalDate? = null
+    val endDate: LocalDate? = null,
+    // "low" | "medium" | "high"
+    val priority: String = "medium",
+    // JSON array of {"t": text, "d": done}; "[]" when the task has no checklist
+    val checklistJson: String = "[]",
+    // minutes before the due time to remind the assignee; -1 = no reminder, 0 = at due time
+    val remindBeforeMinutes: Int = -1
 ) {
     val notes: String get() = note
 }

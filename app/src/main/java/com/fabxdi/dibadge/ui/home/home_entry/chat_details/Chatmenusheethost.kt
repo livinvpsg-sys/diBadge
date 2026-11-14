@@ -1,12 +1,8 @@
 package com.fabxdi.dibadge.ui.home.home_entry.chat_details
 
+import androidx.activity.compose.BackHandler
 import android.widget.Toast
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
@@ -63,34 +59,30 @@ fun ChatMenuSheetHost(
     var showAddMember by remember { mutableStateOf(false) }
 
     when (action) {
-        "forms", "credentials", "library" -> Dialog(
-            onDismissRequest = onClose,
-            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
-        ) {
+        "forms", "credentials", "library" -> {
+            BackHandler { onClose() }
             Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                Box(modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-                    when (action) {
-                        "forms" -> GroupFormsScreen(
-                            groupId = entry.id.toString(),
-                            groupName = groupName,
-                            canUserManage = canUserManage,
-                            onBack = onClose,
-                            onOpenMyForms = { onClose(); onOpenMyForms() }
-                        )
-                        "credentials" -> CredentialsScreen(
-                            groupId = entry.id.toString(),
-                            groupName = groupName,
-                            canUserManage = canUserManage,
-                            members = members,
-                            onBack = onClose
-                        )
-                        else -> GroupLibraryScreen(
-                            groupId = entry.id.toString(),
-                            groupName = groupName,
-                            canUserManage = canUserManage,
-                            onBack = onClose
-                        )
-                    }
+                when (action) {
+                    "forms" -> GroupFormsScreen(
+                        groupId = entry.id.toString(),
+                        groupName = groupName,
+                        canUserManage = canUserManage,
+                        onBack = onClose,
+                        onOpenMyForms = { onClose(); onOpenMyForms() }
+                    )
+                    "credentials" -> CredentialsScreen(
+                        groupId = entry.id.toString(),
+                        groupName = groupName,
+                        canUserManage = canUserManage,
+                        members = members,
+                        onBack = onClose
+                    )
+                    else -> GroupLibraryScreen(
+                        groupId = entry.id.toString(),
+                        groupName = groupName,
+                        canUserManage = canUserManage,
+                        onBack = onClose
+                    )
                 }
             }
         }
@@ -154,16 +146,36 @@ fun ChatMenuSheetHost(
                 currentRole = resolvedUserRole,
                 currentUserName = currentUserName,
                 currentUserUid = currentUserId,
-                onAssignTaskConfirmed = { title, assignees, dueDate, dueTime, note ->
+                linkedGroups = acceptedConnections
+                    .filter { it.otherEntityType == "personalGroup" && it.otherEntityId != entry.id.toString() }
+                    .map { LinkedGroupOption(id = it.otherEntityId, name = it.otherEntityName) },
+                loadLinkedMembers = { gid -> fetchGroupMembersForTask(gid) },
+                onAssignTaskConfirmed = { input ->
                     groupTaskViewModel.assignTasks(
-                        title = title,
+                        title = input.title,
                         groupId = entry.id.toString(),
-                        assignees = assignees,
+                        assignees = input.assignees,
                         assignerName = currentUserName,
                         assignerUid = currentUserId,
-                        dueDate = dueDate,
-                        dueTime = dueTime,
-                        note = note
+                        dueDate = input.dueDate,
+                        dueTime = input.dueTime,
+                        note = input.note,
+                        priority = input.priority,
+                        remindBeforeMinutes = input.remindBeforeMinutes,
+                        checklist = input.checklist
+                    )
+                },
+                onToggleChecklistItem = { task, index ->
+                    groupTaskViewModel.toggleChecklistItem(entry.id.toString(), task.id, index)
+                },
+                onMarkDone = { task, done ->
+                    groupTaskViewModel.updateTaskCompletion(
+                        groupId = entry.id.toString(),
+                        taskId = task.id,
+                        isCompleted = done,
+                        userName = currentUserName,
+                        userUid = currentUserId,
+                        onUpdated = {}
                     )
                 },
                 onDismiss = onClose
