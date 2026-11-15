@@ -58,6 +58,7 @@ import com.fabxdi.dibadge.R
 import com.google.firebase.firestore.FirebaseFirestore
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.AudioFile
+import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.DocumentScanner
 import androidx.compose.material.icons.outlined.Edit
@@ -546,7 +547,7 @@ fun ChatTopBar(
                     )
                 }
 
-                // Three-dot menu (groups only): opens a bottom sheet with Members, Groups, Forms, Tasks, Credentials, Library
+                // Three-dot menu (groups only): opens a bottom sheet with Announcements, Members, Groups, Forms, Tasks, Credentials, Library
                 if (!isOneToOne) {
                     var menuOpen by remember { mutableStateOf(false) }
                     IconButton(
@@ -611,6 +612,9 @@ fun ChatTopBar(
                                         Spacer(modifier = Modifier.width(16.dp))
                                         Text(label, fontSize = 16.sp, color = primaryTextColor)
                                     }
+                                }
+                                sheetRow("Announcements", "announcements") {
+                                    Icon(Icons.Outlined.Campaign, null, tint = secondaryTextColor, modifier = Modifier.size(22.dp))
                                 }
                                 sheetRow("Members", "members") {
                                     Icon(painterResource(R.drawable.ic_members), null, tint = secondaryTextColor, modifier = Modifier.size(22.dp))

@@ -652,7 +652,9 @@ class ChatViewModel : ViewModel() {
         messageId: String? = null,
         // Set when this message is a copy of a group-mention message being posted into a linked group
         crossPostThreadId: String? = null,
-        crossPostSourceName: String? = null
+        crossPostSourceName: String? = null,
+        // Members named in the message (@name or @All). They get a push even if the chat is muted.
+        mentionedUids: List<String> = emptyList()
     ) {
         if (groupId.isBlank()) return
         if (text.isBlank() && attachmentUris.isEmpty()) return
@@ -731,6 +733,10 @@ class ChatViewModel : ViewModel() {
                     "timestamp" to ts,
                     "isEdited" to false
                 )
+
+                if (mentionedUids.isNotEmpty()) {
+                    docData["mentionedUids"] = mentionedUids.distinct()
+                }
 
                 if (!crossPostThreadId.isNullOrBlank()) {
                     docData["crossPostThreadId"] = crossPostThreadId

@@ -988,7 +988,7 @@ fun ChatScreen(
                 onSearchOlder = { searchOlder() },
                 onSearchNewer = { searchNewer() },
                 onMenuAction = { action ->
-                    if (action in listOf("members", "groups", "tasks", "forms", "credentials", "library")) {
+                    if (action in listOf("announcements", "members", "groups", "tasks", "forms", "credentials", "library")) {
                         menuSheetAction = action
                     } else {
                         detailsOpenAction = action; showGroupDetails = true
@@ -1768,6 +1768,19 @@ fun ChatScreen(
                             val performSend: () -> Unit = {
                                 val currentText = inputText.trim()
                                 val originalMsgId = java.util.UUID.randomUUID().toString()
+
+                                // Members named in this message: they get a push notification (also when muted)
+                                val mentionedMemberUids = mutableSetOf<String>()
+                                val otherMembers = members.filter { !it.isYou && it.uid != currentUserId }
+                                if (currentText.contains("@All")) {
+                                    otherMembers.forEach { mentionedMemberUids.add(it.uid) }
+                                }
+                                otherMembers.forEach { member ->
+                                    if (currentText.contains("@${member.displayName}", ignoreCase = true)) {
+                                        mentionedMemberUids.add(member.uid)
+                                    }
+                                }
+
                                 chatViewModel.sendMessage(
                                     context = context,
                                     groupId = currentEntry.id.toString(),
@@ -1776,7 +1789,8 @@ fun ChatScreen(
                                     durationsMap = pendingDurations,
                                     replyingTo = replyingTo,
                                     replyingToAttachmentUri = replyingToAttachmentUriState,
-                                    messageId = originalMsgId
+                                    messageId = originalMsgId,
+                                    mentionedUids = mentionedMemberUids.filter { it.isNotBlank() }
                                 )
 
                                 // Cross-post to mentioned linked groups with mention stripped for receiver
@@ -1819,47 +1833,6 @@ fun ChatScreen(
                                                 crossPostSourceName = currentEntry.title
                                             )
                                         }
-                                    }
-                                }
-
-                                // Process member mentions for de-duplicated notification in sender's group
-                                val mentionedMemberUids = mutableSetOf<String>()
-                                val otherMembers = members.filter { !it.isYou && it.uid != currentUserId }
-
-                                if (currentText.contains("@All")) {
-                                    otherMembers.forEach { mentionedMemberUids.add(it.uid) }
-                                }
-                                otherMembers.forEach { member ->
-                                    if (currentText.contains("@${member.displayName}", ignoreCase = true)) {
-                                        mentionedMemberUids.add(member.uid)
-                                    }
-                                }
-
-                                val textBody = stripGroupMention(currentText)
-                                val notificationBody = if (textBody.isNotBlank()) {
-                                    textBody
-                                } else if (attachedFiles.isNotEmpty()) {
-                                    val category = getAttachmentCategory(context, attachedFiles.first())
-                                    val count = attachedFiles.size
-                                    when (category) {
-                                        AttachmentCategory.IMAGE -> if (count == 1) "1 photo" else "$count photos"
-                                        AttachmentCategory.VIDEO -> if (count == 1) "1 video" else "$count videos"
-                                        AttachmentCategory.AUDIO -> if (count == 1) "1 audio file" else "$count audio files"
-                                        AttachmentCategory.DOCUMENT -> if (count == 1) "1 document" else "$count documents"
-                                    }
-                                } else "Sent a message"
-
-                                val currentSenderName = FirebaseAuth.getInstance().currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Me"
-
-                                for (memberUid in mentionedMemberUids) {
-                                    if (memberUid.isNotBlank()) {
-                                        chatViewModel.sendMemberMentionNotification(
-                                            context = context,
-                                            targetUid = memberUid,
-                                            senderName = currentSenderName,
-                                            groupName = currentEntry.title,
-                                            body = notificationBody
-                                        )
                                     }
                                 }
 
@@ -2666,7 +2639,7 @@ fun ChatScreen(
             )
         }
     }
-    // Members / Groups / Tasks sheets and Forms / Credentials / Library screens open over the chat
+    // Members / Groups / Tasks sheets and Announcements / Forms / Credentials / Library screens open over the chat
     menuSheetAction?.let { act ->
         com.fabxdi.dibadge.ui.home.home_entry.chat_details.ChatMenuSheetHost(
             entry = currentEntry,

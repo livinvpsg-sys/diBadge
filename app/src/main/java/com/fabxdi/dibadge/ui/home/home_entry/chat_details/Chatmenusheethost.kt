@@ -17,9 +17,9 @@ import com.fabxdi.dibadge.viewmodel.GroupTaskViewModel
 import com.google.firebase.auth.FirebaseAuth
 
 /**
- * Shows the Members / Groups / Tasks sheet straight over the chat screen.
+ * Shows the Members / Groups / Tasks sheet, or the Announcements / Forms / Credentials / Library screen, straight over the chat screen.
  * No group details screen is composed, so nothing flashes.
- * action: "members" | "groups" | "tasks"
+ * action: "announcements" | "members" | "groups" | "tasks" | "forms" | "credentials" | "library"
  */
 @Composable
 fun ChatMenuSheetHost(
@@ -59,10 +59,18 @@ fun ChatMenuSheetHost(
     var showAddMember by remember { mutableStateOf(false) }
 
     when (action) {
-        "forms", "credentials", "library" -> {
+        "announcements", "forms", "credentials", "library" -> {
             BackHandler { onClose() }
             Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 when (action) {
+                    "announcements" -> AnnouncementsScreen(
+                        groupId = entry.id.toString(),
+                        groupName = groupName,
+                        canUserManage = canUserManage,
+                        members = members,
+                        currentUserRole = resolvedUserRole,
+                        onBack = onClose
+                    )
                     "forms" -> GroupFormsScreen(
                         groupId = entry.id.toString(),
                         groupName = groupName,
