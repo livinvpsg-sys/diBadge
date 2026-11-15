@@ -142,6 +142,12 @@ fun ChatScreen(
     val homeEntries by reminderViewModel.allHomeEntries.collectAsState(initial = emptyList())
     val currentEntry = homeEntries.find { it.id == entry.id } ?: entry
 
+    // While this chat is on screen: no push for it, and its notification is cleared
+    DisposableEffect(currentEntry.id) {
+        val stopTracking = com.fabxdi.dibadge.util.ActiveChat.track(context, currentEntry.id.toString())
+        onDispose { stopTracking() }
+    }
+
     LaunchedEffect(currentEntry.id) {
         // Start loading the messages first; clearing the cache is housekeeping and runs off the main thread
         chatViewModel.listenToChatMessages(context, currentEntry.id.toString())

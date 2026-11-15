@@ -426,6 +426,18 @@ fun ChatDetailsScreen(
         }
     }
     var isMuted by remember { mutableStateOf(false) }
+    // Mute is saved in Firestore so the push Worker can skip muted chats
+    val muteChatId = entry.id.toString()
+    LaunchedEffect(muteChatId) {
+        val muteUid = FirebaseAuth.getInstance().currentUser?.uid ?: return@LaunchedEffect
+        com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            .collection("users").document(muteUid)
+            .collection("mutedChats").document(muteChatId)
+            .get()
+            .addOnSuccessListener { d ->
+                isMuted = (d.getLong("until") ?: 0L) > System.currentTimeMillis()
+            }
+    }
     var showMuteSheet by remember { mutableStateOf(false) }
     var showClearChatDialog by remember { mutableStateOf(false) }
     var memberSearchQuery by remember { mutableStateOf("") }
@@ -1485,6 +1497,12 @@ fun ChatDetailsScreen(
                 onSelectMute = { showMuteSheet = true },
                 onSelectUnmute = {
                     isMuted = false
+                    FirebaseAuth.getInstance().currentUser?.uid?.let { muteUid ->
+                        com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                            .collection("users").document(muteUid)
+                            .collection("mutedChats").document(muteChatId)
+                            .delete()
+                    }
                     customToastMessage = "Notifications unmuted"
                 },
                 onSelectClearChat = { showClearChatDialog = true },
@@ -1713,6 +1731,17 @@ fun ChatDetailsScreen(
             MuteChoiceSheet(
                 onMuteConfirmed = { option ->
                     isMuted = true
+                    val muteUntil = when (option) {
+                        "8 hours" -> System.currentTimeMillis() + 8 * 60 * 60 * 1000L
+                        "1 week" -> System.currentTimeMillis() + 7 * 24 * 60 * 60 * 1000L
+                        else -> Long.MAX_VALUE
+                    }
+                    FirebaseAuth.getInstance().currentUser?.uid?.let { muteUid ->
+                        com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                            .collection("users").document(muteUid)
+                            .collection("mutedChats").document(muteChatId)
+                            .set(mapOf("until" to muteUntil))
+                    }
                     customToastMessage = "Muted for $option"
                 },
                 onDismiss = { showMuteSheet = false }

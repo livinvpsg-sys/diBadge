@@ -24,6 +24,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
@@ -95,6 +101,8 @@ fun MainDashboard(
     initialReminderIdToEdit: Int? = null,
     openSnoozeTimePicker: Boolean = false,
     onSnoozeHandled: () -> Unit = {},
+    openChatGroupId: String? = null,
+    onChatOpenHandled: () -> Unit = {},
     viewModel: ToDoViewModel = viewModel(),
     leaveOvertimeViewModel: LeaveOvertimeViewModel = viewModel(),
     inboxViewModel: InboxViewModel = viewModel()
@@ -112,6 +120,16 @@ fun MainDashboard(
     var selectedInboxItemForDetail by remember { mutableStateOf<InboxEntity?>(null) }
 
     val homeEntries by viewModel.allHomeEntries.collectAsState(initial = emptyList())
+
+    // Opens the chat when a push notification was tapped
+    LaunchedEffect(openChatGroupId, homeEntries) {
+        val wanted = openChatGroupId ?: return@LaunchedEffect
+        val entry = homeEntries.find { it.id.toString() == wanted }
+        if (entry != null) {
+            selectedEntryForChat = entry
+            onChatOpenHandled()
+        }
+    }
     val unreadInboxCount by inboxViewModel.unreadCount.collectAsState()
     val inboxItems by inboxViewModel.allInboxItems.collectAsState(initial = emptyList())
 
@@ -702,11 +720,26 @@ fun AppBottomBar(
                 icon = {
                     Box {
                         if (tab == HomeTab.Home && isSelected) {
+                            // Logo keeps its light-to-dark gradient, but built from the theme accent
+                            val logoBrush = Brush.linearGradient(
+                                colors = listOf(
+                                    lerp(diBadgeColors.accent, Color.White, 0.35f),
+                                    lerp(diBadgeColors.accent, Color.Black, 0.35f)
+                                )
+                            )
                             Icon(
                                 painter = painterResource(id = R.drawable.ic_dibadge_mark),
                                 contentDescription = tab.label,
                                 tint = Color.Unspecified,
-                                modifier = Modifier.size(iconSize)
+                                modifier = Modifier
+                                    .size(iconSize)
+                                    .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                                    .drawWithCache {
+                                        onDrawWithContent {
+                                            drawContent()
+                                            drawRect(brush = logoBrush, blendMode = BlendMode.SrcIn)
+                                        }
+                                    }
                             )
                         } else {
                             Icon(

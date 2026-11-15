@@ -46,6 +46,15 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
+        <!-- Receives push notifications from the diBadge push Worker -->
+        <service
+            android:name="com.fabxdi.dibadge.util.DiBadgeMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name="com.fabxdi.dibadge.util.AlarmReceiver"
             android:exported="false" />

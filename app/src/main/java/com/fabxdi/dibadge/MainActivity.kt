@@ -34,6 +34,8 @@ import com.fabxdi.dibadge.ui.settings.SettingsDialog
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.AlarmSoundManager
 import com.fabxdi.dibadge.util.LiveProfilePhoto
+import com.fabxdi.dibadge.util.PushNotifier
+import com.fabxdi.dibadge.util.PushTokens
 import com.fabxdi.dibadge.util.fixDownloadUrl
 import com.fabxdi.dibadge.viewmodel.AuthViewModel
 import com.fabxdi.dibadge.viewmodel.LeaveOvertimeViewModel
@@ -44,6 +46,8 @@ import java.time.LocalDate
 class MainActivity : ComponentActivity() {
     private var reminderIdToOpenState by mutableIntStateOf(-1)
     private var openSnoozeTimePickerState by mutableStateOf(false)
+    // Chat to open because a push notification was tapped
+    private var chatGroupIdToOpenState by mutableStateOf<String?>(null)
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -54,6 +58,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        intent.getStringExtra(PushNotifier.EXTRA_OPEN_CHAT)?.let { chatGroupIdToOpenState = it }
         val newId = intent.getIntExtra("OPEN_REMINDER_ID", -1)
         if (newId != -1) {
             reminderIdToOpenState = newId
@@ -73,7 +78,9 @@ class MainActivity : ComponentActivity() {
         insetsController.isAppearanceLightNavigationBars = false
 
         checkNotificationPermission()
+        PushNotifier.ensureChannel(this)
         AlarmSoundManager.stopAlarmSound()
+        intent.getStringExtra(PushNotifier.EXTRA_OPEN_CHAT)?.let { chatGroupIdToOpenState = it }
 
         val initialId = intent.getIntExtra("OPEN_REMINDER_ID", -1)
         if (initialId != -1) {
@@ -105,6 +112,10 @@ class MainActivity : ComponentActivity() {
                     AuthScreen(viewModel = authViewModel)
                 } else {
                     val user = currentUser
+                    // Save this phone's push address once signed in
+                    LaunchedEffect(user?.uid) {
+                        if (user?.uid != null) PushTokens.register()
+                    }
                     val displayName = user?.displayName?.ifBlank { null }
                         ?: user?.email?.substringBefore("@")
                         ?: "User"
@@ -203,7 +214,13 @@ class MainActivity : ComponentActivity() {
                             email = user?.email ?: "",
                             photoUrl = livePhoto ?: userPhotoUrl,
                             onSettingsClick = { showSettingsDialog = true },
+                            openChatGroupId = chatGroupIdToOpenState,
+                            onChatOpenHandled = {
+                                chatGroupIdToOpenState = null
+                                intent.removeExtra(PushNotifier.EXTRA_OPEN_CHAT)
+                            },
                             onSignOut = {
+                                PushTokens.unregister()
                                 themeViewModel.resetToSystem()
                                 authViewModel.signOut()
                             },

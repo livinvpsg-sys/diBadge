@@ -18,6 +18,7 @@ import com.fabxdi.dibadge.util.AlarmReceiver
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.fabxdi.dibadge.util.MediaCloud
 import com.fabxdi.dibadge.util.MediaCompressor
+import com.fabxdi.dibadge.util.PushApi
 import com.fabxdi.dibadge.ui.home.home_entry.chat.AttachmentCategory
 import com.fabxdi.dibadge.ui.home.home_entry.chat.getAttachmentCategory
 import com.google.firebase.Timestamp
@@ -753,6 +754,8 @@ class ChatViewModel : ViewModel() {
                     .set(docData)
                     .await()
 
+                PushApi.messageSent(groupId, msgId)
+
                 val preview = when {
                     text.isNotBlank() -> text.trim()
                     uploadedUrls.isNotEmpty() -> "Attachment"
@@ -819,6 +822,8 @@ class ChatViewModel : ViewModel() {
                     .document(messageId)
                     .set(docData)
                     .await()
+
+                PushApi.messageSent(groupId, messageId)
 
                 dao.insertChatMessage(
                     sendingEntity.copy(
@@ -1216,6 +1221,8 @@ class ChatViewModel : ViewModel() {
                     .document(messageId)
                     .set(docData)
                     .await()
+
+                PushApi.messageSent(groupId, messageId)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -1335,6 +1342,8 @@ class ChatViewModel : ViewModel() {
                     .document(messageId)
                     .set(docData)
                     .await()
+
+                PushApi.messageSent(groupId, messageId)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -1404,6 +1413,8 @@ class ChatViewModel : ViewModel() {
                     .document(messageId)
                     .set(docData)
                     .await()
+
+                PushApi.messageSent(groupId, messageId)
 
                 try {
                     db.collection("personalGroups").document(groupId)
@@ -1528,6 +1539,8 @@ class ChatViewModel : ViewModel() {
                             .document(newMsgId)
                             .set(docData)
                             .await()
+
+                        PushApi.messageSent(targetGroupId, newMsgId)
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
