@@ -44,6 +44,7 @@ import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.viewmodel.AnnouncementItem
 import com.fabxdi.dibadge.viewmodel.AnnouncementViewModel
 import com.fabxdi.dibadge.viewmodel.GroupMember
+import com.fabxdi.dibadge.viewmodel.LinkedReadCount
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.delay
 import java.time.Instant
@@ -60,7 +61,7 @@ private fun dayTimeText(ms: Long): String =
         .format(DateTimeFormatter.ofPattern("d MMM, h:mm a", Locale.getDefault()))
 
 /**
- * Announcements for one group chat. Everyone can read them and confirm with "Got it".
+ * Announcements for one group chat. Opening (expanding) a card marks it as read for that person.
  * Only the owner and admins (canUserManage) see the + button, the ⋮ menu and can delete.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -72,6 +73,10 @@ fun AnnouncementsScreen(
     members: List<GroupMember>,
     currentUserRole: String,
     onBack: () -> Unit,
+    /** Accepted linked groups as (id, name). Used by "Include groups" on the new announcement screen. */
+    linkedGroups: List<Pair<String, String>> = emptyList(),
+    /** Card to open straight away (when the pinned card in the chat was tapped). */
+    initialExpandedId: String? = null,
     viewModel: AnnouncementViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -85,10 +90,18 @@ fun AnnouncementsScreen(
     val items by viewModel.items.collectAsState()
     val loaded by viewModel.loaded.collectAsState()
     val error by viewModel.error.collectAsState()
+    val linkedCounts by viewModel.linkedCounts.collectAsState()
     LaunchedEffect(error) {
         error?.let {
             Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
             viewModel.clearError()
+        }
+    }
+
+    // For announcements that came from a linked group: report how many people are in this group
+    LaunchedEffect(items, members) {
+        if (members.isNotEmpty()) {
+            items.forEach { if (it.originGroupId.isNotBlank()) viewModel.syncLinkedTotal(groupId, it, members.size) }
         }
     }
 
@@ -102,21 +115,30 @@ fun AnnouncementsScreen(
     }
 
     var showNew by remember { mutableStateOf(false) }
-    var expandedId by remember { mutableStateOf<String?>(null) }
+    var expandedId by remember { mutableStateOf(initialExpandedId) }
+
+    // Opening a card counts as reading it
+    LaunchedEffect(expandedId, items) {
+        val open = items.firstOrNull { it.id == expandedId } ?: return@LaunchedEffect
+        if (myUid.isNotBlank() && !open.readAt.containsKey(myUid)) viewModel.markRead(groupId, open)
+    }
     var readSheetId by remember { mutableStateOf<String?>(null) }
     var deleteTarget by remember { mutableStateOf<AnnouncementItem?>(null) }
 
     if (showNew) {
         NewAnnouncementScreen(
+            linkedGroups = linkedGroups,
             onClose = { showNew = false },
-            onPost = { text, mustAck, days ->
+            onPost = { text, mustAck, days, targetIds ->
                 viewModel.post(
                     groupId = groupId,
+                    groupName = groupName,
                     text = text,
                     authorName = myName,
                     authorRole = currentUserRole,
                     mustAck = mustAck,
-                    autoEndDays = days
+                    autoEndDays = days,
+                    targetGroupIds = targetIds
                 ) { ok ->
                     if (ok) Toast.makeText(context, "Announcement posted", Toast.LENGTH_SHORT).show()
                 }
@@ -206,10 +228,9 @@ fun AnnouncementsScreen(
                                 myUid = myUid,
                                 memberUids = memberUids,
                                 onToggle = { expandedId = if (expandedId == a.id) null else a.id },
-                                onGotIt = { viewModel.markRead(groupId, a.id) },
                                 onSeeWhoRead = { readSheetId = a.id },
                                 onEndNow = {
-                                    viewModel.endNow(groupId, a.id)
+                                    viewModel.endNow(groupId, a)
                                     Toast.makeText(context, "Moved to Previous", Toast.LENGTH_SHORT).show()
                                 },
                                 onDelete = { deleteTarget = a }
@@ -227,7 +248,6 @@ fun AnnouncementsScreen(
                                 myUid = myUid,
                                 memberUids = memberUids,
                                 onToggle = { expandedId = if (expandedId == a.id) null else a.id },
-                                onGotIt = { viewModel.markRead(groupId, a.id) },
                                 onSeeWhoRead = { readSheetId = a.id },
                                 onEndNow = {},
                                 onDelete = { deleteTarget = a }
@@ -254,6 +274,7 @@ fun AnnouncementsScreen(
         ReadStatusSheet(
             item = sheetItem,
             members = members,
+            linked = linkedCounts[sheetItem.id],
             onDismiss = { readSheetId = null }
         )
     }
@@ -265,7 +286,7 @@ fun AnnouncementsScreen(
             text = { Text("It will be removed for everyone in the group.") },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.delete(groupId, target.id)
+                    viewModel.delete(groupId, target)
                     if (expandedId == target.id) expandedId = null
                     if (readSheetId == target.id) readSheetId = null
                     deleteTarget = null
@@ -292,7 +313,7 @@ private fun SectionLabel(text: String) {
 
 /**
  * Collapsed: a fixed-height card with one line of text. Tap the card to open it, tap again (or the ^) to close.
- * "Got it" and the ⋮ menu have their own taps and do not open or close the card.
+ * The ⋮ menu has its own tap and does not open or close the card.
  */
 @Composable
 private fun AnnouncementCard(
@@ -303,7 +324,6 @@ private fun AnnouncementCard(
     myUid: String,
     memberUids: Set<String>,
     onToggle: () -> Unit,
-    onGotIt: () -> Unit,
     onSeeWhoRead: () -> Unit,
     onEndNow: () -> Unit,
     onDelete: () -> Unit
@@ -356,7 +376,11 @@ private fun AnnouncementCard(
                     Spacer(modifier = Modifier.width(6.dp))
                 }
                 Text(
-                    text = "${item.authorName}$roleLabel · ${dayText(item.createdAt)}",
+                    text = if (item.originGroupName.isNotBlank()) {
+                        "From ${item.originGroupName} · ${item.authorName}$roleLabel · ${dayText(item.createdAt)}"
+                    } else {
+                        "${item.authorName}$roleLabel · ${dayText(item.createdAt)}"
+                    },
                     fontSize = 12.sp,
                     color = colors.onSurfaceVariant,
                     maxLines = 1,
@@ -465,26 +489,13 @@ private fun AnnouncementCard(
                     }
                     ongoing -> {
                         Text(
-                            text = "Please confirm you have read this",
+                            text = "Tap to read",
                             fontSize = 12.sp,
                             color = colors.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = onGotIt,
-                            shape = CircleShape,
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = dc.accentFill,
-                                contentColor = Color.White
-                            ),
-                            modifier = Modifier.height(32.dp)
-                        ) {
-                            Text("Got it", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                        }
                     }
                     else -> {
                         Text(
@@ -518,6 +529,7 @@ private fun AnnouncementCard(
 private fun ReadStatusSheet(
     item: AnnouncementItem,
     members: List<GroupMember>,
+    linked: LinkedReadCount?,
     onDismiss: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
@@ -561,6 +573,38 @@ private fun ReadStatusSheet(
                 color = dc.accentFill,
                 trackColor = colors.outline.copy(alpha = 0.4f)
             )
+            if (item.sharedGroupIds.isNotEmpty()) {
+                // Linked groups: only a number, never names
+                Spacer(modifier = Modifier.height(14.dp))
+                val lRead = linked?.read ?: 0
+                val lTotal = linked?.total ?: 0
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Linked groups",
+                        fontSize = 14.sp,
+                        color = colors.onBackground,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = if (lTotal > 0) "$lRead of $lTotal read" else "$lRead read",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = colors.onBackground
+                    )
+                }
+                if (lTotal > 0) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = { (lRead.toFloat() / lTotal).coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp)),
+                        color = dc.accentFill,
+                        trackColor = colors.outline.copy(alpha = 0.4f)
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
@@ -649,8 +693,9 @@ private val AUTO_END_CHOICES = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NewAnnouncementScreen(
+    linkedGroups: List<Pair<String, String>>,
     onClose: () -> Unit,
-    onPost: (text: String, mustAck: Boolean, autoEndDays: Int) -> Unit
+    onPost: (text: String, mustAck: Boolean, autoEndDays: Int, targetGroupIds: List<String>) -> Unit
 ) {
     BackHandler { onClose() }
 
@@ -661,6 +706,8 @@ private fun NewAnnouncementScreen(
     var mustAck by rememberSaveable { mutableStateOf(true) }
     var autoEndDays by rememberSaveable { mutableIntStateOf(7) }
     var daysMenuOpen by remember { mutableStateOf(false) }
+    var selectedGroups by remember { mutableStateOf(setOf<String>()) }
+    var showGroupPicker by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
@@ -686,7 +733,7 @@ private fun NewAnnouncementScreen(
                 },
                 actions = {
                     Button(
-                        onClick = { onPost(text.trim(), mustAck, autoEndDays) },
+                        onClick = { onPost(text.trim(), mustAck, autoEndDays, selectedGroups.toList()) },
                         enabled = text.isNotBlank(),
                         shape = CircleShape,
                         colors = ButtonDefaults.buttonColors(
@@ -765,7 +812,7 @@ private fun NewAnnouncementScreen(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Members must acknowledge", fontSize = 15.sp, color = colors.onBackground)
                     Text(
-                        text = "Shows a Got it button and a read count",
+                        text = "Shows who has read it and a read count",
                         fontSize = 12.sp,
                         color = colors.onSurfaceVariant
                     )
@@ -819,6 +866,42 @@ private fun NewAnnouncementScreen(
                 }
             }
 
+            if (linkedGroups.isNotEmpty()) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                    thickness = 1.dp,
+                    color = colors.outline.copy(alpha = 0.5f)
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showGroupPicker = true }
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Include groups", fontSize = 15.sp, color = colors.onBackground)
+                        Text(
+                            text = "Also post to linked groups",
+                            fontSize = 12.sp,
+                            color = colors.onSurfaceVariant
+                        )
+                    }
+                    Surface(shape = RoundedCornerShape(14.dp), color = dc.well) {
+                        Text(
+                            text = when (selectedGroups.size) {
+                                0 -> "None"
+                                1 -> "1 group"
+                                else -> "${selectedGroups.size} groups"
+                            },
+                            fontSize = 13.sp,
+                            color = colors.onBackground,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                        )
+                    }
+                }
+            }
+
             Text(
                 text = "Only the owner and admins can post announcements",
                 fontSize = 12.sp,
@@ -828,6 +911,79 @@ private fun NewAnnouncementScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 24.dp)
             )
+        }
+    }
+    if (showGroupPicker) {
+        val pickerState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showGroupPicker = false },
+            sheetState = pickerState,
+            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+            containerColor = colors.surface,
+            tonalElevation = 0.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Include groups",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onBackground,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { showGroupPicker = false }) {
+                        Text(
+                            text = "Done",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = dc.accent
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+                    items(linkedGroups, key = { it.first }) { (gid, gname) ->
+                        val checked = gid in selectedGroups
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selectedGroups = if (checked) selectedGroups - gid else selectedGroups + gid
+                                }
+                                .padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = checked,
+                                onCheckedChange = {
+                                    selectedGroups = if (checked) selectedGroups - gid else selectedGroups + gid
+                                },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = dc.accentFill,
+                                    checkmarkColor = Color.White
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = gname,
+                                fontSize = 16.sp,
+                                color = colors.onBackground,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

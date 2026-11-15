@@ -27,6 +27,7 @@ fun ChatMenuSheetHost(
     action: String,
     onClose: () -> Unit,
     onOpenMyForms: () -> Unit = {},
+    focusAnnouncementId: String? = null,
     detailsViewModel: GroupDetailsViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -69,6 +70,10 @@ fun ChatMenuSheetHost(
                         canUserManage = canUserManage,
                         members = members,
                         currentUserRole = resolvedUserRole,
+                        linkedGroups = acceptedConnections
+                            .filter { it.otherEntityType == "personalGroup" && it.otherEntityId != entry.id.toString() }
+                            .map { it.otherEntityId to it.otherEntityName },
+                        initialExpandedId = focusAnnouncementId,
                         onBack = onClose
                     )
                     "forms" -> GroupFormsScreen(

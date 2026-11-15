@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.DiBadge" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/launch_bg</item>
+        <item name="android:colorBackground">@color/launch_bg</item>
+        <item name="android:windowSplashScreenBackground">@color/launch_bg</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/launch_empty</item>
+    </style>
+</resources>

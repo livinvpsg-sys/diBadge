@@ -2207,28 +2207,26 @@ private fun AttachmentAndTextSection(
                             )
                             Spacer(modifier = Modifier.width(4.dp))
 
-                            val badgeText = if (message.commentCount > 99) "99+" else message.commentCount.toString()
+                            // Only the replies this person has not read yet go in the circle
+                            val badgeText = if (message.unreadCommentCount > 99) "99+" else message.unreadCommentCount.toString()
                             val onTealColor = if (isDark) Color(0xFF1F1F21) else Color.White
 
-                            Surface(
-                                shape = CircleShape,
-                                color = tealAccent,
+                            Box(
+                                contentAlignment = Alignment.Center,
                                 modifier = Modifier
                                     .height(18.dp)
                                     .widthIn(min = 18.dp)
+                                    .background(tealAccent, CircleShape)
+                                    .padding(horizontal = 5.dp)
                             ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier.padding(horizontal = 5.dp)
-                                ) {
-                                    Text(
-                                        text = badgeText,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = onTealColor,
-                                        textAlign = TextAlign.Center
-                                    )
-                                }
+                                Text(
+                                    text = badgeText,
+                                    fontSize = 11.sp,
+                                    lineHeight = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = onTealColor,
+                                    textAlign = TextAlign.Center
+                                )
                             }
                         } else {
                             val replyLabel = if (message.commentCount > 0) "$replyWord ${message.commentCount}" else replyWord

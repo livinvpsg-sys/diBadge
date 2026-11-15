@@ -160,7 +160,9 @@ fun ChatTopBar(
     onSearchQueryChange: (String) -> Unit,
     onSearchOlder: () -> Unit,
     onSearchNewer: () -> Unit,
-    onMenuAction: (String) -> Unit = {}
+    onMenuAction: (String) -> Unit = {},
+    /** True while an announcement that needs a confirmation has not been confirmed by this member yet. */
+    hasUnreadAnnouncement: Boolean = false
 ) {
     val context = LocalContext.current
     Column(
@@ -554,12 +556,23 @@ fun ChatTopBar(
                         onClick = { menuOpen = true },
                         modifier = Modifier.size(48.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "More",
-                            tint = primaryTextColor,
-                            modifier = Modifier.size(22.dp)
-                        )
+                        Box {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "More",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            if (hasUnreadAnnouncement) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(9.dp)
+                                        .align(Alignment.TopEnd)
+                                        .offset(x = 3.dp, y = (-2).dp)
+                                        .background(DiBadgeTheme.colors.accent, CircleShape)
+                                )
+                            }
+                        }
                     }
                     if (menuOpen) {
                         val menuSheetState = rememberModalBottomSheetState()
@@ -594,7 +607,7 @@ fun ChatTopBar(
                                     .padding(bottom = 28.dp)
                             ) {
                                 @Composable
-                                fun sheetRow(label: String, action: String, icon: @Composable () -> Unit) {
+                                fun sheetRow(label: String, action: String, showDot: Boolean = false, icon: @Composable () -> Unit) {
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -611,9 +624,17 @@ fun ChatTopBar(
                                         icon()
                                         Spacer(modifier = Modifier.width(16.dp))
                                         Text(label, fontSize = 16.sp, color = primaryTextColor)
+                                        if (showDot) {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .background(DiBadgeTheme.colors.accent, CircleShape)
+                                            )
+                                        }
                                     }
                                 }
-                                sheetRow("Announcements", "announcements") {
+                                sheetRow("Announcements", "announcements", hasUnreadAnnouncement) {
                                     Icon(Icons.Outlined.Campaign, null, tint = secondaryTextColor, modifier = Modifier.size(22.dp))
                                 }
                                 sheetRow("Members", "members") {

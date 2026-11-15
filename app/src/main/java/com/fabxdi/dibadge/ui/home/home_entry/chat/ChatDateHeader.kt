@@ -46,18 +46,18 @@ fun DateHeader(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = 14.dp, bottom = 6.dp),
+            .padding(top = 10.dp, bottom = 4.dp),
         contentAlignment = Alignment.Center
     ) {
         Surface(
             color = pillBgColor,
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(10.dp),
             shadowElevation = if (!isDark) 1.5.dp else 1.dp,
             tonalElevation = 0.dp
         ) {
             Text(
                 text = text,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
                 color = secondaryTextColor

@@ -7,4 +7,7 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Launch screen background. Same as the diBadge launch screen (DarkBackground in Color.kt) -->
+    <color name="launch_bg">#FF0E1114</color>
 </resources>

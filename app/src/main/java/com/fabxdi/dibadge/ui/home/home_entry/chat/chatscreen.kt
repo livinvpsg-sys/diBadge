@@ -138,6 +138,10 @@ fun ChatScreen(
     val reminderViewModel: ReminderViewModel = viewModel()
     val chatViewModel: ChatViewModel = viewModel()
     val detailsViewModel: GroupDetailsViewModel = viewModel()
+    // Announcements: used here only to show a dot while one is waiting for this member's "Got it"
+    val announcementViewModel: com.fabxdi.dibadge.viewmodel.AnnouncementViewModel = viewModel()
+    LaunchedEffect(entry.id) { announcementViewModel.start(entry.id.toString()) }
+    val announcementItems by announcementViewModel.items.collectAsState()
 
     val homeEntries by reminderViewModel.allHomeEntries.collectAsState(initial = emptyList())
     val currentEntry = homeEntries.find { it.id == entry.id } ?: entry
@@ -208,6 +212,7 @@ fun ChatScreen(
     var showGroupDetails by remember { mutableStateOf(false) }
     var detailsOpenAction by remember { mutableStateOf<String?>(null) }
     var menuSheetAction by remember { mutableStateOf<String?>(null) }
+    var focusAnnouncementId by remember { mutableStateOf<String?>(null) }
     var showMessageOptionsSheet by remember { mutableStateOf(false) }
     var selectedCommentMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var selectedSentToMessage by remember { mutableStateOf<ChatMessage?>(null) }
@@ -337,6 +342,21 @@ fun ChatScreen(
     }
 
     val threadCommentsMap by chatViewModel.threadCommentsMap.collectAsState()
+
+    // Replies already read, per thread: the time of the newest reply seen. Saved on the phone,
+    // so the count in the reply circle only shows replies that came after that.
+    val threadSeenPrefs = remember { context.getSharedPreferences("thread_seen", android.content.Context.MODE_PRIVATE) }
+    var threadSeenAt by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
+    fun threadSeenKey(threadKey: String) = "$currentUserId:$threadKey"
+    fun seenAtFor(threadKey: String): Long =
+        threadSeenAt[threadKey] ?: threadSeenPrefs.getLong(threadSeenKey(threadKey), 0L)
+    fun markThreadSeen(threadKey: String) {
+        val newest = (threadCommentsMap[threadKey] ?: emptyList()).maxOfOrNull { it.timestampMs } ?: return
+        if (newest > seenAtFor(threadKey)) {
+            threadSeenAt = threadSeenAt + (threadKey to newest)
+            threadSeenPrefs.edit().putLong(threadSeenKey(threadKey), newest).apply()
+        }
+    }
 
     // Mention picker trigger detection (list logic lives in MentionPickerLogic.kt)
     val mentionTriggerInfo = remember(inputText, members, acceptedConnections, currentUserId) {
@@ -987,6 +1007,9 @@ fun ChatScreen(
                 onSearchQueryChange = { searchQuery = it },
                 onSearchOlder = { searchOlder() },
                 onSearchNewer = { searchNewer() },
+                hasUnreadAnnouncement = !isOneToOne && announcementItems.any {
+                    it.mustAck && it.isOngoing(System.currentTimeMillis()) && !it.readAt.containsKey(currentUserId)
+                },
                 onMenuAction = { action ->
                     if (action in listOf("announcements", "members", "groups", "tasks", "forms", "credentials", "library")) {
                         menuSheetAction = action
@@ -2177,257 +2200,274 @@ fun ChatScreen(
                     showAttachmentOptions = false
                 }
         ) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                if (messagesLoaded) LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    if (messages.isNotEmpty() && groupCreatedDateText != null) {
-                        item {
-                            if (isOneToOne) {
-                                ChatStartedHeader(
-                                    createdDateText = groupCreatedDateText,
-                                    secondaryTextColor = secondaryTextColor
-                                )
-                            } else {
-                                GroupCreatedHeader(
-                                    createdDateText = groupCreatedDateText,
-                                    secondaryTextColor = secondaryTextColor
-                                )
-                            }
-                        }
+            Column(modifier = Modifier.fillMaxSize()) {
+                if (!isOneToOne) {
+                    val pinnedRole = remember(members, currentUserId, isAdmin) {
+                        com.fabxdi.dibadge.ui.home.home_entry.chat_details.resolveUserRole(
+                            members = members, currentUserId = currentUserId, isAdmin = isAdmin
+                        )
                     }
-
-                    groupedMessages.forEach { (date, dateMessages) ->
-                        stickyHeader(key = "date-$date") {
-                            DateHeader(date = date, isDark = isDark, secondaryTextColor = secondaryTextColor)
-                        }
-                        items(
-                            count = dateMessages.size,
-                            key = { index -> dateMessages[index].id }
-                        ) { index ->
-                            val rawMsg = dateMessages[index]
-                            val isFirstInRun = index == 0 || dateMessages[index - 1].senderName != rawMsg.senderName || dateMessages[index - 1].isSentByMe != rawMsg.isSentByMe
-                            // Messages from the same person in the same minute are shown as one group
-                            val groupedWithPrev = index > 0 && canGroupMessages(dateMessages[index - 1], rawMsg)
-                            val groupedWithNext = index < dateMessages.size - 1 && canGroupMessages(rawMsg, dateMessages[index + 1])
-
-                            val isGrpMention = rawMsg.isGroupMention || rawMsg.text.contains("@All") || acceptedConnections.any { rawMsg.text.contains("@${it.otherEntityName}") }
-                            val threadIdKey = rawMsg.threadId ?: rawMsg.id
-
-                            if (isGrpMention) {
-                                LaunchedEffect(threadIdKey) {
-                                    chatViewModel.listenToComments(threadIdKey)
-                                }
-                            }
-
-                            val commentsForMsg = threadCommentsMap[threadIdKey] ?: emptyList()
-                            val isThreadSeen = seenThreadIds.contains(threadIdKey)
-                            val unreadCount = if (isThreadSeen) 0 else commentsForMsg.size
-                            val latestComment = commentsForMsg.lastOrNull()
-
-                            val matchedGroupNames = acceptedConnections.mapNotNull { conn ->
-                                if (rawMsg.text.contains("@${conn.otherEntityName}")) conn.otherEntityName else null
-                            }
-
-                            val msgToRender = if (isGrpMention) {
-                                rawMsg.copy(
-                                    isGroupMention = true,
-                                    threadId = threadIdKey,
-                                    commentCount = commentsForMsg.size,
-                                    unreadCommentCount = unreadCount,
-                                    sendingGroupName = rawMsg.sendingGroupName ?: currentEntry.title,
-                                    mentionedGroupNames = if (rawMsg.mentionedGroupNames.isNotEmpty()) rawMsg.mentionedGroupNames else matchedGroupNames,
-                                    latestCommentAuthor = latestComment?.senderName,
-                                    latestCommentText = latestComment?.text
-                                )
-                            } else rawMsg
-
-                            if (msgToRender.msgType == "connectionRequest") {
-                                ConnectionRequestCard(
-                                    message = msgToRender,
-                                    cardColor = cardColor,
-                                    outlineColor = outlineColor,
-                                    primaryTextColor = primaryTextColor,
-                                    secondaryTextColor = secondaryTextColor,
-                                    accentColor = tealAccent,
-                                    onRespond = { id, st -> chatViewModel.respondToConnection(id, st) }
-                                )
-                            } else if (msgToRender.msgType == "connectionNotice") {
-                                ConnectionNoticeLine(msgToRender, secondaryTextColor)
-                            } else if (msgToRender.msgType == "systemLibraryAdded" || msgToRender.msgType == "system_library_added") {
-                                SystemLibraryChip(
-                                    message = msgToRender,
-                                    cardFillColor = cardColor,
-                                    primaryTextColor = primaryTextColor,
-                                    secondaryTextColor = secondaryTextColor,
-                                    onChipClick = {
-                                        showGroupDetails = true
-                                    }
-                                )
-                            } else {
-                                CompositionLocalProvider(LocalOpenPdf provides { pdfUri -> selectedPdfUri = pdfUri }) {
-                                    MessageBubble(
-                                        message = msgToRender,
-                                        player = player,
-                                        isSelected = selectedMessages.contains(msgToRender.id),
-                                        isAnySelected = selectedMessages.isNotEmpty(),
-                                        isFirstInRun = isFirstInRun,
-                                        isGroupedWithPrev = groupedWithPrev,
-                                        isGroupedWithNext = groupedWithNext,
-                                        isOneToOne = isOneToOne,
-                                        onBubbleBounds = { bubbleBoundsMap[msgToRender.id] = it },
-                                        onLongClick = { uri ->
-                                            if (selectedMessages.isEmpty()) {
-                                                longPressedMessage = msgToRender
-                                            } else {
-                                                selectedMessages = if (selectedMessages.contains(msgToRender.id)) selectedMessages - msgToRender.id else selectedMessages + msgToRender.id
-                                            }
-                                        },
-                                        onClick = {
-                                            if (selectedMessages.isNotEmpty()) {
-                                                selectedMessages = if (selectedMessages.contains(msgToRender.id)) selectedMessages - msgToRender.id else selectedMessages + msgToRender.id
-                                            }
-                                        },
-                                        onReplyClick = { originalId, _ ->
-                                            // Tapping the quoted message jumps to the original and highlights it
-                                            val lazyIdx = messageToLazyIndex[originalId]
-                                            if (lazyIdx != null) {
-                                                val headerOffset = if (messages.isNotEmpty() && groupCreatedDateText != null) 1 else 0
-                                                scope.launch {
-                                                    listState.animateScrollToItem(lazyIdx + headerOffset)
-                                                    highlightedMessageId = originalId
-                                                }
-                                            }
-                                        },
-                                        isHighlighted = highlightedMessageId == msgToRender.id || (isSearchOpen && currentSearchId == msgToRender.id),
-                                        onMediaClick = { mediaUris, startIndex ->
-                                            galleryMedia = mediaUris
-                                            galleryInitialIndex = startIndex
-                                            galleryMessage = msgToRender
-                                        },
-                                        onCommentsClick = { clickedMsg ->
-                                            val tKey = clickedMsg.threadId ?: clickedMsg.id
-                                            seenThreadIds = seenThreadIds + tKey
-                                            selectedCommentMessage = clickedMsg
-                                        },
-                                        onSentToClick = { clickedMsg ->
-                                            selectedSentToMessage = clickedMsg
-                                        },
-                                        onSwipeToReply = { uri ->
-                                            replyingTo = msgToRender
-                                            replyingToAttachmentUriState = uri
-                                        },
-                                        onRetryFailedMessage = { clickedMsg ->
-                                            selectedFailedMessage = clickedMsg
-                                        },
-                                        onStopLiveLocation = { liveMessageId ->
-                                            chatViewModel.stopLiveLocation(context, currentEntry.id.toString(), liveMessageId)
-                                        },
-                                        onVoteOption = { messageId, optionId ->
-                                            messages.find { it.id == messageId }?.let {
-                                                chatViewModel.votePoll(currentEntry.id.toString(), it, optionId)
-                                            }
-                                        },
-                                        onViewVotesClick = { selectedPollForVotes = it },
-                                        onEndPoll = { pollToEnd = it }
+                    val pinnedMemberUids = remember(members) { members.map { it.uid }.toSet() }
+                    com.fabxdi.dibadge.ui.home.home_entry.chat_details.PinnedAnnouncementBar(
+                        items = announcementItems,
+                        myUid = currentUserId,
+                        canManage = com.fabxdi.dibadge.ui.home.home_entry.chat_details.canUserAssignTasks(pinnedRole),
+                        memberUids = pinnedMemberUids,
+                        onOpen = { focusAnnouncementId = it.id; menuSheetAction = "announcements" }
+                    )
+                }
+                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    if (messagesLoaded) LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        if (messages.isNotEmpty() && groupCreatedDateText != null) {
+                            item {
+                                if (isOneToOne) {
+                                    ChatStartedHeader(
+                                        createdDateText = groupCreatedDateText,
+                                        secondaryTextColor = secondaryTextColor
+                                    )
+                                } else {
+                                    GroupCreatedHeader(
+                                        createdDateText = groupCreatedDateText,
+                                        secondaryTextColor = secondaryTextColor
                                     )
                                 }
                             }
                         }
-                    }
-                }
 
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = showScrollToBottom && initialScrollDone,
-                    enter = androidx.compose.animation.fadeIn(tween(150)) + androidx.compose.animation.scaleIn(tween(150)),
-                    exit = androidx.compose.animation.fadeOut(tween(120)) + androidx.compose.animation.scaleOut(tween(120)),
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 14.dp, bottom = 12.dp)
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = cardColor,
-                        border = BorderStroke(1.dp, outlineColor),
-                        shadowElevation = 4.dp,
-                        modifier = Modifier
-                            .size(42.dp)
-                            .clip(CircleShape)
-                            .clickable {
-                                scope.launch {
-                                    val last = listState.layoutInfo.totalItemsCount - 1
-                                    if (last >= 0) listState.animateScrollToItem(last)
-                                }
+                        groupedMessages.forEach { (date, dateMessages) ->
+                            stickyHeader(key = "date-$date") {
+                                DateHeader(date = date, isDark = isDark, secondaryTextColor = secondaryTextColor)
                             }
-                    ) {
-                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                            Icon(
-                                imageVector = Icons.Default.KeyboardArrowDown,
-                                contentDescription = "Scroll to latest message",
-                                tint = primaryTextColor,
-                                modifier = Modifier.size(26.dp)
-                            )
-                        }
-                    }
-                }
+                            items(
+                                count = dateMessages.size,
+                                key = { index -> dateMessages[index].id }
+                            ) { index ->
+                                val rawMsg = dateMessages[index]
+                                val isFirstInRun = index == 0 || dateMessages[index - 1].senderName != rawMsg.senderName || dateMessages[index - 1].isSentByMe != rawMsg.isSentByMe
+                                // Messages from the same person in the same minute are shown as one group
+                                val groupedWithPrev = index > 0 && canGroupMessages(dateMessages[index - 1], rawMsg)
+                                val groupedWithNext = index < dateMessages.size - 1 && canGroupMessages(rawMsg, dateMessages[index + 1])
 
-                if (messages.isEmpty() && messagesLoaded) {
-                    val emptyKey = currentEntry.id.toString()
-                    val emptyPhoto = if (isOneToOne) otherUserPhotoUrl.ifBlank { AvatarPhotoCache.photoFor(emptyKey) } else AvatarPhotoCache.photoFor(emptyKey)
-                    val emptyTitle = if (isOneToOne && otherUserName.isNotBlank()) otherUserName else currentEntry.title
-                    val emptyFirstName = if (isOneToOne) {
-                        otherUserFirstName.ifBlank { emptyTitle.split(" ").firstOrNull().orEmpty() }
-                    } else ""
-                    EmptyChatState(
-                        title = emptyTitle,
-                        idForColor = emptyKey,
-                        photoUrl = emptyPhoto,
-                        isOneToOne = isOneToOne,
-                        createdDateText = groupCreatedDateText,
-                        memberCount = members.size,
-                        firstName = emptyFirstName,
-                        primaryTextColor = primaryTextColor,
-                        secondaryTextColor = secondaryTextColor,
-                        isDark = isDark,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
-                }
+                                val isGrpMention = rawMsg.isGroupMention || rawMsg.text.contains("@All") || acceptedConnections.any { rawMsg.text.contains("@${it.otherEntityName}") }
+                                val threadIdKey = rawMsg.threadId ?: rawMsg.id
 
-                // Dim the chat while photos or files are waiting to be sent, so the preview tiles stand out
-                if (attachedFiles.isNotEmpty() && !showMentionPicker) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.45f))
-                            .pointerInput(Unit) {
-                                // Taps on the dimmed chat do nothing while attachments are pending
-                                awaitPointerEventScope {
-                                    while (true) {
-                                        awaitPointerEvent().changes.forEach { it.consume() }
+                                if (isGrpMention) {
+                                    LaunchedEffect(threadIdKey) {
+                                        chatViewModel.listenToComments(threadIdKey)
+                                    }
+                                }
+
+                                val commentsForMsg = threadCommentsMap[threadIdKey] ?: emptyList()
+                                val threadSeenTime = seenAtFor(threadIdKey)
+                                val unreadCount = commentsForMsg.count { it.senderUid != currentUserId && it.timestampMs > threadSeenTime }
+                                val latestComment = commentsForMsg.lastOrNull()
+
+                                val matchedGroupNames = acceptedConnections.mapNotNull { conn ->
+                                    if (rawMsg.text.contains("@${conn.otherEntityName}")) conn.otherEntityName else null
+                                }
+
+                                val msgToRender = if (isGrpMention) {
+                                    rawMsg.copy(
+                                        isGroupMention = true,
+                                        threadId = threadIdKey,
+                                        commentCount = commentsForMsg.size,
+                                        unreadCommentCount = unreadCount,
+                                        sendingGroupName = rawMsg.sendingGroupName ?: currentEntry.title,
+                                        mentionedGroupNames = if (rawMsg.mentionedGroupNames.isNotEmpty()) rawMsg.mentionedGroupNames else matchedGroupNames,
+                                        latestCommentAuthor = latestComment?.senderName,
+                                        latestCommentText = latestComment?.text
+                                    )
+                                } else rawMsg
+
+                                if (msgToRender.msgType == "connectionRequest") {
+                                    ConnectionRequestCard(
+                                        message = msgToRender,
+                                        cardColor = cardColor,
+                                        outlineColor = outlineColor,
+                                        primaryTextColor = primaryTextColor,
+                                        secondaryTextColor = secondaryTextColor,
+                                        accentColor = tealAccent,
+                                        onRespond = { id, st -> chatViewModel.respondToConnection(id, st) }
+                                    )
+                                } else if (msgToRender.msgType == "connectionNotice") {
+                                    ConnectionNoticeLine(msgToRender, secondaryTextColor)
+                                } else if (msgToRender.msgType == "systemLibraryAdded" || msgToRender.msgType == "system_library_added") {
+                                    SystemLibraryChip(
+                                        message = msgToRender,
+                                        cardFillColor = cardColor,
+                                        primaryTextColor = primaryTextColor,
+                                        secondaryTextColor = secondaryTextColor,
+                                        onChipClick = {
+                                            showGroupDetails = true
+                                        }
+                                    )
+                                } else {
+                                    CompositionLocalProvider(LocalOpenPdf provides { pdfUri -> selectedPdfUri = pdfUri }) {
+                                        MessageBubble(
+                                            message = msgToRender,
+                                            player = player,
+                                            isSelected = selectedMessages.contains(msgToRender.id),
+                                            isAnySelected = selectedMessages.isNotEmpty(),
+                                            isFirstInRun = isFirstInRun,
+                                            isGroupedWithPrev = groupedWithPrev,
+                                            isGroupedWithNext = groupedWithNext,
+                                            isOneToOne = isOneToOne,
+                                            onBubbleBounds = { bubbleBoundsMap[msgToRender.id] = it },
+                                            onLongClick = { uri ->
+                                                if (selectedMessages.isEmpty()) {
+                                                    longPressedMessage = msgToRender
+                                                } else {
+                                                    selectedMessages = if (selectedMessages.contains(msgToRender.id)) selectedMessages - msgToRender.id else selectedMessages + msgToRender.id
+                                                }
+                                            },
+                                            onClick = {
+                                                if (selectedMessages.isNotEmpty()) {
+                                                    selectedMessages = if (selectedMessages.contains(msgToRender.id)) selectedMessages - msgToRender.id else selectedMessages + msgToRender.id
+                                                }
+                                            },
+                                            onReplyClick = { originalId, _ ->
+                                                // Tapping the quoted message jumps to the original and highlights it
+                                                val lazyIdx = messageToLazyIndex[originalId]
+                                                if (lazyIdx != null) {
+                                                    val headerOffset = if (messages.isNotEmpty() && groupCreatedDateText != null) 1 else 0
+                                                    scope.launch {
+                                                        listState.animateScrollToItem(lazyIdx + headerOffset)
+                                                        highlightedMessageId = originalId
+                                                    }
+                                                }
+                                            },
+                                            isHighlighted = highlightedMessageId == msgToRender.id || (isSearchOpen && currentSearchId == msgToRender.id),
+                                            onMediaClick = { mediaUris, startIndex ->
+                                                galleryMedia = mediaUris
+                                                galleryInitialIndex = startIndex
+                                                galleryMessage = msgToRender
+                                            },
+                                            onCommentsClick = { clickedMsg ->
+                                                val tKey = clickedMsg.threadId ?: clickedMsg.id
+                                                markThreadSeen(tKey)
+                                                selectedCommentMessage = clickedMsg
+                                            },
+                                            onSentToClick = { clickedMsg ->
+                                                selectedSentToMessage = clickedMsg
+                                            },
+                                            onSwipeToReply = { uri ->
+                                                replyingTo = msgToRender
+                                                replyingToAttachmentUriState = uri
+                                            },
+                                            onRetryFailedMessage = { clickedMsg ->
+                                                selectedFailedMessage = clickedMsg
+                                            },
+                                            onStopLiveLocation = { liveMessageId ->
+                                                chatViewModel.stopLiveLocation(context, currentEntry.id.toString(), liveMessageId)
+                                            },
+                                            onVoteOption = { messageId, optionId ->
+                                                messages.find { it.id == messageId }?.let {
+                                                    chatViewModel.votePoll(currentEntry.id.toString(), it, optionId)
+                                                }
+                                            },
+                                            onViewVotesClick = { selectedPollForVotes = it },
+                                            onEndPoll = { pollToEnd = it }
+                                        )
                                     }
                                 }
                             }
-                    )
-                }
+                        }
+                    }
 
-                // 50% Black Scrim over chat area when mention picker is open
-                if (showMentionPicker) {
-                    Box(
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showScrollToBottom && initialScrollDone,
+                        enter = androidx.compose.animation.fadeIn(tween(150)) + androidx.compose.animation.scaleIn(tween(150)),
+                        exit = androidx.compose.animation.fadeOut(tween(120)) + androidx.compose.animation.scaleOut(tween(120)),
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.50f))
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) {
-                                val lastAt = mentionTriggerInfo?.third ?: -1
-                                if (lastAt != -1) {
-                                    inputText = inputText.substring(0, lastAt)
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 14.dp, bottom = 12.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = cardColor,
+                            border = BorderStroke(1.dp, outlineColor),
+                            shadowElevation = 4.dp,
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .clickable {
+                                    scope.launch {
+                                        val last = listState.layoutInfo.totalItemsCount - 1
+                                        if (last >= 0) listState.animateScrollToItem(last)
+                                    }
                                 }
+                        ) {
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "Scroll to latest message",
+                                    tint = primaryTextColor,
+                                    modifier = Modifier.size(26.dp)
+                                )
                             }
-                    )
+                        }
+                    }
+
+                    if (messages.isEmpty() && messagesLoaded) {
+                        val emptyKey = currentEntry.id.toString()
+                        val emptyPhoto = if (isOneToOne) otherUserPhotoUrl.ifBlank { AvatarPhotoCache.photoFor(emptyKey) } else AvatarPhotoCache.photoFor(emptyKey)
+                        val emptyTitle = if (isOneToOne && otherUserName.isNotBlank()) otherUserName else currentEntry.title
+                        val emptyFirstName = if (isOneToOne) {
+                            otherUserFirstName.ifBlank { emptyTitle.split(" ").firstOrNull().orEmpty() }
+                        } else ""
+                        EmptyChatState(
+                            title = emptyTitle,
+                            idForColor = emptyKey,
+                            photoUrl = emptyPhoto,
+                            isOneToOne = isOneToOne,
+                            createdDateText = groupCreatedDateText,
+                            memberCount = members.size,
+                            firstName = emptyFirstName,
+                            primaryTextColor = primaryTextColor,
+                            secondaryTextColor = secondaryTextColor,
+                            isDark = isDark,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+
+                    // Dim the chat while photos or files are waiting to be sent, so the preview tiles stand out
+                    if (attachedFiles.isNotEmpty() && !showMentionPicker) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.45f))
+                                .pointerInput(Unit) {
+                                    // Taps on the dimmed chat do nothing while attachments are pending
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            awaitPointerEvent().changes.forEach { it.consume() }
+                                        }
+                                    }
+                                }
+                        )
+                    }
+
+                    // 50% Black Scrim over chat area when mention picker is open
+                    if (showMentionPicker) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.50f))
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    val lastAt = mentionTriggerInfo?.third ?: -1
+                                    if (lastAt != -1) {
+                                        inputText = inputText.substring(0, lastAt)
+                                    }
+                                }
+                        )
+                    }
                 }
             }
 
@@ -2486,6 +2526,9 @@ fun ChatScreen(
                 val targetMsg = selectedCommentMessage!!
                 val tId = targetMsg.threadId ?: targetMsg.id
                 val commentsList = threadCommentsMap[tId] ?: emptyList()
+
+                // New replies that arrive while the thread is open count as read
+                LaunchedEffect(tId, commentsList.size) { markThreadSeen(tId) }
 
                 CommentThreadSheet(
                     threadId = tId,
@@ -2644,8 +2687,9 @@ fun ChatScreen(
         com.fabxdi.dibadge.ui.home.home_entry.chat_details.ChatMenuSheetHost(
             entry = currentEntry,
             action = act,
-            onClose = { menuSheetAction = null },
-            onOpenMyForms = onOpenMyForms
+            onClose = { menuSheetAction = null; focusAnnouncementId = null },
+            onOpenMyForms = onOpenMyForms,
+            focusAnnouncementId = if (act == "announcements") focusAnnouncementId else null
         )
     }
 }
