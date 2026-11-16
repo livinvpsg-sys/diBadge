@@ -17,6 +17,13 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 
+    <!-- Voice and video calls -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <application
@@ -40,6 +47,28 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- The call screen. Shows over the lock screen when someone calls. -->
+        <activity
+            android:name="com.fabxdi.dibadge.call.CallActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout"
+            android:theme="@style/Theme.DiBadge" />
+
+        <!-- Keeps a call (and its microphone / camera) running when you leave the app -->
+        <service
+            android:name="com.fabxdi.dibadge.call.CallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone|camera" />
+
+        <!-- The Decline button on the incoming-call notification -->
+        <receiver
+            android:name="com.fabxdi.dibadge.call.CallActionReceiver"
+            android:exported="false" />
 
         <service
             android:name="com.fabxdi.dibadge.util.LiveLocationService"

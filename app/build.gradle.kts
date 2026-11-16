@@ -68,7 +68,7 @@ dependencies {
     // ML Kit Barcode Scanning & Document Scanner
     implementation(libs.mlkit.barcode.scanning)
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
-    
+
     // Room
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
@@ -84,6 +84,9 @@ dependencies {
 
     // Media upload to Cloudflare
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Voice and video calls (WebRTC)
+    implementation("io.getstream:stream-webrtc-android:1.3.9")
 
     // Credential Manager & Google ID for Sign-in
     implementation("androidx.credentials:credentials:1.3.0")

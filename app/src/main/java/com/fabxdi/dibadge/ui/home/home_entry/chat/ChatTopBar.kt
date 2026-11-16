@@ -51,6 +51,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.ui.res.painterResource
@@ -162,7 +163,9 @@ fun ChatTopBar(
     onSearchNewer: () -> Unit,
     onMenuAction: (String) -> Unit = {},
     /** True while an announcement that needs a confirmation has not been confirmed by this member yet. */
-    hasUnreadAnnouncement: Boolean = false
+    hasUnreadAnnouncement: Boolean = false,
+    callMenuOpen: Boolean = false,
+    onToggleCall: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     Column(
@@ -533,6 +536,21 @@ fun ChatTopBar(
                                 )
                             }
                         }
+                    }
+                }
+
+                // Call (1:1 chats only)
+                if (isOneToOne && onToggleCall != null) {
+                    IconButton(
+                        onClick = { onToggleCall() },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Outlined.Call,
+                            contentDescription = "Call",
+                            tint = if (callMenuOpen) DiBadgeTheme.colors.accent else primaryTextColor,
+                            modifier = Modifier.size(22.dp)
+                        )
                     }
                 }
 

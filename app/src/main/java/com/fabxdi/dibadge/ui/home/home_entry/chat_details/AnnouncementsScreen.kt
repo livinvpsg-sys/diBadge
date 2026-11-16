@@ -47,6 +47,7 @@ import com.fabxdi.dibadge.viewmodel.GroupMember
 import com.fabxdi.dibadge.viewmodel.LinkedReadCount
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -87,6 +88,20 @@ fun AnnouncementsScreen(
     val myName = me?.displayName?.ifBlank { null } ?: "Me"
 
     LaunchedEffect(groupId) { viewModel.start(groupId) }
+
+    val pushScope = rememberCoroutineScope()
+    fun sendPush(item: AnnouncementItem, mode: String) {
+        pushScope.launch {
+            val msg = when (val r = com.fabxdi.dibadge.util.AnnouncementPushApi.notify(groupId, item.id, mode)) {
+                is com.fabxdi.dibadge.util.AnnouncementPushApi.Result.Sent ->
+                    if (r.people == 0) "Nobody to notify" else if (mode == "pending") "Reminder sent to ${r.people} ${if (r.people == 1) "person" else "people"}" else "Sent to ${r.people} ${if (r.people == 1) "person" else "people"}"
+                com.fabxdi.dibadge.util.AnnouncementPushApi.Result.Cooldown -> "Already sent a moment ago. Try again in a few minutes"
+                com.fabxdi.dibadge.util.AnnouncementPushApi.Result.Ended -> "This announcement has ended"
+                com.fabxdi.dibadge.util.AnnouncementPushApi.Result.Failed -> "Could not send. Check your connection"
+            }
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
     val items by viewModel.items.collectAsState()
     val loaded by viewModel.loaded.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -233,7 +248,9 @@ fun AnnouncementsScreen(
                                     viewModel.endNow(groupId, a)
                                     Toast.makeText(context, "Moved to Previous", Toast.LENGTH_SHORT).show()
                                 },
-                                onDelete = { deleteTarget = a }
+                                onDelete = { deleteTarget = a },
+                                onNotify = { sendPush(a, "all") },
+                                onRemind = { sendPush(a, "pending") }
                             )
                         }
                     }
@@ -326,7 +343,9 @@ private fun AnnouncementCard(
     onToggle: () -> Unit,
     onSeeWhoRead: () -> Unit,
     onEndNow: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onNotify: () -> Unit = {},
+    onRemind: () -> Unit = {}
 ) {
     val colors = MaterialTheme.colorScheme
     val dc = DiBadgeTheme.colors
@@ -401,6 +420,18 @@ private fun AnnouncementCard(
                             )
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            if (ongoing) {
+                                DropdownMenuItem(
+                                    text = { Text("Notify members now") },
+                                    onClick = { menuOpen = false; onNotify() }
+                                )
+                            }
+                            if (ongoing && item.mustAck && memberUids.any { it != item.authorUid && !item.readAt.containsKey(it) }) {
+                                DropdownMenuItem(
+                                    text = { Text("Remind pending") },
+                                    onClick = { menuOpen = false; onRemind() }
+                                )
+                            }
                             if (item.mustAck) {
                                 DropdownMenuItem(
                                     text = { Text("See who read") },

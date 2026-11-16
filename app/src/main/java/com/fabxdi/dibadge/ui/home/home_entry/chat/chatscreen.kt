@@ -74,6 +74,10 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.zIndex
+import androidx.compose.material.icons.outlined.Videocam
+import androidx.compose.material.icons.outlined.Call
+import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
@@ -103,7 +107,6 @@ import com.fabxdi.dibadge.ui.components.AttachmentList
 import com.fabxdi.dibadge.ui.home.AvatarPhotoCache
 import com.fabxdi.dibadge.ui.home.ChatAvatar
 import com.fabxdi.dibadge.ui.home.home_entry.chat_details.ChatDetailsScreen
-import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.AudioMerger
 import com.fabxdi.dibadge.util.AudioPlayer
 import com.fabxdi.dibadge.util.AudioRecorder
@@ -962,6 +965,48 @@ fun ChatScreen(
         }
     }
 
+    // ---- Calls (1:1 only)
+    var callMenuOpen by remember { mutableStateOf(false) }
+    var pendingCallVideo by remember { mutableStateOf(false) }
+    val callCtx = LocalContext.current
+    fun beginCall(video: Boolean) {
+        val me = FirebaseAuth.getInstance().currentUser?.displayName ?: "Me"
+        val engine = com.fabxdi.dibadge.call.CallEngine.get(callCtx)
+        if (engine.isBusy) {
+            com.fabxdi.dibadge.call.CallActivity.open(callCtx)
+            return
+        }
+        engine.startCall(
+            groupId = currentEntry.id.toString(),
+            calleeUid = otherUid,
+            callerName = me,
+            peerName = if (otherUserName.isNotBlank()) otherUserName else currentEntry.title,
+            video = video
+        )
+        com.fabxdi.dibadge.call.CallActivity.open(callCtx)
+    }
+    val callPermissionLauncher = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        val micOk = result[Manifest.permission.RECORD_AUDIO] == true ||
+                androidx.core.content.ContextCompat.checkSelfPermission(callCtx, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val camOk = !pendingCallVideo || result[Manifest.permission.CAMERA] == true ||
+                androidx.core.content.ContextCompat.checkSelfPermission(callCtx, Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (micOk && camOk) beginCall(pendingCallVideo)
+        else android.widget.Toast.makeText(callCtx, if (!micOk) "Microphone permission is needed for calls" else "Camera permission is needed for video calls", android.widget.Toast.LENGTH_SHORT).show()
+    }
+    fun requestCall(video: Boolean) {
+        callMenuOpen = false
+        if (otherUid.isBlank()) return
+        pendingCallVideo = video
+        val need = mutableListOf(Manifest.permission.RECORD_AUDIO)
+        if (video) need.add(Manifest.permission.CAMERA)
+        val missing = need.filter {
+            androidx.core.content.ContextCompat.checkSelfPermission(callCtx, it) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) beginCall(video) else callPermissionLauncher.launch(missing.toTypedArray())
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
@@ -1007,6 +1052,8 @@ fun ChatScreen(
                 onSearchQueryChange = { searchQuery = it },
                 onSearchOlder = { searchOlder() },
                 onSearchNewer = { searchNewer() },
+                callMenuOpen = callMenuOpen,
+                onToggleCall = { callMenuOpen = !callMenuOpen },
                 hasUnreadAnnouncement = !isOneToOne && announcementItems.any {
                     it.mustAck && it.isOngoing(System.currentTimeMillis()) && !it.readAt.containsKey(currentUserId)
                 },
@@ -2200,6 +2247,52 @@ fun ChatScreen(
                     showAttachmentOptions = false
                 }
         ) {
+            if (callMenuOpen && isOneToOne) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(20f)
+                        .background(Color.Black.copy(alpha = 0.62f))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { callMenuOpen = false },
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .padding(top = 10.dp)
+                            .clip(RoundedCornerShape(26.dp))
+                            .background(cardColor)
+                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(22.dp))
+                                .clickable { requestCall(true) }
+                                .padding(horizontal = 18.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(androidx.compose.material.icons.Icons.Outlined.Videocam, null, tint = DiBadgeTheme.colors.accent, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Video call", color = primaryTextColor, fontSize = 14.sp)
+                        }
+                        Box(Modifier.width(1.dp).height(22.dp).background(secondaryTextColor.copy(alpha = 0.3f)))
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(22.dp))
+                                .clickable { requestCall(false) }
+                                .padding(horizontal = 18.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(androidx.compose.material.icons.Icons.Outlined.Call, null, tint = DiBadgeTheme.colors.accent, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Voice call", color = primaryTextColor, fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
             Column(modifier = Modifier.fillMaxSize()) {
                 if (!isOneToOne) {
                     val pinnedRole = remember(members, currentUserId, isAdmin) {
@@ -2295,6 +2388,8 @@ fun ChatScreen(
                                     )
                                 } else if (msgToRender.msgType == "connectionNotice") {
                                     ConnectionNoticeLine(msgToRender, secondaryTextColor)
+                                } else if (msgToRender.msgType == "callNotice") {
+                                    CallNoticeLine(msgToRender, secondaryTextColor)
                                 } else if (msgToRender.msgType == "systemLibraryAdded" || msgToRender.msgType == "system_library_added") {
                                     SystemLibraryChip(
                                         message = msgToRender,
@@ -2698,7 +2793,7 @@ fun ChatScreen(
 private fun canGroupMessages(a: ChatMessage, b: ChatMessage): Boolean {
     fun plain(m: ChatMessage) = !m.isDeleted && !m.isGroupMention && !m.text.contains("@All") &&
             m.msgType != "systemLibraryAdded" && m.msgType != "system_library_added" &&
-            m.msgType != "connectionRequest" && m.msgType != "connectionNotice"
+            m.msgType != "connectionRequest" && m.msgType != "connectionNotice" && m.msgType != "callNotice"
     return plain(a) && plain(b) &&
             a.isSentByMe == b.isSentByMe &&
             a.senderName == b.senderName &&

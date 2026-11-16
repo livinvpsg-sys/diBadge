@@ -63,13 +63,19 @@ class GroupTaskViewModel(application: Application) : AndroidViewModel(applicatio
                 isCompleted = false
             )
             groupTaskDao.insertGroupTask(task)
+            var saved = false
             try {
                 firestore.collection("groups")
                     .document(groupId)
                     .collection("tasks")
                     .document(task.id)
                     .set(task.toFirestoreMap(), SetOptions.merge())
+                    .await()
+                saved = true
             } catch (e: Exception) {}
+            if (saved && assignedToUids.isNotBlank()) {
+                com.fabxdi.dibadge.util.TaskPushApi.assigned(groupId, listOf(task.id))
+            }
 
             launch(Dispatchers.Main) {
                 onAdded(startDate)
@@ -103,14 +109,21 @@ class GroupTaskViewModel(application: Application) : AndroidViewModel(applicatio
                 completedAt = if (isCompleted) System.currentTimeMillis() else null
             )
             groupTaskDao.insertGroupTask(updated)
+            var saved = false
             try {
                 firestore.collection("groups").document(groupId)
                     .collection("tasks").document(taskId)
                     .set(updated.toFirestoreMap(), SetOptions.merge())
+                    .await()
+                saved = true
             } catch (e: Exception) {}
 
             launch(Dispatchers.Main) {
                 onUpdated()
+            }
+            // Tell the person who assigned it (only when it was just ticked done and is saved)
+            if (saved && isCompleted && task.assignedByUid.isNotBlank() && task.assignedByUid != userUid) {
+                com.fabxdi.dibadge.util.TaskPushApi.completed(groupId, taskId)
             }
         }
     }
@@ -179,6 +192,7 @@ class GroupTaskViewModel(application: Application) : AndroidViewModel(applicatio
 
             groupTaskDao.insertAllGroupTasks(tasksToCreate)
 
+            val savedIds = mutableListOf<String>()
             for (task in tasksToCreate) {
                 try {
                     firestore.collection("groups")
@@ -186,8 +200,12 @@ class GroupTaskViewModel(application: Application) : AndroidViewModel(applicatio
                         .collection("tasks")
                         .document(task.id)
                         .set(task.toFirestoreMap(), SetOptions.merge())
+                        .await()
+                    savedIds.add(task.id)
                 } catch (e: Exception) {}
             }
+            // Tell each person they were given a task
+            com.fabxdi.dibadge.util.TaskPushApi.assigned(groupId, savedIds)
         }
     }
 
