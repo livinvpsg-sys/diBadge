@@ -211,17 +211,8 @@ fun ChatScreen(
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
 
-    // Share a contact from the phone's address book (the picker only lets this app see the one chosen)
-    val contactPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickContact()) { picked ->
-        if (picked != null) {
-            val shared = com.fabxdi.dibadge.util.ContactShare.read(context, picked)
-            if (shared != null) {
-                chatViewModel.sendContactMessage(currentEntry.id.toString(), shared)
-            } else {
-                Toast.makeText(context, "Could not read that contact", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
+    // Share contacts from the phone's address book (one or several)
+    var showContactPicker by remember { mutableStateOf(false) }
 
     // Unsent text: brought back when the chat is opened again, and shown as "Draft" in the home list
     LaunchedEffect(currentEntry.id) {
@@ -2605,7 +2596,7 @@ fun ChatScreen(
                     onDismiss = { showAttachmentOptions = false },
                     onContacts = {
                         showAttachmentOptions = false
-                        contactPickerLauncher.launch(null)
+                        showContactPicker = true
                     },
                     onPhoto = {
                         imagePickerLauncher.launch("image/*")
@@ -2797,6 +2788,15 @@ fun ChatScreen(
                 onDismissFailed = { selectedFailedMessage = null }
             )
         }
+    }
+    if (showContactPicker) {
+        ContactPickerSheet(
+            onDismiss = { showContactPicker = false },
+            onSend = { chosen ->
+                showContactPicker = false
+                chosen.forEach { chatViewModel.sendContactMessage(currentEntry.id.toString(), it) }
+            }
+        )
     }
     // Members / Groups / Tasks sheets and Announcements / Forms / Credentials / Library screens open over the chat
     menuSheetAction?.let { act ->

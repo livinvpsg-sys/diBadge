@@ -1866,6 +1866,7 @@ fun ChatDetailsScreen(
                 onTransferOwnership = { newOwnerId ->
                     detailsViewModel.transferGroupOwnership(context, newOwnerId)
                 },
+                onRemoveMember = { memberId -> detailsViewModel.removeMember(memberId) },
                 onExitGroup = {
                     showMembersSheet = false
                     detailsViewModel.leaveGroup(context) {

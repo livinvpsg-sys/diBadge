@@ -53,4 +53,40 @@ object ContactShare {
             null
         }
     }
+
+    /** Every contact on the phone that has a number or an email, by name. Needs the contacts permission. */
+    fun loadAll(context: Context): List<SharedContact> {
+        val byId = LinkedHashMap<Long, Triple<String, LinkedHashSet<String>, LinkedHashSet<String>>>()
+        try {
+            context.contentResolver.query(
+                ContactsContract.Data.CONTENT_URI,
+                arrayOf(
+                    ContactsContract.Data.CONTACT_ID,
+                    ContactsContract.Data.DISPLAY_NAME_PRIMARY,
+                    ContactsContract.Data.MIMETYPE,
+                    ContactsContract.Data.DATA1
+                ),
+                ContactsContract.Data.MIMETYPE + " IN (?, ?)",
+                arrayOf(
+                    ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE,
+                    ContactsContract.CommonDataKinds.Email.CONTENT_ITEM_TYPE
+                ),
+                ContactsContract.Data.DISPLAY_NAME_PRIMARY + " COLLATE NOCASE ASC"
+            )?.use {
+                while (it.moveToNext()) {
+                    val id = it.getLong(0)
+                    val value = it.getString(3).orEmpty().trim()
+                    if (value.isBlank()) continue
+                    val entry = byId.getOrPut(id) { Triple(it.getString(1).orEmpty(), LinkedHashSet(), LinkedHashSet()) }
+                    if (it.getString(2) == ContactsContract.CommonDataKinds.Phone.CONTENT_ITEM_TYPE) entry.second.add(value)
+                    else entry.third.add(value)
+                }
+            }
+        } catch (e: Exception) {
+            return emptyList()
+        }
+        return byId.values.map { (name, phones, emails) ->
+            SharedContact(name.ifBlank { phones.firstOrNull() ?: emails.firstOrNull() ?: "Contact" }, phones.take(5), emails.take(3))
+        }
+    }
 }

@@ -1480,6 +1480,29 @@ class GroupDetailsViewModel : ViewModel() {
         }
     }
 
+    /** Owner or admin removes a member. Their role is cleared too, and the chat shows "Livin removed Anu". */
+    fun removeMember(memberUid: String) {
+        if (currentGroupId.isBlank() || memberUid.isBlank()) return
+        val me = auth.currentUser?.uid ?: return
+        if (memberUid == me) return
+        viewModelScope.launch {
+            try {
+                val removedName = nameForNotice(memberUid)
+                val actorName = nameForNotice(me)
+                _members.value = _members.value.filter { it.uid != memberUid }
+                db.collection("personalGroups").document(currentGroupId)
+                    .update(
+                        "members", FieldValue.arrayRemove(memberUid),
+                        "roles.$memberUid", FieldValue.delete()
+                    )
+                    .await()
+                postMemberNotice("$actorName removed $removedName")
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     fun leaveGroup(context: Context, onDone: () -> Unit) {
         if (currentGroupId.isBlank()) return
         val currentUid = auth.currentUser?.uid ?: "me"
@@ -1817,14 +1840,50 @@ class GroupDetailsViewModel : ViewModel() {
         }
     }
 
+    /** A person's name for the chat notices: from the lists already loaded, else from their profile. */
+    private suspend fun nameForNotice(uid: String): String {
+        val known = _members.value.firstOrNull { it.uid == uid }?.displayName
+            ?: _memberSearchCandidates.value.firstOrNull { it.uid == uid }?.displayName
+        val raw = if (!known.isNullOrBlank()) known else try {
+            db.collection("users").document(uid).get().await().getString("displayName")
+        } catch (e: Exception) { null }
+        val clean = (raw ?: "Someone").replace("(You)", "").trim().ifBlank { "Someone" }
+        return com.fabxdi.dibadge.util.capitalizeName(clean)
+    }
+
+    /** Writes a grey outlined notice into the chat, like "Livin added Anu". It is a message of type memberNotice. */
+    private suspend fun postMemberNotice(text: String) {
+        val me = auth.currentUser ?: return
+        val id = UUID.randomUUID().toString()
+        try {
+            db.collection("personalGroups").document(currentGroupId)
+                .collection("messages").document(id)
+                .set(
+                    mapOf(
+                        "id" to id,
+                        "senderUid" to me.uid,
+                        "senderName" to nameForNotice(me.uid),
+                        "timestamp" to System.currentTimeMillis(),
+                        "text" to text,
+                        "msgType" to "memberNotice"
+                    )
+                ).await()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     fun addMemberToGroup(userUid: String, onDone: () -> Unit = {}) {
         if (currentGroupId.isBlank() || userUid.isBlank()) return
 
         viewModelScope.launch {
             try {
+                val addedName = nameForNotice(userUid)
                 db.collection("personalGroups").document(currentGroupId)
                     .update("members", FieldValue.arrayUnion(userUid))
                     .await()
+                val me = auth.currentUser?.uid
+                if (me != null) postMemberNotice("${nameForNotice(me)} added $addedName")
                 _memberSearchCandidates.value = emptyList()
                 onDone()
             } catch (e: Exception) {

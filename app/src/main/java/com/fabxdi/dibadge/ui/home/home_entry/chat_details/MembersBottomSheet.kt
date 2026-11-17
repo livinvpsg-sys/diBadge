@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material.icons.outlined.SwapHoriz
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.material3.*
@@ -49,6 +50,7 @@ fun MembersBottomSheet(
     onRoleChange: (memberId: String, newRole: String) -> Unit,
     onTransferOwnership: (newOwnerId: String) -> Unit,
     onExitGroup: () -> Unit,
+    onRemoveMember: (memberId: String) -> Unit = {},
     onInviteMember: (GroupMember) -> Unit = {},
     onDismiss: () -> Unit
 ) {
@@ -331,6 +333,9 @@ fun MembersBottomSheet(
         val isOwner = member.role.equals("owner", ignoreCase = true)
 
         var showTransferConfirmDialog by remember { mutableStateOf(false) }
+        var showRemoveConfirmDialog by remember { mutableStateOf(false) }
+        // The owner can remove anyone but themself; an admin can remove regular members only
+        val canRemove = canUserManage && !isSelf && !isOwner && (isUserOwner || !isAdmin)
 
         ModalBottomSheet(
             onDismissRequest = { selectedMemberForOptions = null },
@@ -428,7 +433,69 @@ fun MembersBottomSheet(
                         }
                     }
                 }
+
+                // Option 3: Remove from the group
+                if (canRemove) {
+                    HorizontalDivider(thickness = 1.dp, color = outlineColor)
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(60.dp)
+                            .clickable { showRemoveConfirmDialog = true },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.PersonRemove,
+                            contentDescription = null,
+                            tint = errorColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column {
+                            Text(
+                                text = "Remove from group",
+                                fontSize = 16.sp,
+                                color = errorColor
+                            )
+                            Text(
+                                text = "${member.name} will no longer see this group",
+                                fontSize = 13.sp,
+                                color = secondaryTextColor
+                            )
+                        }
+                    }
+                }
             }
+        }
+
+        if (showRemoveConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showRemoveConfirmDialog = false },
+                containerColor = cardBgColor,
+                title = {
+                    Text("Remove ${member.name}?", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = primaryTextColor)
+                },
+                text = {
+                    Text("They will be taken out of this group. You can add them again later.", fontSize = 14.sp, color = secondaryTextColor)
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showRemoveConfirmDialog = false
+                        val removedName = member.name
+                        selectedMemberForOptions = null
+                        onRemoveMember(member.id)
+                        coroutineScope.launch { snackbarHostState.showSnackbar("$removedName removed") }
+                    }) {
+                        Text("Remove", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = errorColor)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showRemoveConfirmDialog = false }) {
+                        Text("Cancel", fontSize = 15.sp, color = secondaryTextColor)
+                    }
+                }
+            )
         }
 
         if (showTransferConfirmDialog) {

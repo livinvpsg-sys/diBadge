@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import com.fabxdi.dibadge.util.NotifyGroup
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.fabxdi.dibadge.MainActivity
@@ -47,7 +48,7 @@ object MissedCallNotifier {
         )
         val name = callerName.ifBlank { "Someone" }
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_stat_dibadge)
             .setContentTitle(name)
             .setContentText(if (video) "Missed video call" else "Missed voice call")
             .setCategory(NotificationCompat.CATEGORY_MISSED_CALL)
@@ -56,9 +57,11 @@ object MissedCallNotifier {
             .setShowWhen(true)
             .setAutoCancel(true)
             .setContentIntent(pending)
+            .setGroup(NotifyGroup.KEY)
             .build()
         try {
             NotificationManagerCompat.from(context).notify(id, notification)
+            NotifyGroup.postSummary(context)
         } catch (e: SecurityException) {
         }
     }

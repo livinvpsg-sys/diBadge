@@ -375,9 +375,9 @@ class ChatViewModel : ViewModel() {
                         } else if (iAmTarget) {
                             out.add(connMessage("connreq_${doc.id}", "connectionRequest", otherName, created, doc.id, status, if (canRespond) 1 else 0))
                         } else if (status == "accepted") {
-                            out.add(connMessage("connnote_${doc.id}", "connectionNotice", "Now connected to $otherName", updated, doc.id, status, 0))
+                            out.add(connMessage("connnote_${doc.id}", "connectionNotice", "Connected to $otherName", updated, doc.id, status, 0))
                         } else if (status == "declined") {
-                            out.add(connMessage("connnote_${doc.id}", "connectionNotice", "$otherName declined the request", updated, doc.id, status, 0))
+                            out.add(connMessage("connnote_${doc.id}", "connectionNotice", "\u201c$otherName\u201d declined the connection request", updated, doc.id, status, 0))
                         }
                     }
                     if (groupId == activeGroupId) _connItems.value = out

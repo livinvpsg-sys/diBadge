@@ -55,7 +55,7 @@ object TaskNotifier {
         )
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_stat_dibadge)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -63,10 +63,12 @@ object TaskNotifier {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(pending)
+            .setGroup(NotifyGroup.KEY)
             .build()
 
         try {
             NotificationManagerCompat.from(context).notify(id, notification)
+            NotifyGroup.postSummary(context)
         } catch (e: SecurityException) {
             // Permission was taken away a moment ago: nothing to show
         }

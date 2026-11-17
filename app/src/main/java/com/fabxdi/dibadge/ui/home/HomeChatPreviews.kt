@@ -123,17 +123,24 @@ class HomeChatPreviewsViewModel(application: Application) : AndroidViewModel(app
                     recent[id] = snap.documents.map { d ->
                         val data = d.data ?: emptyMap()
                         RecentMessage(
-                            at = (data["timestamp"] as? Number)?.toLong() ?: 0L,
+                            at = millisOf(data["timestamp"]),
                             senderUid = data["senderUid"] as? String ?: "",
                             senderName = data["senderName"] as? String ?: "",
                             text = previewOf(data),
                             isCall = data["msgType"] == "callNotice",
                             deleted = data["deleted"] == true
                         )
-                    }
+                    }.sortedByDescending { it.at }
                     recompute()
                 }
         }
+    }
+
+    /** A message time is saved as a number (milliseconds) by some messages and as a Firestore Timestamp by others (poll, location ...). */
+    private fun millisOf(v: Any?): Long = when (v) {
+        is Number -> v.toLong()
+        is com.google.firebase.Timestamp -> v.toDate().time
+        else -> 0L
     }
 
     private fun recompute() {

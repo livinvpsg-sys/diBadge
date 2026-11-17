@@ -107,20 +107,14 @@ object PushNotifier {
         for (i in maxOf(0, lines.length() - MAX_LINES) until lines.length()) trimmed.put(lines.get(i))
         prefs.edit().putString(key, trimmed.toString()).apply()
 
-        val me = Person.Builder().setName("You").build()
-        val style = NotificationCompat.MessagingStyle(me)
         val isGroupLike = data["isDirect"] != "1" && groupName.isNotBlank() && !groupName.equals(sender, ignoreCase = true)
-        if (isGroupLike) {
-            style.conversationTitle = groupName
-            style.isGroupConversation = true
-        }
+        val title = if (isGroupLike) groupName else sender
+        // One line per message. In a group each line starts with who sent it.
+        val style = NotificationCompat.InboxStyle().setBigContentTitle(title)
         for (i in 0 until trimmed.length()) {
             val o = trimmed.getJSONObject(i)
-            style.addMessage(
-                o.optString("t"),
-                o.optLong("at"),
-                NotifyAvatar.person(o.optString("s"), o.optString("p"))
-            )
+            val line = if (isGroupLike) capitalizeName(o.optString("s")) + ": " + o.optString("t") else o.optString("t")
+            style.addLine(line)
         }
 
         val id = notificationId(groupId)
@@ -172,7 +166,7 @@ object PushNotifier {
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
-            .setGroup("dibadge_chats")
+            .setGroup(NotifyGroup.KEY)
             .setWhen(at)
             .setShowWhen(true)
             .setContentIntent(pending)
@@ -180,6 +174,7 @@ object PushNotifier {
 
         try {
             NotificationManagerCompat.from(context).notify(id, notification)
+            NotifyGroup.postSummary(context)
         } catch (e: SecurityException) {
             // Permission was taken away a moment ago: nothing to show
         }

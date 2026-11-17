@@ -44,9 +44,6 @@ object ConnectionNotifier {
         val at = data["at"]?.toLongOrNull() ?: System.currentTimeMillis()
         ensureChannel(context)
 
-        val person = NotifyAvatar.person(name, data["senderPhoto"].orEmpty())
-        val style = NotificationCompat.MessagingStyle(androidx.core.app.Person.Builder().setName("You").build())
-        style.addMessage(text, at, person)
 
         val id = notificationId(otherUid)
         val open = Intent(context, MainActivity::class.java).apply {
@@ -56,14 +53,15 @@ object ConnectionNotifier {
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_dibadge)
             .setColor(0xFF3A6FE0.toInt())
-            .setSubText("Connection")
-            .setStyle(style)
+            .setSubText("Connections")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setLargeIcon(NotifyAvatar.bitmap(name, data["senderPhoto"].orEmpty()))
             .setContentTitle(name)
             .setContentText(text)
             .setCategory(NotificationCompat.CATEGORY_SOCIAL)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
+            .setGroup(NotifyGroup.KEY)
             .setWhen(at)
             .setShowWhen(true)
             .setContentIntent(PendingIntent.getActivity(context, id, open, flags))
@@ -82,6 +80,7 @@ object ConnectionNotifier {
 
         try {
             NotificationManagerCompat.from(context).notify(id, builder.build())
+            NotifyGroup.postSummary(context)
         } catch (e: SecurityException) {
         }
     }

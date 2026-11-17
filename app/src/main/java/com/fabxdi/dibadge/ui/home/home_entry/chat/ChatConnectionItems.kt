@@ -111,14 +111,8 @@ fun ConnectionRequestCard(
     }
 }
 
-/** Dim centred line in the SENDING group's chat: "X declined the request" / "Now connected to X". */
+/** Outlined pill in the chat: "You're now connected with ..." / "... declined the connection request". */
 @Composable
 fun ConnectionNoticeLine(message: ChatMessage, secondaryTextColor: Color) {
-    Text(
-        text = message.text,
-        fontSize = 12.sp,
-        color = secondaryTextColor,
-        textAlign = TextAlign.Center,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp)
-    )
+    ChatNoticePill(text = message.text, textColor = secondaryTextColor)
 }

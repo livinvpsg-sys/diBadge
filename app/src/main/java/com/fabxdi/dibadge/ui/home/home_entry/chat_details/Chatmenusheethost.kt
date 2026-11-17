@@ -118,6 +118,7 @@ fun ChatMenuSheetHost(
                 onExitGroup = {
                     detailsViewModel.leaveGroup(context) { onClose() }
                 },
+                onRemoveMember = { memberId -> detailsViewModel.removeMember(memberId) },
                 onDismiss = onClose
             )
         }

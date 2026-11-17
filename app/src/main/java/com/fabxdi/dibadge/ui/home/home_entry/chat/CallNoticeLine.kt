@@ -28,22 +28,16 @@ fun CallNoticeLine(message: ChatMessage, secondaryTextColor: Color) {
     val time = runCatching {
         message.timestamp.format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()))
     }.getOrDefault("")
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = if (isVideo) Icons.Outlined.Videocam else Icons.Outlined.Call,
-            contentDescription = null,
-            tint = secondaryTextColor,
-            modifier = Modifier.size(14.dp)
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(
-            text = if (time.isNotEmpty()) "${message.text} · $time" else message.text,
-            fontSize = 12.sp,
-            color = secondaryTextColor
-        )
-    }
+    ChatNoticePill(
+        text = if (time.isNotEmpty()) "${message.text} · $time" else message.text,
+        textColor = secondaryTextColor,
+        leading = {
+            Icon(
+                imageVector = if (isVideo) Icons.Outlined.Videocam else Icons.Outlined.Call,
+                contentDescription = null,
+                tint = secondaryTextColor,
+                modifier = Modifier.size(14.dp)
+            )
+        }
+    )
 }
