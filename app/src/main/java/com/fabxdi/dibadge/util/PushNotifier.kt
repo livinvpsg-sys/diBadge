@@ -12,6 +12,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
+import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -44,8 +45,12 @@ object ActiveChat {
                 Lifecycle.Event.ON_RESUME -> {
                     this.groupId = groupId
                     PushNotifier.clearGroup(app, groupId)
+                    ChatSeen.markNow(app, groupId)
                 }
-                Lifecycle.Event.ON_PAUSE -> if (this.groupId == groupId) this.groupId = null
+                Lifecycle.Event.ON_PAUSE -> {
+                    if (this.groupId == groupId) this.groupId = null
+                    ChatSeen.markNow(app, groupId)
+                }
                 else -> {}
             }
         }
@@ -84,8 +89,10 @@ object PushNotifier {
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
 
-        val sender = data["senderName"].orEmpty().ifBlank { "Someone" }
-        val groupName = data["groupName"].orEmpty()
+        val sender = capitalizeName(data["senderName"].orEmpty().ifBlank { "Someone" })
+        val senderPhoto = data["senderPhoto"].orEmpty()
+        val groupName = capitalizeFirst(data["groupName"].orEmpty())
+        val groupPhoto = data["groupPhoto"].orEmpty()
         val text = data["preview"].orEmpty().ifBlank { "New message" }
         val at = data["sentAt"]?.toLongOrNull() ?: System.currentTimeMillis()
 
@@ -95,14 +102,14 @@ object PushNotifier {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val key = "g_$groupId"
         val lines = try { JSONArray(prefs.getString(key, "[]")) } catch (e: Exception) { JSONArray() }
-        lines.put(JSONObject().put("s", sender).put("t", text).put("at", at))
+        lines.put(JSONObject().put("s", sender).put("t", text).put("at", at).put("p", senderPhoto))
         val trimmed = JSONArray()
         for (i in maxOf(0, lines.length() - MAX_LINES) until lines.length()) trimmed.put(lines.get(i))
         prefs.edit().putString(key, trimmed.toString()).apply()
 
         val me = Person.Builder().setName("You").build()
         val style = NotificationCompat.MessagingStyle(me)
-        val isGroupLike = groupName.isNotBlank() && !groupName.equals(sender, ignoreCase = true)
+        val isGroupLike = data["isDirect"] != "1" && groupName.isNotBlank() && !groupName.equals(sender, ignoreCase = true)
         if (isGroupLike) {
             style.conversationTitle = groupName
             style.isGroupConversation = true
@@ -112,7 +119,7 @@ object PushNotifier {
             style.addMessage(
                 o.optString("t"),
                 o.optLong("at"),
-                Person.Builder().setName(o.optString("s")).build()
+                NotifyAvatar.person(o.optString("s"), o.optString("p"))
             )
         }
 
@@ -125,8 +132,40 @@ object PushNotifier {
             context, id, open, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val actionFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val replyIntent = Intent(context, NotifyActionReceiver::class.java).apply {
+            action = NotifyActionReceiver.ACTION_REPLY
+            putExtra(NotifyActionReceiver.EXTRA_GROUP_ID, groupId)
+        }
+        // Reply needs a mutable PendingIntent so Android can add what was typed
+        val replyFlags = PendingIntent.FLAG_UPDATE_CURRENT or
+                (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0)
+        val replyAction = NotificationCompat.Action.Builder(
+            0, "Reply", PendingIntent.getBroadcast(context, id + 1, replyIntent, replyFlags)
+        )
+            .addRemoteInput(RemoteInput.Builder(NotifyActionReceiver.KEY_REPLY).setLabel("Reply").build())
+            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+            .setShowsUserInterface(false)
+            .build()
+        val readIntent = Intent(context, NotifyActionReceiver::class.java).apply {
+            action = NotifyActionReceiver.ACTION_READ
+            putExtra(NotifyActionReceiver.EXTRA_GROUP_ID, groupId)
+        }
+        val readAction = NotificationCompat.Action.Builder(
+            0, "Mark as read", PendingIntent.getBroadcast(context, id + 2, readIntent, actionFlags)
+        )
+            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+            .setShowsUserInterface(false)
+            .build()
+
+        // "diBadge · Message · now" (the app name and time are added by Android)
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_stat_dibadge)
+            .setColor(0xFF3A6FE0.toInt())
+            .setSubText(if (isGroupLike) "Group message" else "Message")
+            .setLargeIcon(if (isGroupLike) NotifyAvatar.bitmap(groupName, groupPhoto) else NotifyAvatar.bitmap(sender, senderPhoto))
+            .addAction(replyAction)
+            .addAction(readAction)
             .setStyle(style)
             .setContentTitle(if (isGroupLike) groupName else sender)
             .setContentText(if (isGroupLike) "$sender: $text" else text)

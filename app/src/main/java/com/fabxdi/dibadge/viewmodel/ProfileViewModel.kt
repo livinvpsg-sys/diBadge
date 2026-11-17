@@ -10,9 +10,8 @@ import android.net.Uri
 import android.util.Base64
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.fabxdi.dibadge.util.LiveProfilePhoto
-import com.fabxdi.dibadge.util.fixDownloadUrl
 import com.fabxdi.dibadge.util.UsernameFormatResult
+import com.fabxdi.dibadge.util.capitalizeName
 import com.fabxdi.dibadge.util.cleanAndFormatUsernameInput
 import com.fabxdi.dibadge.util.fullName
 import com.fabxdi.dibadge.util.generateBadgeNumber
@@ -182,6 +181,9 @@ class ProfileViewModel : ViewModel() {
                     var fn = doc.getString("firstName") ?: ""
                     var mn = doc.getString("middleName") ?: ""
                     var ln = doc.getString("lastName") ?: ""
+                    val storedFn = fn
+                    val storedMn = mn
+                    val storedLn = ln
 
                     if (fn.isBlank() && ln.isBlank() && displayName.isNotBlank()) {
                         val parts = displayName.trim().split(" ")
@@ -209,8 +211,16 @@ class ProfileViewModel : ViewModel() {
                     val countryVal = doc.getString("country") ?: ""
                     val bd = doc.getString("birthday") ?: ""
                     val bioText = doc.getString("bio") ?: ""
-                    val photo = fixDownloadUrl(doc.getString("photoUrl") ?: "")
-                    val sig = fixDownloadUrl(doc.getString("signatureUrl") ?: "")
+                    val photo = doc.getString("photoUrl") ?: ""
+                    val sig = doc.getString("signatureUrl") ?: ""
+
+                    // Names always start with a capital letter. An older name typed in lower case is fixed here.
+                    fn = capitalizeName(fn)
+                    mn = capitalizeName(mn)
+                    ln = capitalizeName(ln)
+                    if (fn != storedFn || mn != storedMn || ln != storedLn) {
+                        repairNameCase(user, fn, mn, ln)
+                    }
 
                     val loaded = UserProfileData(
                         badgeNumber = badgeNo,
@@ -336,16 +346,39 @@ class ProfileViewModel : ViewModel() {
         } catch (e: Exception) {}
     }
 
+    /** Saves the corrected capital letters of an older account's name, once, without any screen action. */
+    private fun repairNameCase(user: com.google.firebase.auth.FirebaseUser, fn: String, mn: String, ln: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val full = fullName(fn, mn, ln)
+                if (full.isBlank()) return@launch
+                firestore.collection("users").document(user.uid).set(
+                    mapOf(
+                        "firstName" to fn.trim(),
+                        "middleName" to mn.trim(),
+                        "lastName" to ln.trim(),
+                        "displayName" to full,
+                        "displayNameLower" to full.lowercase()
+                    ),
+                    SetOptions.merge()
+                ).await()
+                user.updateProfile(UserProfileChangeRequest.Builder().setDisplayName(full).build()).await()
+            } catch (e: Exception) {
+                // Will be tried again the next time the profile loads
+            }
+        }
+    }
+
     fun updateFirstName(value: String) {
-        _profileData.value = _profileData.value.copy(firstName = value)
+        _profileData.value = _profileData.value.copy(firstName = capitalizeName(value))
     }
 
     fun updateMiddleName(value: String) {
-        _profileData.value = _profileData.value.copy(middleName = value)
+        _profileData.value = _profileData.value.copy(middleName = capitalizeName(value))
     }
 
     fun updateLastName(value: String) {
-        _profileData.value = _profileData.value.copy(lastName = value)
+        _profileData.value = _profileData.value.copy(lastName = capitalizeName(value))
     }
 
     fun updateUsername(value: String) {
@@ -647,8 +680,6 @@ class ProfileViewModel : ViewModel() {
 
                 _profileData.value = _profileData.value.copy(photoUrl = localUriStr)
                 initialProfileData = initialProfileData.copy(photoUrl = localUriStr)
-                // the side menu shows the new photo straight away
-                LiveProfilePhoto.url.value = localUriStr
 
                 // The local file path is kept on this phone only. Firestore gets the photo link
                 // only after the upload succeeds, so other people never receive a path they cannot open.
@@ -659,7 +690,7 @@ class ProfileViewModel : ViewModel() {
                     val storageRef = storage.reference.child("users/${user.uid}/profile_photo.jpg")
                     storageRef.putBytes(data).await()
                     val rawUrl = storageRef.downloadUrl.await().toString()
-                    val cloudUrl = "$rawUrl&v=${System.currentTimeMillis()}"
+                    val cloudUrl = "$rawUrl?v=${System.currentTimeMillis()}"
 
                     firestore.collection("users")
                         .document(user.uid)
@@ -668,7 +699,6 @@ class ProfileViewModel : ViewModel() {
 
                     _profileData.value = _profileData.value.copy(photoUrl = cloudUrl)
                     initialProfileData = initialProfileData.copy(photoUrl = cloudUrl)
-                    LiveProfilePhoto.url.value = cloudUrl
                 } catch (e: Exception) {}
             } catch (e: Exception) {
                 _isUploadingPhoto.value = false
@@ -701,7 +731,6 @@ class ProfileViewModel : ViewModel() {
 
                 _profileData.value = _profileData.value.copy(photoUrl = "")
                 initialProfileData = initialProfileData.copy(photoUrl = "")
-                LiveProfilePhoto.url.value = ""
                 _isUploadingPhoto.value = false
                 onComplete(true)
             } catch (e: Exception) {
@@ -719,7 +748,7 @@ class ProfileViewModel : ViewModel() {
             val storageRef = storage.reference.child("users/$userId/signature.png")
             storageRef.putBytes(decodedBytes).await()
             val rawUrl = storageRef.downloadUrl.await().toString()
-            "$rawUrl&v=${System.currentTimeMillis()}"
+            "$rawUrl?v=${System.currentTimeMillis()}"
         } catch (e: Exception) {
             sigUrl
         }
@@ -736,14 +765,19 @@ class ProfileViewModel : ViewModel() {
             val storageRef = storage.reference.child("users/$userId/profile_photo.jpg")
             storageRef.putBytes(bytes).await()
             val rawUrl = storageRef.downloadUrl.await().toString()
-            "$rawUrl&v=${System.currentTimeMillis()}"
+            "$rawUrl?v=${System.currentTimeMillis()}"
         } catch (e: Exception) {
             photoUrl
         }
     }
 
     fun saveProfile(onVerifyRequired: () -> Unit, onSuccess: () -> Unit, onError: (String) -> Unit) {
-        val current = _profileData.value
+        val raw = _profileData.value
+        val current = raw.copy(
+            firstName = capitalizeName(raw.firstName),
+            middleName = capitalizeName(raw.middleName),
+            lastName = capitalizeName(raw.lastName)
+        )
 
         if (current.firstName.trim().isBlank()) {
             onError("First name is required")
@@ -773,8 +807,20 @@ class ProfileViewModel : ViewModel() {
             }
         }
 
-        // No email code when saving the profile. The code is asked for when logging in or signing up.
-        saveProfileInternal(onSuccess, onError)
+        if (hasProtectedChanges()) {
+            requestEmailVerificationCode(
+                onVerifyRequired = onVerifyRequired,
+                onError = { msg ->
+                    if (msg == "VERIFY_EMAIL_FIRST") {
+                        onError("VERIFY_EMAIL_FIRST")
+                    } else {
+                        onError(msg)
+                    }
+                }
+            )
+        } else {
+            saveProfileInternal(onSuccess, onError)
+        }
     }
 
     private fun saveProfileInternal(onSuccess: () -> Unit, onError: (String) -> Unit) {

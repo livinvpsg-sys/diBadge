@@ -1235,6 +1235,35 @@ class ChatViewModel : ViewModel() {
         }
     }
 
+    /** Sends a contact from the phone's address book as a contact card. */
+    fun sendContactMessage(groupId: String, contact: com.fabxdi.dibadge.util.SharedContact) {
+        val currentUid = auth.currentUser?.uid ?: return
+        val currentName = auth.currentUser?.displayName.takeIf { !it.isNullOrBlank() } ?: "Me"
+        val messageId = UUID.randomUUID().toString()
+        val docData = mutableMapOf<String, Any>(
+            "id" to messageId,
+            "senderUid" to currentUid,
+            "senderName" to currentName,
+            "timestamp" to Timestamp.now(),
+            "text" to com.fabxdi.dibadge.util.ContactShare.encode(contact),
+            "msgType" to "contact"
+        )
+        viewModelScope.launch {
+            try {
+                db.collection("personalGroups")
+                    .document(groupId)
+                    .collection("messages")
+                    .document(messageId)
+                    .set(docData)
+                    .await()
+
+                PushApi.messageSent(groupId, messageId)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     /** Ends a live-location share: stops the background updates and marks the message as ended. */
     fun stopLiveLocation(context: Context, groupId: String, messageId: String) {
         com.fabxdi.dibadge.util.LiveLocationService.stop(context, messageId)

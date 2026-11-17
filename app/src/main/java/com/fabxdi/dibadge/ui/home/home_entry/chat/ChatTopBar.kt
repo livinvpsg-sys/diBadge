@@ -464,7 +464,7 @@ fun ChatTopBar(
                     val cachedPhoto = AvatarPhotoCache.photoFor(entryKey)
                     val headerPhoto = if (isOneToOne) otherUserPhotoUrl.ifBlank { cachedPhoto } else cachedPhoto
                     // Same name the home list shows, so the letter matches on every screen
-                    val headerTitle = if (isOneToOne && otherUserName.isNotBlank()) otherUserName else currentEntry.title
+                    val headerTitle = com.fabxdi.dibadge.util.capitalizeFirst(if (isOneToOne && otherUserName.isNotBlank()) otherUserName else currentEntry.title)
 
                     LaunchedEffect(otherUserPhotoUrl, isOneToOne) {
                         if (isOneToOne && otherUserPhotoUrl.isNotBlank()) {

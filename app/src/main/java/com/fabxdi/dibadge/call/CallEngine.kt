@@ -1,7 +1,12 @@
 package com.fabxdi.dibadge.call
 
 import android.content.Context
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.CoroutineScope
@@ -54,6 +59,9 @@ enum class CallPhase {
 /** Why a call ended (for the ENDED screen). */
 enum class CallEndReason { NONE, COMPLETED, DECLINED, NO_ANSWER, CANCELLED, FAILED, MIC_BUSY }
 
+/** Where the sound of the call comes out. */
+enum class AudioRoute { EARPIECE, SPEAKER, BLUETOOTH, WIRED }
+
 data class CallState(
     val phase: CallPhase = CallPhase.IDLE,
     val callId: String = "",
@@ -62,6 +70,8 @@ data class CallState(
     val isVideo: Boolean = false,
     val muted: Boolean = false,
     val speakerOn: Boolean = false,
+    val audioRoute: AudioRoute = AudioRoute.EARPIECE,
+    val routes: List<AudioRoute> = listOf(AudioRoute.EARPIECE, AudioRoute.SPEAKER),
     val cameraOn: Boolean = false,
     val frontCamera: Boolean = true,
     val seconds: Long = 0,          // time since you were connected
@@ -292,9 +302,17 @@ class CallEngine private constructor(private val appContext: Context) {
         _state.update { it.copy(muted = muted) }
     }
 
+    /** Kept for the old Speaker button: on = speaker, off = the best other route. */
     fun setSpeaker(on: Boolean) {
-        audioManager.isSpeakerphoneOn = on
-        _state.update { it.copy(speakerOn = on) }
+        setAudioRoute(if (on) AudioRoute.SPEAKER else bestNonSpeaker())
+    }
+
+    /** Sends the sound to the earpiece, the speaker, a Bluetooth headset or a wired headset. */
+    fun setAudioRoute(route: AudioRoute) {
+        val available = availableRoutes()
+        if (route !in available) return
+        applyRoute(route)
+        _state.update { it.copy(audioRoute = route, speakerOn = route == AudioRoute.SPEAKER, routes = available) }
     }
 
     /** Turns your camera on or off. Works in a voice call too: the other person then sees your video. */
@@ -571,16 +589,123 @@ class CallEngine private constructor(private val appContext: Context) {
         capturing = false
     }
 
+    // ---- audio routes (earpiece, speaker, Bluetooth, wired headset)
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var routingActive = false
+
+    private val deviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) = onDevicesChanged(added = true)
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) = onDevicesChanged(added = false)
+    }
+
+    private fun isBluetoothType(t: Int): Boolean =
+        t == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && t == AudioDeviceInfo.TYPE_BLE_HEADSET)
+
+    private fun isWiredType(t: Int): Boolean =
+        t == AudioDeviceInfo.TYPE_WIRED_HEADSET || t == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                t == AudioDeviceInfo.TYPE_USB_HEADSET
+
+    /** Devices a call can use right now. */
+    private fun communicationDevices(): List<AudioDeviceInfo> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            audioManager.availableCommunicationDevices
+        } else {
+            audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).toList()
+        }
+
+    private fun availableRoutes(): List<AudioRoute> {
+        val devices = communicationDevices()
+        val out = mutableListOf<AudioRoute>()
+        if (devices.any { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE } || devices.isEmpty()) out.add(AudioRoute.EARPIECE)
+        out.add(AudioRoute.SPEAKER)
+        if (devices.any { isBluetoothType(it.type) }) out.add(AudioRoute.BLUETOOTH)
+        if (devices.any { isWiredType(it.type) }) out.add(AudioRoute.WIRED)
+        return out
+    }
+
+    private fun bestNonSpeaker(): AudioRoute {
+        val a = availableRoutes()
+        return when {
+            AudioRoute.BLUETOOTH in a -> AudioRoute.BLUETOOTH
+            AudioRoute.WIRED in a -> AudioRoute.WIRED
+            else -> AudioRoute.EARPIECE
+        }
+    }
+
+    private fun applyRoute(route: AudioRoute) {
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val devices = audioManager.availableCommunicationDevices
+                val target = when (route) {
+                    AudioRoute.EARPIECE -> devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
+                    AudioRoute.SPEAKER -> devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                    AudioRoute.BLUETOOTH -> devices.firstOrNull { isBluetoothType(it.type) }
+                    AudioRoute.WIRED -> devices.firstOrNull { isWiredType(it.type) }
+                }
+                if (target != null) audioManager.setCommunicationDevice(target)
+            } else {
+                @Suppress("DEPRECATION")
+                if (route == AudioRoute.BLUETOOTH) {
+                    audioManager.isSpeakerphoneOn = false
+                    audioManager.startBluetoothSco()
+                    audioManager.isBluetoothScoOn = true
+                } else {
+                    audioManager.stopBluetoothSco()
+                    audioManager.isBluetoothScoOn = false
+                    audioManager.isSpeakerphoneOn = route == AudioRoute.SPEAKER
+                }
+            }
+        }
+    }
+
+    /** A headset was plugged in or paired, or taken away, during the call. */
+    private fun onDevicesChanged(added: Boolean) {
+        if (!routingActive) return
+        val available = availableRoutes()
+        val current = _state.value.audioRoute
+        when {
+            // A headset just appeared: use it, like a phone call does
+            added && AudioRoute.BLUETOOTH in available && current != AudioRoute.BLUETOOTH -> setAudioRoute(AudioRoute.BLUETOOTH)
+            added && AudioRoute.WIRED in available && current != AudioRoute.WIRED && current != AudioRoute.BLUETOOTH -> setAudioRoute(AudioRoute.WIRED)
+            // The one in use is gone: go back to the phone itself
+            current !in available -> setAudioRoute(if (_state.value.isVideo || _state.value.cameraOn) AudioRoute.SPEAKER else AudioRoute.EARPIECE)
+            else -> _state.update { it.copy(routes = available) }
+        }
+    }
+
     private fun startAudioRouting() {
         savedAudioMode = audioManager.mode
         savedSpeaker = audioManager.isSpeakerphoneOn
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-        audioManager.isSpeakerphoneOn = _state.value.speakerOn
+        routingActive = true
+        runCatching { audioManager.registerAudioDeviceCallback(deviceCallback, mainHandler) }
+        // Start on a headset when one is connected, otherwise the speaker (video) or the earpiece (voice)
+        val available = availableRoutes()
+        val first = when {
+            AudioRoute.BLUETOOTH in available -> AudioRoute.BLUETOOTH
+            AudioRoute.WIRED in available -> AudioRoute.WIRED
+            _state.value.speakerOn -> AudioRoute.SPEAKER
+            else -> AudioRoute.EARPIECE
+        }
+        applyRoute(first)
+        _state.update { it.copy(audioRoute = first, speakerOn = first == AudioRoute.SPEAKER, routes = available) }
     }
 
     private fun stopAudioRouting() {
+        routingActive = false
+        runCatching { audioManager.unregisterAudioDeviceCallback(deviceCallback) }
         runCatching {
-            audioManager.isSpeakerphoneOn = savedSpeaker
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                audioManager.clearCommunicationDevice()
+            } else {
+                @Suppress("DEPRECATION")
+                audioManager.stopBluetoothSco()
+                @Suppress("DEPRECATION")
+                audioManager.isBluetoothScoOn = false
+                audioManager.isSpeakerphoneOn = savedSpeaker
+            }
             audioManager.mode = savedAudioMode
         }
     }

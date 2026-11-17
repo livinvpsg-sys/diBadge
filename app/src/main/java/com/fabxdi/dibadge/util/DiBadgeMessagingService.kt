@@ -1,6 +1,8 @@
 package com.fabxdi.dibadge.util
 
 import com.fabxdi.dibadge.call.CallEngine
+import com.fabxdi.dibadge.call.CallPhase
+import com.fabxdi.dibadge.call.MissedCallNotifier
 import com.fabxdi.dibadge.call.CallRepository
 import com.fabxdi.dibadge.call.IncomingCallNotifier
 import com.google.firebase.messaging.FirebaseMessagingService
@@ -29,11 +31,27 @@ class DiBadgeMessagingService : FirebaseMessagingService() {
         when (data["type"]) {
             "message" -> PushNotifier.showMessage(applicationContext, data)
             "call" -> onIncomingCall(data)
+            "connection" -> ConnectionNotifier.show(applicationContext, data)
             "task" -> TaskNotifier.show(applicationContext, data)
             "announcement" -> AnnouncementNotifier.show(applicationContext, data)
             "call_cancel" -> {
                 val callId = data["callId"].orEmpty()
-                CallEngine.get(applicationContext).remoteCancelled(callId)
+                val engine = CallEngine.get(applicationContext)
+                // Already talking on this call: nothing was missed
+                val s = engine.state.value
+                val answered = s.callId == callId &&
+                        (s.phase == CallPhase.CONNECTING || s.phase == CallPhase.CONNECTED)
+                engine.remoteCancelled(callId)
+                if (!answered && data["missed"] == "1") {
+                    MissedCallNotifier.show(
+                        context = applicationContext,
+                        callId = callId,
+                        callerName = data["callerName"].orEmpty(),
+                        groupId = data["groupId"].orEmpty(),
+                        video = data["callType"] == "video",
+                        at = data["at"]?.toLongOrNull() ?: 0L
+                    )
+                }
             }
         }
     }

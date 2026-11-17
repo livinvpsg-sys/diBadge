@@ -121,6 +121,22 @@ fun MainDashboard(
 
     val homeEntries by viewModel.allHomeEntries.collectAsState(initial = emptyList())
 
+    // Last message, who wrote it and the unread count of each chat; the list is newest first
+    val previewsVm: HomeChatPreviewsViewModel = viewModel()
+    val previews by previewsVm.previews.collectAsState()
+    val directIds by previewsVm.directIds.collectAsState()
+    val chatPhotos by previewsVm.photos.collectAsState()
+    val homeContext = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) { com.fabxdi.dibadge.util.ChatDrafts.load(homeContext) }
+    val chatDrafts by com.fabxdi.dibadge.util.ChatDrafts.drafts.collectAsState()
+    LaunchedEffect(homeEntries) { previewsVm.watch(homeEntries.map { it.id.toString() }) }
+    val sortedEntries = remember(homeEntries, previews) {
+        homeEntries.sortedByDescending {
+            previews[it.id.toString()]?.at
+                ?: it.timestamp.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+        }
+    }
+
     // Opens the chat when a push notification was tapped
     LaunchedEffect(openChatGroupId, homeEntries) {
         val wanted = openChatGroupId ?: return@LaunchedEffect
@@ -470,10 +486,14 @@ fun MainDashboard(
                                             modifier = Modifier.fillMaxSize(),
                                             contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)
                                         ) {
-                                            items(homeEntries.size) { index ->
-                                                val entry = homeEntries[index]
+                                            items(sortedEntries.size) { index ->
+                                                val entry = sortedEntries[index]
                                                 HomeEntryCard(
                                                     entry = entry,
+                                                    preview = previews[entry.id.toString()],
+                                                    isGroup = isGroupEntry(entry, directIds),
+                                                    photoUrl = chatPhotos[entry.id.toString()].orEmpty(),
+                                                    draft = chatDrafts[entry.id.toString()].orEmpty(),
                                                     isSelected = selectedEntries.contains(entry),
                                                     onClick = {
                                                         if (selectedEntries.isNotEmpty()) {
@@ -572,6 +592,7 @@ fun MainDashboard(
                                                         title = entry.title,
                                                         subtitle = displaySubtitle,
                                                         isGroup = isGroup,
+                                                        photoUrl = chatPhotos[entry.id.toString()].orEmpty(),
                                                         idForColor = entry.id.toString(),
                                                         query = query,
                                                         onClick = {
@@ -631,7 +652,7 @@ fun MainDashboard(
         NewGroupBottomSheet(
             onDismiss = { showNewGroupSheet = false },
             onConfirm = { title, subtitle ->
-                viewModel.saveHomeEntry(title, subtitle, firstName.take(1))
+                viewModel.saveHomeEntry(com.fabxdi.dibadge.util.capitalizeFirst(title.trim()), subtitle, firstName.take(1))
                 showNewGroupSheet = false
             }
         )

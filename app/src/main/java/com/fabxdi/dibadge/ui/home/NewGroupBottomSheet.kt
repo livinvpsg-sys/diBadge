@@ -42,11 +42,6 @@ fun NewGroupBottomSheet(
 
     val canCreate = title.trim().isNotBlank() && !isCreating
 
-    LaunchedEffect(Unit) {
-        delay(100)
-        focusRequester.requestFocus()
-    }
-
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),

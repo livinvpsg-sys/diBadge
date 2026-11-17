@@ -58,6 +58,7 @@ import com.fabxdi.dibadge.R
 import com.google.firebase.firestore.FirebaseFirestore
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.AudioFile
+import androidx.compose.material.icons.outlined.Contacts
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.DocumentScanner
 import androidx.compose.material.icons.outlined.Edit
@@ -131,7 +132,7 @@ fun AttachOptionsSheet(
     primaryTextColor: Color,
     secondaryTextColor: Color,
     onDismiss: () -> Unit,
-    onStamp: () -> Unit,
+    onContacts: () -> Unit,
     onPhoto: () -> Unit,
     onVideo: () -> Unit,
     onAudio: () -> Unit,
@@ -172,7 +173,7 @@ fun AttachOptionsSheet(
                 .padding(horizontal = 16.dp)
                 .padding(bottom = 28.dp)
         ) {
-            // Row 1: Stamp, Photo, Video, Audio
+            // Row 1: Contacts, Photo, Video, Audio
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -180,15 +181,15 @@ fun AttachOptionsSheet(
             ) {
                 Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
                     AttachColumnItem(
-                        icon = Icons.Default.CameraAlt,
-                        label = "Stamp",
+                        icon = Icons.Outlined.Contacts,
+                        label = "Contacts",
                         isDark = isDark,
                         outlineColor = outlineColor,
                         secondaryTextColor = secondaryTextColor,
                         primaryTextColor = primaryTextColor,
-                        enabled = activeCategory == null || activeCategory == AttachmentCategory.IMAGE
+                        enabled = activeCategory == null
                     ) {
-                        onStamp()
+                        onContacts()
                     }
                 }
 

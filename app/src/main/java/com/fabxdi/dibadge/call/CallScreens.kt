@@ -23,9 +23,14 @@ import androidx.compose.material.icons.outlined.CallEnd
 import androidx.compose.material.icons.outlined.FlipCameraAndroid
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.MicOff
+import androidx.compose.material.icons.outlined.Bluetooth
+import androidx.compose.material.icons.outlined.Headphones
+import androidx.compose.material.icons.outlined.PhoneInTalk
 import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material.icons.outlined.VideocamOff
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -220,30 +225,88 @@ private fun VideoLayout(
 
 @Composable
 private fun ControlsRow(state: CallState, engine: CallEngine, onToggleCamera: (Boolean) -> Unit, showFlip: Boolean) {
+    val w = if (showFlip) 60 else 72
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
         RoundAction(
             if (state.muted) Icons.Outlined.MicOff else Icons.Outlined.Mic,
             if (state.muted) "Unmute" else "Mute",
             active = state.muted,
-            onClick = { engine.setMuted(!state.muted) }
+            onClick = { engine.setMuted(!state.muted) },
+            width = w
         )
         if (showFlip) {
             RoundAction(
                 if (state.cameraOn) Icons.Outlined.Videocam else Icons.Outlined.VideocamOff,
                 "Camera",
                 active = !state.cameraOn,
-                onClick = { onToggleCamera(!state.cameraOn) }
+                onClick = { onToggleCamera(!state.cameraOn) },
+                width = w
             )
-            RoundAction(Icons.Outlined.FlipCameraAndroid, "Flip", onClick = { engine.switchCamera() }, enabled = state.cameraOn)
+            RoundAction(Icons.Outlined.FlipCameraAndroid, "Flip", onClick = { engine.switchCamera() }, enabled = state.cameraOn, width = w)
+            AudioRouteButton(state, engine, width = w)
         } else {
-            RoundAction(
-                Icons.Outlined.VolumeUp, "Speaker",
-                active = state.speakerOn,
-                onClick = { engine.setSpeaker(!state.speakerOn) }
-            )
-            RoundAction(Icons.Outlined.Videocam, "Video", onClick = { onToggleCamera(true) })
+            AudioRouteButton(state, engine, width = w)
+            RoundAction(Icons.Outlined.Videocam, "Video", onClick = { onToggleCamera(true) }, width = w)
         }
-        RoundAction(Icons.Outlined.CallEnd, "End", container = CallRed, tint = CallBg, onClick = { engine.hangUp() })
+        RoundAction(Icons.Outlined.CallEnd, "End", container = CallRed, tint = CallBg, onClick = { engine.hangUp() }, width = w)
+    }
+}
+
+private fun routeIcon(r: AudioRoute): ImageVector = when (r) {
+    AudioRoute.EARPIECE -> Icons.Outlined.PhoneInTalk
+    AudioRoute.SPEAKER -> Icons.Outlined.VolumeUp
+    AudioRoute.BLUETOOTH -> Icons.Outlined.Bluetooth
+    AudioRoute.WIRED -> Icons.Outlined.Headphones
+}
+
+private fun routeLabel(r: AudioRoute): String = when (r) {
+    AudioRoute.EARPIECE -> "Phone"
+    AudioRoute.SPEAKER -> "Speaker"
+    AudioRoute.BLUETOOTH -> "Bluetooth"
+    AudioRoute.WIRED -> "Headset"
+}
+
+/**
+ * Shows where the sound comes out. With only the phone and the speaker, one tap switches between
+ * them. With a headset connected it opens a short list to choose from.
+ */
+@Composable
+private fun AudioRouteButton(state: CallState, engine: CallEngine, width: Int) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Box {
+        RoundAction(
+            routeIcon(state.audioRoute),
+            routeLabel(state.audioRoute),
+            // lit while the speaker is on, like the old button
+            active = state.audioRoute == AudioRoute.SPEAKER,
+            onClick = {
+                if (state.routes.size <= 2) {
+                    engine.setAudioRoute(if (state.audioRoute == AudioRoute.SPEAKER) AudioRoute.EARPIECE else AudioRoute.SPEAKER)
+                } else {
+                    menuOpen = true
+                }
+            },
+            width = width
+        )
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            state.routes.forEach { r ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            routeLabel(r),
+                            color = if (r == state.audioRoute) DiBadgeTheme.colors.accent else CallText
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            routeIcon(r), null,
+                            tint = if (r == state.audioRoute) DiBadgeTheme.colors.accent else CallText
+                        )
+                    },
+                    onClick = { menuOpen = false; engine.setAudioRoute(r) }
+                )
+            }
+        }
     }
 }
 
@@ -256,9 +319,10 @@ private fun RoundAction(
     container: Color = CallButton,
     tint: Color = CallText,
     active: Boolean = false,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    width: Int = 72
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(72.dp)) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(width.dp)) {
         Box(
             modifier = Modifier
                 .size(size.dp)

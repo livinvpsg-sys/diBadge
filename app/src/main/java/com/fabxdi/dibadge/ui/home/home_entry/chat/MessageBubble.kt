@@ -897,7 +897,9 @@ private fun ReplyPreviewAboveBubble(
                     val thumbUri = message.replyingToAttachmentUri ?: replyingTo.attachments.firstOrNull()
 
                     Column(modifier = Modifier.weight(1f, fill = false)) {
-                        val previewText = if (replyingTo.text.isNotBlank()) {
+                        val previewText = if (replyingTo.msgType == "contact") {
+                            "Contact: " + replyingTo.text.lineSequence().firstOrNull().orEmpty()
+                        } else if (replyingTo.text.isNotBlank()) {
                             replyingTo.text.take(200)
                         } else if (replyingTo.isVoiceNote) {
                             "Voice message"
@@ -960,6 +962,7 @@ private fun ReplyQuoteInBubble(
     val thumbUri = message.replyingToAttachmentUri ?: replyingTo.attachments.firstOrNull()
     val preview = when {
         replyingTo.isDeleted -> "Message deleted"
+        replyingTo.msgType == "contact" -> "Contact: " + replyingTo.text.lineSequence().firstOrNull().orEmpty()
         replyingTo.text.isNotBlank() -> replyingTo.text.take(200)
         replyingTo.isVoiceNote -> "Voice message"
         replyingTo.msgType == "location" -> "Location"
@@ -1214,6 +1217,15 @@ private fun AttachmentAndTextSection(
                     }
                 }
             }
+        } else if (message.msgType == "contact") {
+            ContactCard(
+                text = message.text,
+                isDark = isDark,
+                primaryTextColor = primaryTextColor,
+                secondaryTextColor = secondaryTextColor,
+                outlineColor = outlineColor,
+                accentColor = tealAccent
+            )
         } else if (message.msgType == "location") {
             // Location Bubble
             val placeText = if (!message.locationPlaceName.isNullOrBlank()) {
@@ -2134,7 +2146,7 @@ private fun AttachmentAndTextSection(
 
         // Message Text
         // A poll or location already shows its details inside the card, so its stored "Poll: ..." / "Location" text is not repeated
-        val rawTextToDisplay = if (message.msgType == "poll" || message.msgType == "location") {
+        val rawTextToDisplay = if (message.msgType == "poll" || message.msgType == "location" || message.msgType == "contact") {
             ""
         } else if (!message.isSentByMe && message.isGroupMention) {
             stripGroupMention(message.text, message.sendingGroupName)
@@ -3121,5 +3133,101 @@ private fun DocumentRowsNoBubble(
                 }
             }
         }
+    }
+}
+
+/** A shared contact: the name, the numbers (tap to call) and an "Add to contacts" button. */
+@Composable
+private fun ContactCard(
+    text: String,
+    isDark: Boolean,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    outlineColor: Color,
+    accentColor: Color
+) {
+    val context = LocalContext.current
+    val contact = remember(text) { com.fabxdi.dibadge.util.ContactShare.decode(text) }
+    val initial = contact.name.trim().firstOrNull()?.uppercase() ?: "?"
+    val palette = listOf(0xFFE39A6B, 0xFF6BA8E3, 0xFF9B7BD6, 0xFF5FB88C, 0xFFD66B8A, 0xFFC9A93F)
+    val avatarColor = Color(palette[(contact.name.hashCode() and 0x7FFFFFFF) % palette.size])
+
+    Column(modifier = Modifier.width(234.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 5.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier.size(40.dp).clip(CircleShape).background(avatarColor),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(initial, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            }
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    contact.name,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = primaryTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text("Contact", fontSize = 12.sp, color = secondaryTextColor)
+            }
+        }
+        contact.phones.forEach { phone ->
+            Text(
+                text = phone,
+                fontSize = 14.sp,
+                color = primaryTextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(phone))))
+                        } catch (e: Exception) { }
+                    }
+                    .padding(horizontal = 5.dp, vertical = 5.dp)
+            )
+        }
+        contact.emails.forEach { mail ->
+            Text(
+                text = mail,
+                fontSize = 14.sp,
+                color = secondaryTextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 5.dp, vertical = 3.dp)
+            )
+        }
+        HorizontalDivider(
+            color = outlineColor,
+            thickness = 1.dp,
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 6.dp)
+        )
+        Text(
+            text = "Add to contacts",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = accentColor,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    try {
+                        val insert = Intent(android.provider.ContactsContract.Intents.Insert.ACTION).apply {
+                            type = android.provider.ContactsContract.RawContacts.CONTENT_TYPE
+                            putExtra(android.provider.ContactsContract.Intents.Insert.NAME, contact.name)
+                            contact.phones.firstOrNull()?.let { putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, it) }
+                            contact.emails.firstOrNull()?.let { putExtra(android.provider.ContactsContract.Intents.Insert.EMAIL, it) }
+                        }
+                        context.startActivity(insert)
+                    } catch (e: Exception) { }
+                }
+                .padding(horizontal = 5.dp, vertical = 4.dp)
+        )
     }
 }

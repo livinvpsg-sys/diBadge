@@ -210,6 +210,31 @@ fun ChatScreen(
     var pendingDurations by remember { mutableStateOf(mapOf<String, Long>()) }
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
+
+    // Share a contact from the phone's address book (the picker only lets this app see the one chosen)
+    val contactPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickContact()) { picked ->
+        if (picked != null) {
+            val shared = com.fabxdi.dibadge.util.ContactShare.read(context, picked)
+            if (shared != null) {
+                chatViewModel.sendContactMessage(currentEntry.id.toString(), shared)
+            } else {
+                Toast.makeText(context, "Could not read that contact", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    // Unsent text: brought back when the chat is opened again, and shown as "Draft" in the home list
+    LaunchedEffect(currentEntry.id) {
+        if (inputText.isEmpty()) {
+            inputText = com.fabxdi.dibadge.util.ChatDrafts.get(context, currentEntry.id.toString())
+        }
+    }
+    LaunchedEffect(inputText, editingMessage) {
+        if (editingMessage == null) {
+            kotlinx.coroutines.delay(300)
+            com.fabxdi.dibadge.util.ChatDrafts.set(context, currentEntry.id.toString(), inputText)
+        }
+    }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var deleteModeForMeOnly by remember { mutableStateOf(false) }
     var showGroupDetails by remember { mutableStateOf(false) }
@@ -672,10 +697,9 @@ fun ChatScreen(
 
     if (showCamera) {
         CameraCaptureScreen(
-            isStampCamera = isCameraForStampMode,
             onImageCaptured = { uri ->
                 attachedFiles = processNewUris(listOf(uri), attachedFiles, context)
-                attachSource = if (isCameraForStampMode) AttachSource.STAMP else AttachSource.CAMERA
+                attachSource = AttachSource.CAMERA
                 showCamera = false
             },
             onClose = { showCamera = false }
@@ -1004,7 +1028,8 @@ fun ChatScreen(
         val missing = need.filter {
             androidx.core.content.ContextCompat.checkSelfPermission(callCtx, it) != android.content.pm.PackageManager.PERMISSION_GRANTED
         }
-        if (missing.isEmpty()) beginCall(video) else callPermissionLauncher.launch(missing.toTypedArray())
+        val ask = missing + com.fabxdi.dibadge.call.CallPermissions.bluetoothOnce(callCtx)
+        if (ask.isEmpty()) beginCall(video) else callPermissionLauncher.launch(ask.toTypedArray())
     }
 
     Scaffold(
@@ -1285,6 +1310,8 @@ fun ChatScreen(
                                         replyMsg.text.take(200)
                                     } else if (replyMsg.isVoiceNote) {
                                         "Voice message"
+                                    } else if (replyMsg.msgType == "contact") {
+                                        "Contact"
                                     } else if (replyMsg.msgType == "location") {
                                         "Location"
                                     } else if (replyMsg.msgType == "poll") {
@@ -1941,7 +1968,6 @@ fun ChatScreen(
                                             } else if (addByScan) {
                                                 launchDocumentScanner(context, docScannerLauncher)
                                             } else if (addByCamera) {
-                                                isCameraForStampMode = attachSource == AttachSource.STAMP
                                                 if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
                                                     showCamera = true
                                                 } else {
@@ -2577,14 +2603,9 @@ fun ChatScreen(
                     primaryTextColor = primaryTextColor,
                     secondaryTextColor = secondaryTextColor,
                     onDismiss = { showAttachmentOptions = false },
-                    onStamp = {
-                        isCameraForStampMode = true
-                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                            showCamera = true
-                        } else {
-                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                        }
+                    onContacts = {
                         showAttachmentOptions = false
+                        contactPickerLauncher.launch(null)
                     },
                     onPhoto = {
                         imagePickerLauncher.launch("image/*")

@@ -58,13 +58,17 @@ enum class CaptureMode { PHOTO, VIDEO }
 
 @Composable
 fun CameraCaptureScreen(
-    isStampCamera: Boolean = true,
     onImageCaptured: (Uri) -> Unit,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val isStampEnabled = isStampCamera
+    // Stamp is off by default. Once the person turns it on it stays on (also next time the camera
+    // opens) until they turn it off again.
+    val stampPrefs = remember { context.getSharedPreferences("camera_prefs", Context.MODE_PRIVATE) }
+    var isStampEnabled by remember {
+        mutableStateOf(try { stampPrefs.getBoolean("stamp_on", false) } catch (e: Exception) { false })
+    }
     var capturedPhotoUri by remember { mutableStateOf<Uri?>(null) }
 
     var lensFacing by remember { mutableStateOf(CameraSelector.LENS_FACING_BACK) }
@@ -72,7 +76,7 @@ fun CameraCaptureScreen(
     var captureMode by remember { mutableStateOf(CaptureMode.PHOTO) }
     var isRecording by remember { mutableStateOf(false) }
     var recordingDuration by remember { mutableLongStateOf(0L) }
-    
+
     val previewView = remember { PreviewView(context) }
     val imageCapture = remember { ImageCapture.Builder().build() }
     val recorder = remember {
@@ -82,10 +86,10 @@ fun CameraCaptureScreen(
     }
     val videoCapture = remember { VideoCapture.withOutput(recorder) }
     val preview = remember { Preview.Builder().build() }
-    
+
     var activeRecording by remember { mutableStateOf<Recording?>(null) }
     val currentRecording = rememberUpdatedState(activeRecording)
-    
+
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     var camera by remember { mutableStateOf<Camera?>(null) }
 
@@ -152,9 +156,9 @@ fun CameraCaptureScreen(
             val cameraProvider = cameraProviderFuture.get()
 
             preview.surfaceProvider = previewView.surfaceProvider
-            
+
             imageCapture.flashMode = flashMode
-            
+
             val cameraSelector = CameraSelector.Builder()
                 .requireLensFacing(lensFacing)
                 .build()
@@ -167,7 +171,7 @@ fun CameraCaptureScreen(
                 } else {
                     useCases.add(videoCapture)
                 }
-                
+
                 camera = cameraProvider.bindToLifecycle(
                     lifecycleOwner,
                     cameraSelector,
@@ -232,7 +236,8 @@ fun CameraCaptureScreen(
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 16.dp, bottom = 120.dp)
+                    .navigationBarsPadding()
+                    .padding(start = 16.dp, bottom = 184.dp)
             ) {
                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                     Text(
@@ -275,6 +280,36 @@ fun CameraCaptureScreen(
         ) {
             IconButton(onClick = onClose) {
                 Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+            }
+
+            if (captureMode == CaptureMode.PHOTO) {
+                // Stamp on / off
+                Surface(
+                    color = if (isStampEnabled) Color.White else Color.Black.copy(alpha = 0.4f),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.clickable {
+                        isStampEnabled = !isStampEnabled
+                        try { stampPrefs.edit().putBoolean("stamp_on", isStampEnabled).apply() } catch (e: Exception) { }
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Place,
+                            contentDescription = null,
+                            tint = if (isStampEnabled) Color.Black else Color.White,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isStampEnabled) "Stamp on" else "Stamp off",
+                            color = if (isStampEnabled) Color.Black else Color.White,
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        )
+                    }
+                }
             }
 
             if (captureMode == CaptureMode.PHOTO) {

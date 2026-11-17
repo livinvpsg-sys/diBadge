@@ -2,6 +2,7 @@ package com.fabxdi.dibadge.ui.home
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -9,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,6 +29,12 @@ import coil.compose.AsyncImage
 import com.fabxdi.dibadge.data.HomeEntryEntity
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.UserColorUtils
+import com.fabxdi.dibadge.util.capitalizeFirst
+import com.google.firebase.auth.FirebaseAuth
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.TextStyle
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -69,13 +77,6 @@ fun buildSearchAnnotatedString(
     }
 }
 
-/**
- * "Direct", "Chat" and "One-to-one" are saved in a chat's subtitle only to mark it as a
- * one-to-one chat (other screens rely on that). They are not text for people to read.
- */
-private fun isChatTypeLabel(subtitle: String): Boolean =
-    subtitle.trim().lowercase() in listOf("direct", "chat", "one-to-one")
-
 @Composable
 fun HomeSearchRow(
     title: String,
@@ -94,6 +95,9 @@ fun HomeSearchRow(
     val outlineColor = colors.outline
     val amberHighlightColor = if (isDark) Color(0xFFFFB300).copy(alpha = 0.35f) else Color(0xFFFFF59D)
 
+    val avatarShape = if (isGroup) RoundedCornerShape(12.dp) else CircleShape
+    val avatarColor = remember(idForColor) { UserColorUtils.getColorForName(idForColor) }
+
     val annotatedTitle = remember(title, query, primaryTextColor, amberHighlightColor) {
         buildSearchAnnotatedString(title, query, primaryTextColor, amberHighlightColor)
     }
@@ -109,13 +113,31 @@ fun HomeSearchRow(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Avatar (44dp), same look as the chat list, chat header and details screen
-        ChatAvatar(
-            title = title,
-            idForColor = idForColor,
-            size = 44.dp,
-            photoUrl = photoUrl
-        )
+        // Avatar (44dp)
+        Surface(
+            modifier = Modifier.size(44.dp),
+            shape = avatarShape,
+            color = avatarColor,
+            border = BorderStroke(1.dp, outlineColor)
+        ) {
+            if (photoUrl.isNotBlank()) {
+                AsyncImage(
+                    model = photoUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = title.take(1).uppercase(),
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.width(12.dp))
 
@@ -130,7 +152,7 @@ fun HomeSearchRow(
                 overflow = TextOverflow.Ellipsis
             )
 
-            if (subtitle.isNotBlank() && !isChatTypeLabel(subtitle)) {
+            if (subtitle.isNotBlank()) {
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = annotatedSubtitle,
@@ -145,6 +167,31 @@ fun HomeSearchRow(
     }
 }
 
+/** A chat is a group unless it is person to person. */
+fun isGroupEntry(entry: HomeEntryEntity, directIds: Set<String> = emptySet()): Boolean {
+    // Same rule as the chat screen: only a chat marked direct is person to person
+    val sub = entry.subtitle.trim().lowercase()
+    if (sub in listOf("direct", "chat", "one-to-one")) return false
+    return entry.id.toString() !in directIds
+}
+
+/** Right-hand time: today as a clock time, yesterday, this week as a weekday, older as a date. */
+private fun homeTimeLabel(epochMs: Long, timeFormatter: DateTimeFormatter): String {
+    if (epochMs <= 0L) return ""
+    val zone = ZoneId.systemDefault()
+    val dt = Instant.ofEpochMilli(epochMs).atZone(zone)
+    val today = LocalDate.now(zone)
+    val day = dt.toLocalDate()
+    val daysAgo = java.time.temporal.ChronoUnit.DAYS.between(day, today)
+    return when {
+        daysAgo <= 0L -> dt.format(timeFormatter)
+        daysAgo == 1L -> "Yesterday"
+        daysAgo < 7L -> dt.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())
+        day.year == today.year -> dt.format(DateTimeFormatter.ofPattern("d MMM", Locale.getDefault()))
+        else -> dt.format(DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault()))
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeEntryCard(
@@ -152,17 +199,31 @@ fun HomeEntryCard(
     isSelected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    photoUrl: String = ""
+    preview: ChatPreview? = null,
+    isGroup: Boolean = isGroupEntry(entry),
+    photoUrl: String = "",
+    draft: String = ""
 ) {
     val colors = MaterialTheme.colorScheme
+    val dc = DiBadgeTheme.colors
     val primaryTextColor = colors.onBackground
     val secondaryTextColor = colors.onSurfaceVariant
 
     val timeFormatter = remember { DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()) }
-    
-    // Photo passed in by the caller (a connection's photo) or remembered from the chat screens
-    val cachedPhoto = AvatarPhotoCache.photoFor(entry.id.toString())
-    val avatarPhoto = photoUrl.ifBlank { cachedPhoto }
+    val myUid = remember { FirebaseAuth.getInstance().currentUser?.uid.orEmpty() }
+
+    // Stable color hash for group ID
+    val avatarColor = remember(entry.id) {
+        UserColorUtils.getColorForName(entry.id.toString())
+    }
+
+    val unread = preview?.unread ?: 0
+    val hasUnread = unread > 0
+    val timeText = remember(preview?.at, entry.timestamp) {
+        val ms = preview?.at?.takeIf { it > 0L }
+            ?: entry.timestamp.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        homeTimeLabel(ms, timeFormatter)
+    }
 
     Surface(
         modifier = Modifier
@@ -181,43 +242,88 @@ fun HomeEntryCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Left: 44dp Avatar Circle
-            ChatAvatar(
-                title = entry.title,
-                idForColor = entry.id.toString(),
-                size = 44.dp,
-                photoUrl = avatarPhoto
-            )
+            Surface(
+                modifier = Modifier.size(44.dp),
+                shape = CircleShape,
+                color = avatarColor
+            ) {
+                if (photoUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = photoUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = entry.title.take(1).uppercase(),
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.width(14.dp))
 
-            // Middle: Name and Last Message / Description
+            // Middle: name (with a people icon for groups) and the last message
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = entry.title,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = primaryTextColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                val isMemberCount = remember(entry.subtitle) {
-                    val sub = entry.subtitle.trim().lowercase()
-                    sub.endsWith("member") || sub.endsWith("members")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = capitalizeFirst(entry.title),
+                        fontSize = 16.sp,
+                        fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Normal,
+                        color = primaryTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (isGroup) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            imageVector = Icons.Outlined.Groups,
+                            contentDescription = "Group",
+                            tint = secondaryTextColor,
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
                 }
-                if (entry.subtitle.isNotBlank() && !isMemberCount && !isChatTypeLabel(entry.subtitle)) {
+                if (draft.isNotBlank()) {
                     Spacer(modifier = Modifier.height(3.dp))
                     Text(
-                        text = entry.subtitle,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Normal,
+                        text = buildAnnotatedString {
+                            withStyle(SpanStyle(color = dc.accent, fontWeight = FontWeight.SemiBold)) { append("Draft: ") }
+                            append(draft.replace(Regex("\\s+"), " ").trim())
+                        },
+                        fontSize = 13.5.sp,
                         color = secondaryTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                } else if (preview != null) {
+                    val prefix = when {
+                        preview.isCall -> ""
+                        preview.senderUid == myUid -> "You: "
+                        isGroup && preview.senderName.isNotBlank() -> preview.senderName.trim().substringBefore(" ") + ": "
+                        else -> ""
+                    }
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = prefix + preview.text,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = if (hasUnread) primaryTextColor.copy(alpha = 0.85f) else secondaryTextColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
-            // Right: Time or Selection Indicator
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Right: time and unread count, or the selection tick
             if (isSelected) {
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
@@ -226,12 +332,31 @@ fun HomeEntryCard(
                     modifier = Modifier.size(24.dp)
                 )
             } else {
-                Text(
-                    text = entry.timestamp.format(timeFormatter),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = secondaryTextColor
-                )
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = timeText,
+                        fontSize = 12.sp,
+                        fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (hasUnread) dc.accent else secondaryTextColor
+                    )
+                    if (hasUnread) {
+                        Spacer(modifier = Modifier.height(5.dp))
+                        Box(
+                            modifier = Modifier
+                                .defaultMinSize(minWidth = 20.dp, minHeight = 20.dp)
+                                .background(dc.accentFill, RoundedCornerShape(10.dp))
+                                .padding(horizontal = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (unread > 99) "99+" else unread.toString(),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
             }
         }
     }

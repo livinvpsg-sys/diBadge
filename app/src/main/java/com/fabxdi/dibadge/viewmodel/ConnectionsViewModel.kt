@@ -2,7 +2,6 @@ package com.fabxdi.dibadge.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.fabxdi.dibadge.util.fixDownloadUrl
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
@@ -92,7 +91,6 @@ class ConnectionsViewModel : ViewModel() {
 
         connectionsListener?.remove(); connectionsListener = null
         blockedListener?.remove(); blockedListener = null
-        photoCache.clear()
         _connections.value = emptyList()
         _receivedRequests.value = emptyList()
         _sentRequests.value = emptyList()
@@ -223,11 +221,6 @@ class ConnectionsViewModel : ViewModel() {
                 for (doc in snapshot.documents) {
                     val id = doc.id
                     val targetUid = doc.getString("uid") ?: id
-                    if (targetUid == user.uid || id == user.uid) {
-                        // A request to yourself can never be valid: remove it and do not show it
-                        doc.reference.delete()
-                        continue
-                    }
                     val name = doc.getString("name") ?: doc.getString("displayName") ?: "User"
                     val org = doc.getString("organization") ?: doc.getString("company") ?: ""
                     val role = doc.getString("role") ?: ""
@@ -257,54 +250,13 @@ class ConnectionsViewModel : ViewModel() {
                     }
                 }
 
-                _connections.value = connList.sortedBy { it.name.lowercase() }.withKnownPhotos()
-                _receivedRequests.value = recList.sortedByDescending { it.timestamp }.withKnownPhotos()
-                _sentRequests.value = sentList.sortedByDescending { it.timestamp }.withKnownPhotos()
-
-                refreshPhotos((connList + recList + sentList).map { it.uid }.distinct())
+                _connections.value = connList.sortedBy { it.name.lowercase() }
+                _receivedRequests.value = recList.sortedByDescending { it.timestamp }
+                _sentRequests.value = sentList.sortedByDescending { it.timestamp }
             }
-    }
-
-    // Latest profile photo of each person, read from their own profile (the copy saved
-    // inside a connection entry goes stale when they add or change a photo later).
-    private val photoCache = HashMap<String, String>()
-
-    private fun List<ConnectionItem>.withKnownPhotos() =
-        map { it.copy(photoUrl = photoCache[it.uid] ?: fixDownloadUrl(it.photoUrl)) }
-
-    private fun refreshPhotos(uids: List<String>) {
-        viewModelScope.launch {
-            var changed = false
-            for (uid in uids) {
-                try {
-                    val doc = firestore.collection("users").document(uid).get().await()
-                    val url = fixDownloadUrl(doc.getString("photoUrl") ?: doc.getString("photoURL") ?: "")
-                    if (photoCache[uid] != url) {
-                        photoCache[uid] = url
-                        changed = true
-                    }
-                } catch (e: Exception) {
-                    // keep whatever photo we already have
-                }
-            }
-            if (changed) {
-                _connections.value = _connections.value.withKnownPhotos()
-                _receivedRequests.value = _receivedRequests.value.withKnownPhotos()
-                _sentRequests.value = _sentRequests.value.withKnownPhotos()
-            }
-        }
     }
 
     // ---------------------------------------------------------------- Search
-
-    /** True when this user document is the signed-in account (same id, or same email on a duplicate document). */
-    private fun DocumentSnapshot.isSignedInAccount(me: String): Boolean {
-        if (id == me) return true
-        val myEmail = auth.currentUser?.email?.trim()?.lowercase().orEmpty()
-        if (myEmail.isBlank()) return false
-        val theirs = (getString("emailLower") ?: getString("email") ?: "").trim().lowercase()
-        return theirs == myEmail
-    }
 
     private fun DocumentSnapshot.toPerson(): ConnectionItem = ConnectionItem(
         id = id,
@@ -313,7 +265,7 @@ class ConnectionsViewModel : ViewModel() {
         organization = getString("organization") ?: getString("company") ?: "",
         role = getString("role") ?: getString("jobTitle") ?: "",
         bio = getString("bio") ?: "",
-        photoUrl = fixDownloadUrl(getString("photoUrl") ?: getString("photoURL") ?: ""),
+        photoUrl = getString("photoUrl") ?: getString("photoURL") ?: "",
         status = "none",
         country = getString("country") ?: ""
     )
@@ -347,7 +299,7 @@ class ConnectionsViewModel : ViewModel() {
                 try {
                     val snap = query.limit(20).get().await()
                     for (doc in snap.documents) {
-                        if (doc.isSignedInAccount(me)) continue
+                        if (doc.id == me) continue
                         if (doc.getBoolean("hideFromSearch") == true) continue
                         if (!found.containsKey(doc.id)) found[doc.id] = doc.toPerson()
                     }
@@ -355,7 +307,7 @@ class ConnectionsViewModel : ViewModel() {
                     // one failing query should not hide the others
                 }
             }
-            val visible = withoutBlocked(me, found.values).filter { it.uid != me }
+            val visible = withoutBlocked(me, found.values)
             if (seq == searchSeq) {
                 _searchResults.value = visible.sortedBy { it.name.lowercase() }
                 _searching.value = false
@@ -372,7 +324,7 @@ class ConnectionsViewModel : ViewModel() {
 
             fun add(docs: List<DocumentSnapshot>) {
                 for (doc in docs) {
-                    if (doc.isSignedInAccount(me)) continue
+                    if (doc.id == me) continue
                     if (doc.getBoolean("hideFromSearch") == true) continue
                     if (doc.getString("displayName").isNullOrBlank()) continue
                     if (!found.containsKey(doc.id)) found[doc.id] = doc.toPerson()
@@ -396,7 +348,7 @@ class ConnectionsViewModel : ViewModel() {
             } catch (e: Exception) {
                 // suggestions are optional - ignore
             }
-            _suggestions.value = withoutBlocked(me, found.values).filter { it.uid != me }
+            _suggestions.value = withoutBlocked(me, found.values)
         }
     }
 
@@ -412,17 +364,6 @@ class ConnectionsViewModel : ViewModel() {
     fun sendInvite(item: ConnectionItem) {
         val me = auth.currentUser ?: return
         val target = item.uid
-        if (target.isBlank() || target == me.uid) {
-            _message.tryEmit("You can't send a connection request to yourself")
-            return
-        }
-        if (_connections.value.any { it.uid == target } ||
-            _sentRequests.value.any { it.uid == target } ||
-            _receivedRequests.value.any { it.uid == target }
-        ) {
-            _message.tryEmit("Already connected or a request is pending")
-            return
-        }
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             try {
@@ -458,6 +399,7 @@ class ConnectionsViewModel : ViewModel() {
                         "timestamp" to now
                     )
                 ).await()
+                com.fabxdi.dibadge.util.ConnectionPushApi.notify(target, "request")
                 _message.tryEmit("Request sent")
             } catch (e: Exception) {
                 reportFailure("send the request", e)
@@ -467,15 +409,12 @@ class ConnectionsViewModel : ViewModel() {
 
     fun acceptRequest(item: ConnectionItem) {
         val me = auth.currentUser ?: return
-        if (item.uid == me.uid) {
-            declineRequest(item)
-            return
-        }
         viewModelScope.launch {
             try {
                 myConnections()?.document(item.id)?.update("status", "connected")?.await()
                 theirConnections(item.uid).document(me.uid)
                     .update("status", "connected").await()
+                com.fabxdi.dibadge.util.ConnectionPushApi.notify(item.uid, "accepted")
             } catch (e: Exception) {
                 reportFailure("accept the request", e)
             }
@@ -500,22 +439,7 @@ class ConnectionsViewModel : ViewModel() {
         declineRequest(item)
     }
 
-    /** Ends an accepted connection on both sides. The other person is not notified. */
     fun removeConnection(item: ConnectionItem) {
-        val me = auth.currentUser ?: return
-        viewModelScope.launch {
-            try {
-                myConnections()?.document(item.id)?.delete()?.await()
-            } catch (e: Exception) {
-                reportFailure("disconnect", e)
-                return@launch
-            }
-            try {
-                theirConnections(item.uid).document(me.uid).delete().await()
-            } catch (e: Exception) {
-                // Their side could not be reached; this side is already removed
-            }
-            _message.tryEmit("Disconnected from ${item.name}")
-        }
+        declineRequest(item)
     }
 }

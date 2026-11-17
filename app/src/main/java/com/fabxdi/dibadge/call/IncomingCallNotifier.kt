@@ -18,7 +18,7 @@ import com.fabxdi.dibadge.R
 
 /**
  * The ringing notification for an incoming call. On a locked phone it opens the call screen over the
- * lock screen (full-screen intent); on an unlocked phone it drops down with Accept and Decline.
+ * lock screen (full-screen intent); on an unlocked phone it drops down with Answer and Decline buttons.
  */
 object IncomingCallNotifier {
     const val CHANNEL_ID = "calls_incoming"
@@ -74,7 +74,7 @@ object IncomingCallNotifier {
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(callerName)
-            .setContentText(if (video) "Incoming video call" else "Incoming voice call")
+            .setContentText(if (video) "Incoming diBadge video call" else "Incoming diBadge voice call")
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -85,7 +85,8 @@ object IncomingCallNotifier {
             .setContentIntent(openPending)
             .addPerson(caller)
 
-        builder.addAction(0, "Decline", declinePending).addAction(0, "Accept", acceptPending)
+        // Call style: a clear "Answer" (green) and "Decline" (red) button, like a phone call
+        builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(caller, declinePending, acceptPending))
 
         val notification = builder.build()
         // Keep ringing until it is answered, declined or times out

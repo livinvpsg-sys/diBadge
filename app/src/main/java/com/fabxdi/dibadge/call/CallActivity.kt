@@ -109,7 +109,8 @@ private fun CallHost(acceptRequested: Boolean, onAcceptHandled: () -> Unit, onCl
 
     fun answer() {
         val need = missing(state.isVideo)
-        if (need.isEmpty()) engine.accept() else askToAnswer.launch(need)
+        val ask = need.toList() + CallPermissions.bluetoothOnce(context)
+        if (ask.isEmpty()) engine.accept() else askToAnswer.launch(ask.toTypedArray())
     }
 
     // Accept was tapped on the notification
