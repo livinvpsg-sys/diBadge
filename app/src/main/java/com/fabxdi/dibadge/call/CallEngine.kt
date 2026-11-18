@@ -668,28 +668,68 @@ class CallEngine private constructor(private val appContext: Context) {
         }
     }
 
+    /** Bumped on every route change so a late retry of an older choice never overrides a newer one. */
+    private var routeToken = 0
+
     private fun applyRoute(route: AudioRoute) {
-        runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val devices = audioManager.availableCommunicationDevices
-                val target = when (route) {
-                    AudioRoute.EARPIECE -> devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
-                    AudioRoute.SPEAKER -> devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-                    AudioRoute.BLUETOOTH -> devices.firstOrNull { isBluetoothType(it.type) }
-                    AudioRoute.WIRED -> devices.firstOrNull { isWiredType(it.type) }
-                }
-                if (target != null) audioManager.setCommunicationDevice(target)
-            } else {
+        val token = ++routeToken
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            applyRouteModern(route, token, attempt = 0)
+        } else {
+            runCatching {
                 @Suppress("DEPRECATION")
                 if (route == AudioRoute.BLUETOOTH) {
                     audioManager.isSpeakerphoneOn = false
-                    audioManager.startBluetoothSco()
-                    audioManager.isBluetoothScoOn = true
+                    // A Bluetooth link that was just closed needs a moment before it can be opened again
+                    audioManager.stopBluetoothSco()
+                    mainHandler.postDelayed({
+                        if (token == routeToken) runCatching {
+                            audioManager.startBluetoothSco()
+                            audioManager.isBluetoothScoOn = true
+                        }
+                    }, 400)
                 } else {
                     audioManager.stopBluetoothSco()
                     audioManager.isBluetoothScoOn = false
                     audioManager.isSpeakerphoneOn = route == AudioRoute.SPEAKER
                 }
+            }
+        }
+    }
+
+    /**
+     * Android 12 and newer. Choosing a headset can fail the first time, for example straight after
+     * leaving it (the phone is still closing the old link). So it is checked and tried again.
+     */
+    private fun applyRouteModern(route: AudioRoute, token: Int, attempt: Int) {
+        if (token != routeToken) return
+        runCatching {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+            val devices = audioManager.availableCommunicationDevices
+            val target = when (route) {
+                AudioRoute.EARPIECE -> devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
+                AudioRoute.SPEAKER -> devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                AudioRoute.BLUETOOTH ->
+                    devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+                        ?: devices.firstOrNull { isBluetoothType(it.type) }
+                AudioRoute.WIRED -> devices.firstOrNull { isWiredType(it.type) }
+            }
+            var done = false
+            if (target != null) {
+                // Reset first so an old choice cannot get in the way
+                if (route == AudioRoute.BLUETOOTH) audioManager.clearCommunicationDevice()
+                done = audioManager.setCommunicationDevice(target) &&
+                        (route != AudioRoute.BLUETOOTH || audioManager.communicationDevice?.id == target.id)
+            }
+            if (!done && route == AudioRoute.BLUETOOTH && attempt < 6) {
+                mainHandler.postDelayed({ applyRouteModern(route, token, attempt + 1) }, 500)
+            } else if (done && route == AudioRoute.BLUETOOTH) {
+                // Check again a moment later that it really stayed on the headset
+                mainHandler.postDelayed({
+                    if (token == routeToken && audioManager.communicationDevice?.let { isBluetoothType(it.type) } != true && attempt < 6) {
+                        applyRouteModern(route, token, attempt + 1)
+                    }
+                }, 800)
             }
         }
     }

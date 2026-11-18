@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.CallEnd
 import androidx.compose.material.icons.outlined.FlipCameraAndroid
@@ -277,8 +278,8 @@ private fun AudioRouteButton(state: CallState, engine: CallEngine, width: Int) {
         RoundAction(
             routeIcon(state.audioRoute),
             routeLabel(state.audioRoute),
-            // lit while the speaker is on, like the old button
-            active = state.audioRoute == AudioRoute.SPEAKER,
+            // lit whenever the sound is NOT on the phone's own earpiece (speaker, Bluetooth, headset)
+            active = state.audioRoute != AudioRoute.EARPIECE,
             onClick = {
                 if (state.routes.size <= 2) {
                     engine.setAudioRoute(if (state.audioRoute == AudioRoute.SPEAKER) AudioRoute.EARPIECE else AudioRoute.SPEAKER)
@@ -290,18 +291,26 @@ private fun AudioRouteButton(state: CallState, engine: CallEngine, width: Int) {
         )
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             state.routes.forEach { r ->
+                val selected = r == state.audioRoute
                 DropdownMenuItem(
+                    modifier = Modifier.background(
+                        if (selected) DiBadgeTheme.colors.accent.copy(alpha = 0.22f) else Color.Transparent
+                    ),
                     text = {
                         Text(
                             routeLabel(r),
-                            color = if (r == state.audioRoute) DiBadgeTheme.colors.accent else CallText
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (selected) DiBadgeTheme.colors.accent else CallText
                         )
                     },
                     leadingIcon = {
                         Icon(
                             routeIcon(r), null,
-                            tint = if (r == state.audioRoute) DiBadgeTheme.colors.accent else CallText
+                            tint = if (selected) DiBadgeTheme.colors.accent else CallText
                         )
+                    },
+                    trailingIcon = {
+                        if (selected) Icon(Icons.Outlined.Check, null, tint = DiBadgeTheme.colors.accent)
                     },
                     onClick = { menuOpen = false; engine.setAudioRoute(r) }
                 )
