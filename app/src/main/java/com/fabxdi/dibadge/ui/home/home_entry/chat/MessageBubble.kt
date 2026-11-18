@@ -2317,6 +2317,8 @@ private fun TextWithInlineTime(
     val baseStyle = androidx.compose.material3.LocalTextStyle.current.merge(
         androidx.compose.ui.text.TextStyle(fontSize = 15.sp, lineHeight = 21.sp)
     )
+    // The widest the text can be: the bubble is at most 272dp wide, minus its 8dp side padding
+    val capDp = 256.dp
     Layout(
         content = {
             Text(
@@ -2326,35 +2328,65 @@ private fun TextWithInlineTime(
                 color = textColor
             )
             Box { time() }
+        },
+        measurePolicy = object : androidx.compose.ui.layout.MeasurePolicy {
+            override fun androidx.compose.ui.layout.MeasureScope.measure(
+                measurables: List<androidx.compose.ui.layout.Measurable>,
+                constraints: androidx.compose.ui.unit.Constraints
+            ): androidx.compose.ui.layout.MeasureResult {
+                val gap = 10.dp.roundToPx()
+                val timePlaceable = measurables[1].measure(androidx.compose.ui.unit.Constraints())
+                val textPlaceable = measurables[0].measure(constraints.copy(minWidth = 0, minHeight = 0))
+                // Measured here, in the same pass, so the width of the last line is always up to date
+                val result = measurer.measure(
+                    text = text,
+                    style = baseStyle,
+                    constraints = androidx.compose.ui.unit.Constraints(maxWidth = constraints.maxWidth)
+                )
+                val last = kotlin.math.ceil(result.getLineRight(result.lineCount - 1)).toInt()
+                val inlineWidth = last + gap + timePlaceable.width
+                val fitsInline = inlineWidth <= constraints.maxWidth
+                val width: Int
+                val height: Int
+                if (fitsInline) {
+                    width = maxOf(textPlaceable.width, inlineWidth)
+                    height = maxOf(textPlaceable.height, timePlaceable.height)
+                } else {
+                    width = maxOf(textPlaceable.width, timePlaceable.width)
+                    height = textPlaceable.height + timePlaceable.height
+                }
+                val w = width.coerceIn(constraints.minWidth, constraints.maxWidth)
+                return layout(w, height) {
+                    textPlaceable.placeRelative(0, 0)
+                    timePlaceable.placeRelative(w - timePlaceable.width, height - timePlaceable.height)
+                }
+            }
+
+            // The bubble sizes itself from this. It must say how wide the text really needs to be:
+            // when the time has to drop to its own line the bubble must NOT stay as wide as "text + time".
+            override fun androidx.compose.ui.layout.IntrinsicMeasureScope.maxIntrinsicWidth(
+                measurables: List<androidx.compose.ui.layout.IntrinsicMeasurable>,
+                height: Int
+            ): Int {
+                val gap = 10.dp.roundToPx()
+                val cap = capDp.roundToPx()
+                val timeW = measurables[1].maxIntrinsicWidth(Int.MAX_VALUE)
+                val oneLine = measurer.measure(
+                    text = text,
+                    style = baseStyle,
+                    constraints = androidx.compose.ui.unit.Constraints()
+                )
+                val textW = kotlin.math.ceil(oneLine.getLineRight(0)).toInt()
+                val together = textW + gap + timeW
+                return when {
+                    oneLine.lineCount > 1 -> cap            // has line breaks: uses the full width
+                    together <= cap -> together              // text and time share the line
+                    textW > cap -> cap                       // text itself wraps
+                    else -> maxOf(textW, timeW)              // time goes under the text
+                }
+            }
         }
-    ) { measurables, constraints ->
-        val gap = 10.dp.roundToPx()
-        val timePlaceable = measurables[1].measure(androidx.compose.ui.unit.Constraints())
-        val textPlaceable = measurables[0].measure(constraints.copy(minWidth = 0, minHeight = 0))
-        // Measured here, in the same pass, so the width of the last line is always up to date
-        val result = measurer.measure(
-            text = text,
-            style = baseStyle,
-            constraints = androidx.compose.ui.unit.Constraints(maxWidth = constraints.maxWidth)
-        )
-        val last = kotlin.math.ceil(result.getLineRight(result.lineCount - 1)).toInt()
-        val inlineWidth = last + gap + timePlaceable.width
-        val fitsInline = inlineWidth <= constraints.maxWidth
-        val width: Int
-        val height: Int
-        if (fitsInline) {
-            width = maxOf(textPlaceable.width, inlineWidth)
-            height = maxOf(textPlaceable.height, timePlaceable.height)
-        } else {
-            width = maxOf(textPlaceable.width, timePlaceable.width)
-            height = textPlaceable.height + timePlaceable.height
-        }
-        val w = width.coerceIn(constraints.minWidth, constraints.maxWidth)
-        layout(w, height) {
-            textPlaceable.placeRelative(0, 0)
-            timePlaceable.placeRelative(w - timePlaceable.width, height - timePlaceable.height)
-        }
-    }
+    )
 }
 
 @Composable

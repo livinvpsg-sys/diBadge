@@ -85,6 +85,7 @@ class NotifyActionReceiver : BroadcastReceiver() {
         }
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.cancel(ConnectionNotifier.notificationId(otherUid))
+        NotifyGroup.cleanup(context)
     }
 
     companion object {

@@ -268,6 +268,10 @@ fun ChatScreen(
     var otherUserName by remember { mutableStateOf("") }
     var otherUserFirstName by remember { mutableStateOf("") }
     var isBlockedByMe by remember { mutableStateOf(false) }
+    // How this 1:1 chat's two people are connected: "connected", "sent", "received" or "none"
+    var connectionState by remember { mutableStateOf("connected") }
+    val isDisconnected = isOneToOne && connectionState != "connected"
+    val connectionsVm = androidx.lifecycle.viewmodel.compose.viewModel<com.fabxdi.dibadge.viewmodel.ConnectionsViewModel>()
 
     LaunchedEffect(otherUid, currentUserId, isOneToOne) {
         if (otherUid.isNotBlank() && isOneToOne) {
@@ -290,6 +294,18 @@ fun ChatScreen(
                     .collection("nicknames").document(otherUid)
                     .addSnapshotListener { snap, _ ->
                         otherUserNickname = if (snap != null && snap.exists()) snap.getString("nickname") ?: "" else ""
+                    }
+
+                // 2b. Are we still connected?
+                db.collection("users").document(currentUserId)
+                    .collection("userConnections").document(otherUid)
+                    .addSnapshotListener { snap, _ ->
+                        if (snap == null) return@addSnapshotListener
+                        if (snap.exists()) {
+                            connectionState = snap.getString("status") ?: "connected"
+                        } else if (!snap.metadata.isFromCache) {
+                            connectionState = "none"
+                        }
                     }
 
                 // 3. Block status
@@ -1069,7 +1085,8 @@ fun ChatScreen(
                 onSearchOlder = { searchOlder() },
                 onSearchNewer = { searchNewer() },
                 callMenuOpen = callMenuOpen,
-                onToggleCall = { callMenuOpen = !callMenuOpen },
+                onToggleCall = if (isDisconnected) null else { { callMenuOpen = !callMenuOpen } },
+                statusLine = if (isDisconnected) "Not connected" else "",
                 hasUnreadAnnouncement = !isOneToOne && announcementItems.any {
                     it.mustAck && it.isOngoing(System.currentTimeMillis()) && !it.readAt.containsKey(currentUserId)
                 },
@@ -1125,6 +1142,53 @@ fun ChatScreen(
                                 }
                                 .padding(vertical = 12.dp, horizontal = 8.dp)
                         )
+                    }
+                }
+            } else if (isDisconnected) {
+                val fn = otherUserFirstName.ifBlank { (if (otherUserName.isNotBlank()) otherUserName else currentEntry.title).split(" ").firstOrNull().orEmpty() }
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = cardColor,
+                    border = BorderStroke(1.dp, outlineColor)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = when (connectionState) {
+                                "sent" -> "Request sent. You can chat again once $fn accepts."
+                                "received" -> "$fn wants to connect with you again."
+                                else -> "You are no longer connected with $fn.\nMessages and calls are turned off."
+                            },
+                            fontSize = 14.sp,
+                            color = secondaryTextColor,
+                            textAlign = TextAlign.Center
+                        )
+                        if (connectionState != "sent") {
+                            Text(
+                                text = if (connectionState == "received") "Accept" else "Connect again",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = tealAccent,
+                                modifier = Modifier
+                                    .padding(top = 10.dp)
+                                    .clickable {
+                                        val item = com.fabxdi.dibadge.viewmodel.ConnectionItem(
+                                            id = otherUid,
+                                            uid = otherUid,
+                                            name = otherUserName.ifBlank { currentEntry.title },
+                                            photoUrl = otherUserPhotoUrl
+                                        )
+                                        if (connectionState == "received") connectionsVm.acceptRequest(item)
+                                        else connectionsVm.sendInvite(item)
+                                    }
+                                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                            )
+                        }
                     }
                 }
             } else {

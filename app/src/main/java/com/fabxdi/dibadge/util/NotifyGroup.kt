@@ -15,6 +15,18 @@ object NotifyGroup {
     const val KEY = "dibadge_all"
     private const val SUMMARY_ID = 0x7000_0001
 
+    /** Removes the "diBadge" summary when no real notification is left in the group. */
+    fun cleanup(context: Context) {
+        try {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            val hasChild = nm.activeNotifications.any {
+                it.notification.group == KEY && (it.notification.flags and Notification.FLAG_GROUP_SUMMARY) == 0
+            }
+            if (!hasChild) nm.cancel(SUMMARY_ID)
+        } catch (e: Exception) {
+        }
+    }
+
     /** Call after posting a notification that uses [KEY]. Android removes the summary when the last one is cleared. */
     fun postSummary(context: Context) {
         try {

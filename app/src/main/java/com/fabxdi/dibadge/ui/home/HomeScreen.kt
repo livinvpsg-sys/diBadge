@@ -75,7 +75,7 @@ enum class HomeTab(
     val label: String,
     @DrawableRes val iconRes: Int
 ) {
-    Home("diBadge", R.drawable.ic_dibadge_nav),
+    Home("Chat", R.drawable.ic_dibadge_nav),
     Connections("Connections", R.drawable.ic_connections),
     MyTasks("My Tasks", R.drawable.ic_my_tasks),
     Note("Inbox", R.drawable.ic_inbox)
@@ -128,6 +128,8 @@ fun MainDashboard(
     val chatPhotos by previewsVm.photos.collectAsState()
     val homeContext = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) { com.fabxdi.dibadge.util.ChatDrafts.load(homeContext) }
+    // Tidy up: remove the empty "diBadge" notification left after the last real one was opened or cleared
+    LaunchedEffect(Unit) { com.fabxdi.dibadge.util.NotifyGroup.cleanup(homeContext) }
     val chatDrafts by com.fabxdi.dibadge.util.ChatDrafts.drafts.collectAsState()
     LaunchedEffect(homeEntries) { previewsVm.watch(homeEntries.map { it.id.toString() }) }
     val sortedEntries = remember(homeEntries, previews) {

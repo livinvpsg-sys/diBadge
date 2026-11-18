@@ -165,7 +165,8 @@ fun ChatTopBar(
     /** True while an announcement that needs a confirmation has not been confirmed by this member yet. */
     hasUnreadAnnouncement: Boolean = false,
     callMenuOpen: Boolean = false,
-    onToggleCall: (() -> Unit)? = null
+    onToggleCall: (() -> Unit)? = null,
+    statusLine: String = ""
 ) {
     val context = LocalContext.current
     Column(
@@ -510,7 +511,15 @@ fun ChatTopBar(
                         }
 
                         if (isOneToOne) {
-                            if (otherUserNickname.isNotBlank()) {
+                            if (statusLine.isNotBlank()) {
+                                Text(
+                                    text = statusLine,
+                                    fontSize = 13.sp,
+                                    color = secondaryTextColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            } else if (otherUserNickname.isNotBlank()) {
                                 Text(
                                     text = otherUserNickname,
                                     fontSize = 13.sp,

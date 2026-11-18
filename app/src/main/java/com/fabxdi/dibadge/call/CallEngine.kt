@@ -143,6 +143,40 @@ class CallEngine private constructor(private val appContext: Context) {
     private var tickerJob: Job? = null
     private var dropJob: Job? = null
 
+    // ---- the "ringing..." tone the caller hears while waiting for the other person to answer
+    private var ringback: android.media.ToneGenerator? = null
+
+    init {
+        scope.launch {
+            _state.collect { st ->
+                val waiting = st.isOutgoing && (st.phase == CallPhase.STARTING || st.phase == CallPhase.RINGING_OUT)
+                if (waiting) startRingback() else stopRingback()
+            }
+        }
+    }
+
+    private fun startRingback() {
+        if (ringback != null) return
+        try {
+            ringback = android.media.ToneGenerator(AudioManager.STREAM_VOICE_CALL, 80).also {
+                it.startTone(android.media.ToneGenerator.TONE_SUP_RINGTONE)
+            }
+        } catch (e: Exception) {
+            Log.w("CallEngine", "ringback failed: ${e.message}")
+            ringback = null
+        }
+    }
+
+    private fun stopRingback() {
+        val tone = ringback ?: return
+        ringback = null
+        try {
+            tone.stopTone()
+            tone.release()
+        } catch (e: Exception) {
+        }
+    }
+
     // ================================================================ outgoing
 
     /** Calls [calleeUid] from the 1:1 chat [groupId]. */

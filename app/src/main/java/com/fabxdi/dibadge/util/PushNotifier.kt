@@ -184,6 +184,7 @@ object PushNotifier {
     fun clearGroup(context: Context, groupId: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove("g_$groupId").apply()
         NotificationManagerCompat.from(context).cancel(notificationId(groupId))
+        NotifyGroup.cleanup(context)
     }
 
     private fun notificationId(groupId: String): Int = 0x4000_0000 or (groupId.hashCode() and 0x3FFF_FFFF)

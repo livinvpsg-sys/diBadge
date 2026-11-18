@@ -440,6 +440,36 @@ class ConnectionsViewModel : ViewModel() {
     }
 
     fun removeConnection(item: ConnectionItem) {
+        val me = auth.currentUser
         declineRequest(item)
+        if (me != null) postDisconnectNotice(me.uid, item.uid, item.name)
+    }
+
+    /** If these two have a 1:1 chat, leave "X disconnected from Y" in it (shown on both phones). */
+    private fun postDisconnectNotice(myUid: String, otherUid: String, otherName: String) {
+        viewModelScope.launch {
+            try {
+                val key = listOf(myUid, otherUid).sorted().joinToString("_")
+                val chatId = (key.hashCode() and 0x7FFFFFFF).let { if (it == 0) 1 else it }.toString()
+                val chat = firestore.collection("personalGroups").document(chatId)
+                if (!chat.get().await().exists()) return@launch
+                val mine = try {
+                    firestore.collection("users").document(myUid).get().await().getString("displayName")
+                } catch (e: Exception) { null } ?: auth.currentUser?.displayName ?: "Someone"
+                val id = java.util.UUID.randomUUID().toString()
+                chat.collection("messages").document(id).set(
+                    mapOf(
+                        "id" to id,
+                        "senderUid" to myUid,
+                        "senderName" to com.fabxdi.dibadge.util.capitalizeName(mine),
+                        "timestamp" to System.currentTimeMillis(),
+                        "text" to "${com.fabxdi.dibadge.util.capitalizeName(mine)} disconnected from ${com.fabxdi.dibadge.util.capitalizeName(otherName)}",
+                        "msgType" to "memberNotice"
+                    )
+                ).await()
+            } catch (e: Exception) {
+                // The notice is a nicety; the disconnect itself already happened
+            }
+        }
     }
 }
