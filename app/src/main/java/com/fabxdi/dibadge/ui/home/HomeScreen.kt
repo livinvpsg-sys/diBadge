@@ -75,7 +75,7 @@ enum class HomeTab(
     val label: String,
     @DrawableRes val iconRes: Int
 ) {
-    Home("Chat", R.drawable.ic_dibadge_nav),
+    Home("Chats", R.drawable.ic_dibadge_nav),
     Connections("Connections", R.drawable.ic_connections),
     MyTasks("My Tasks", R.drawable.ic_my_tasks),
     Note("Inbox", R.drawable.ic_inbox)
@@ -185,6 +185,8 @@ fun MainDashboard(
     var showMyFormsScreen by remember { mutableStateOf(false) }
     var showProfileScreen by remember { mutableStateOf(false) }
     var showSettingsScreen by remember { mutableStateOf(false) }
+    var showCallsScreen by remember { mutableStateOf(false) }
+    val missedCallCount = com.fabxdi.dibadge.call.rememberMissedCallCount()
     var showQrScannerScreen by remember { mutableStateOf(false) }
     var showMyQrCodeScreen by remember { mutableStateOf(false) }
     var showOvertimeForm by remember { mutableStateOf(false) }
@@ -217,6 +219,18 @@ fun MainDashboard(
     if (showMyFormsScreen) {
         MyFormsScreen(
             onBack = { showMyFormsScreen = false }
+        )
+        return
+    }
+
+    if (showCallsScreen) {
+        com.fabxdi.dibadge.call.CallHistoryScreen(
+            nicknames = userNicknames,
+            onBack = { showCallsScreen = false },
+            onOpenChat = { otherUid, name ->
+                showCallsScreen = false
+                viewModel.openDirectChat(otherUid, name, userNicknames[otherUid] ?: "") { selectedEntryForChat = it }
+            }
         )
         return
     }
@@ -413,6 +427,8 @@ fun MainDashboard(
                                 searchQuery = homeSearchQuery,
                                 onSearchQueryChange = { homeSearchQuery = it },
                                 onMenuClick = { scope.launch { drawerState.open() } },
+                                onCallsClick = { showCallsScreen = true },
+                                missedCallCount = missedCallCount,
                                 onQrClick = { showQrSheet = true },
                                 selectedCount = selectedEntries.size,
                                 onDeleteClick = { showDeleteEntryDialog = true },

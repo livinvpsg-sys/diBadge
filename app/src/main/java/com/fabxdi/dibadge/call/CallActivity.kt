@@ -28,6 +28,7 @@ import kotlinx.coroutines.delay
 class CallActivity : ComponentActivity() {
 
     private var acceptRequested by mutableStateOf(false)
+    private var callBackId by mutableStateOf("")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,6 +41,8 @@ class CallActivity : ComponentActivity() {
                 CallHost(
                     acceptRequested = acceptRequested,
                     onAcceptHandled = { acceptRequested = false },
+                    callBackId = callBackId,
+                    onCallBackHandled = { callBackId = "" },
                     onClose = { finish() }
                 )
             }
@@ -59,6 +62,11 @@ class CallActivity : ComponentActivity() {
             engine.showIncoming(callId)
         }
         if (intent?.getBooleanExtra(EXTRA_ACCEPT, false) == true) acceptRequested = true
+        val back = intent?.getStringExtra(EXTRA_CALL_BACK_ID).orEmpty()
+        if (back.isNotBlank()) {
+            callBackId = back
+            intent?.removeExtra(EXTRA_CALL_BACK_ID)
+        }
     }
 
     private fun showOverLockScreen() {
@@ -78,6 +86,9 @@ class CallActivity : ComponentActivity() {
         const val EXTRA_CALL_ID = "call_id"
         const val EXTRA_ACCEPT = "accept"
 
+        /** The id of the missed call to ring back (the person who called is called). */
+        const val EXTRA_CALL_BACK_ID = "call_back_id"
+
         /** Opens the call screen for the call that is going on now. */
         fun open(context: android.content.Context) {
             context.startActivity(
@@ -88,7 +99,13 @@ class CallActivity : ComponentActivity() {
 }
 
 @Composable
-private fun CallHost(acceptRequested: Boolean, onAcceptHandled: () -> Unit, onClose: () -> Unit) {
+private fun CallHost(
+    acceptRequested: Boolean,
+    onAcceptHandled: () -> Unit,
+    callBackId: String,
+    onCallBackHandled: () -> Unit,
+    onClose: () -> Unit
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val engine = CallEngine.get(context)
     val state by engine.state.collectAsState()
@@ -111,6 +128,48 @@ private fun CallHost(acceptRequested: Boolean, onAcceptHandled: () -> Unit, onCl
         val need = missing(state.isVideo)
         val ask = need.toList() + CallPermissions.bluetoothOnce(context)
         if (ask.isEmpty()) engine.accept() else askToAnswer.launch(ask.toTypedArray())
+    }
+
+    // "Call back" was tapped on a missed-call notification
+    var callBackVideo by androidx.compose.runtime.remember { mutableStateOf(false) }
+    var callBackTarget by androidx.compose.runtime.remember { mutableStateOf<CallDoc?>(null) }
+    fun startCallBack(doc: CallDoc) {
+        val me = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.displayName ?: "Me"
+        engine.startCall(
+            groupId = doc.groupId,
+            calleeUid = doc.callerUid,
+            callerName = me,
+            peerName = doc.callerName,
+            video = callBackVideo
+        )
+    }
+    val askToCallBack = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        val doc = callBackTarget
+        val micOk = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        callBackTarget = null
+        if (doc != null && micOk && engine.state.value.phase == CallPhase.IDLE) startCallBack(doc)
+        else if (doc != null && !micOk) {
+            android.widget.Toast.makeText(context, "Microphone permission is needed for calls", android.widget.Toast.LENGTH_SHORT).show()
+            onClose()
+        }
+    }
+    LaunchedEffect(callBackId) {
+        if (callBackId.isBlank()) return@LaunchedEffect
+        onCallBackHandled()
+        if (engine.state.value.phase != CallPhase.IDLE) return@LaunchedEffect
+        val doc = runCatching { CallRepository().getCall(callBackId) }.getOrNull()
+        val me = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+        if (doc == null || doc.callerUid.isBlank() || doc.callerUid == me) {
+            onClose()
+            return@LaunchedEffect
+        }
+        callBackVideo = false // ring back as a voice call
+        callBackTarget = doc
+        val ask = missing(false).toList() + CallPermissions.bluetoothOnce(context)
+        if (ask.isEmpty()) {
+            callBackTarget = null
+            startCallBack(doc)
+        } else askToCallBack.launch(ask.toTypedArray())
     }
 
     // Accept was tapped on the notification

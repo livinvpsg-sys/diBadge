@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -75,6 +76,7 @@ data class CallState(
     val cameraOn: Boolean = false,
     val frontCamera: Boolean = true,
     val seconds: Long = 0,          // time since you were connected
+    val weakSignal: Boolean = false, // the connection is poor right now
     val endReason: CallEndReason = CallEndReason.NONE
 )
 
@@ -142,6 +144,11 @@ class CallEngine private constructor(private val appContext: Context) {
     private var connectTimeoutJob: Job? = null
     private var tickerJob: Job? = null
     private var dropJob: Job? = null
+    private var qualityJob: Job? = null
+    private var badStreak = 0
+    private var goodStreak = 0
+    private var lastLost = -1L
+    private var lastRecv = -1L
 
     // ---- the "ringing..." tone the caller hears while waiting for the other person to answer
     private var ringback: android.media.ToneGenerator? = null
@@ -308,6 +315,43 @@ class CallEngine private constructor(private val appContext: Context) {
         }
     }
 
+    /** Declines the call and sends [text] to the caller in your chat with them. */
+    fun declineWithMessage(text: String) {
+        if (_state.value.phase != CallPhase.RINGING_IN) return
+        val doc = call
+        val message = text.trim()
+        decline()
+        if (message.isBlank() || doc == null || doc.groupId.isBlank()) return
+        val user = FirebaseAuth.getInstance().currentUser ?: return
+        scope.launch {
+            try {
+                val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                val name = try {
+                    db.collection("users").document(user.uid).get().await().getString("displayName")
+                } catch (e: Exception) {
+                    null
+                } ?: user.displayName ?: "Me"
+                val msgId = java.util.UUID.randomUUID().toString()
+                db.collection("personalGroups").document(doc.groupId).collection("messages").document(msgId).set(
+                    mapOf(
+                        "id" to msgId,
+                        "text" to message,
+                        "senderName" to com.fabxdi.dibadge.util.capitalizeName(name),
+                        "senderUid" to user.uid,
+                        "attachments" to emptyList<String>(),
+                        "attachmentDurations" to emptyMap<String, Any>(),
+                        "attachmentThumbs" to emptyList<String>(),
+                        "timestamp" to System.currentTimeMillis(),
+                        "isEdited" to false
+                    )
+                ).await()
+                com.fabxdi.dibadge.util.PushApi.messageSent(doc.groupId, msgId)
+            } catch (e: Exception) {
+                Log.w(TAG, "declineWithMessage: ${e.message}")
+            }
+        }
+    }
+
     // ================================================================ during the call
 
     /** The red button. Works at every stage. */
@@ -444,6 +488,7 @@ class CallEngine private constructor(private val appContext: Context) {
                 when (newState) {
                     PeerConnection.PeerConnectionState.CONNECTED -> onConnected()
                     PeerConnection.PeerConnectionState.DISCONNECTED -> {
+                        if (_state.value.phase == CallPhase.CONNECTED) _state.update { it.copy(weakSignal = true) }
                         // A short drop is normal on mobile; give it a few seconds to come back
                         dropJob?.cancel()
                         dropJob = scope.launch {
@@ -470,11 +515,18 @@ class CallEngine private constructor(private val appContext: Context) {
 
     private fun onConnected() {
         dropJob?.cancel()
-        if (_state.value.phase == CallPhase.CONNECTED || finished) return
+        if (_state.value.phase == CallPhase.CONNECTED) {
+            // It came back after a short drop
+            badStreak = 0
+            _state.update { it.copy(weakSignal = false) }
+            return
+        }
+        if (finished) return
         ringTimeoutJob?.cancel()
         connectTimeoutJob?.cancel()
         connectedAtMs = System.currentTimeMillis()
-        _state.update { it.copy(phase = CallPhase.CONNECTED, seconds = 0) }
+        _state.update { it.copy(phase = CallPhase.CONNECTED, seconds = 0, weakSignal = false) }
+        startQualityWatch()
         tickerJob?.cancel()
         tickerJob = scope.launch {
             while (true) {
@@ -482,6 +534,57 @@ class CallEngine private constructor(private val appContext: Context) {
                 _state.update { it.copy(seconds = (System.currentTimeMillis() - connectedAtMs) / 1000) }
             }
         }
+    }
+
+    /** Every few seconds, looks at delay, jitter and lost packets. Two bad readings in a row show the warning. */
+    private fun startQualityWatch() {
+        qualityJob?.cancel()
+        badStreak = 0; goodStreak = 0; lastLost = -1L; lastRecv = -1L
+        qualityJob = scope.launch {
+            while (true) {
+                delay(3000)
+                val conn = pc ?: continue
+                try {
+                    conn.getStats { report -> scope.launch { judgeQuality(report) } }
+                } catch (e: Exception) {
+                    Log.w(TAG, "stats: ${e.message}")
+                }
+            }
+        }
+    }
+
+    private fun judgeQuality(report: org.webrtc.RTCStatsReport) {
+        if (_state.value.phase != CallPhase.CONNECTED) return
+        var rtt = 0.0
+        var jitter = 0.0
+        var lost = -1L
+        var recv = -1L
+        for (st in report.statsMap.values) {
+            val m = st.members
+            when (st.type) {
+                "candidate-pair" -> if (m["state"] == "succeeded") {
+                    (m["currentRoundTripTime"] as? Number)?.let { if (it.toDouble() > 0) rtt = it.toDouble() }
+                }
+                "inbound-rtp" -> if (m["kind"] == "audio" || m["mediaType"] == "audio") {
+                    lost = (m["packetsLost"] as? Number)?.toLong() ?: lost
+                    recv = (m["packetsReceived"] as? Number)?.toLong() ?: recv
+                    jitter = (m["jitter"] as? Number)?.toDouble() ?: jitter
+                }
+            }
+        }
+        var lossRatio = 0.0
+        if (lost >= 0 && recv >= 0) {
+            if (lastLost >= 0 && lastRecv >= 0) {
+                val dl = (lost - lastLost).coerceAtLeast(0)
+                val dr = (recv - lastRecv).coerceAtLeast(0)
+                if (dl + dr > 0) lossRatio = dl.toDouble() / (dl + dr)
+            }
+            lastLost = lost; lastRecv = recv
+        }
+        val bad = rtt > 0.6 || jitter > 0.08 || lossRatio > 0.08
+        if (bad) { badStreak++; goodStreak = 0 } else { goodStreak++; badStreak = 0 }
+        if (badStreak >= 2 && !_state.value.weakSignal) _state.update { it.copy(weakSignal = true) }
+        if (goodStreak >= 2 && _state.value.weakSignal) _state.update { it.copy(weakSignal = false) }
     }
 
     private fun endBecauseLost() {
@@ -813,7 +916,7 @@ class CallEngine private constructor(private val appContext: Context) {
 
     private fun releaseMedia() {
         observeJob?.cancel(); candidateJob?.cancel(); ringTimeoutJob?.cancel()
-        connectTimeoutJob?.cancel(); tickerJob?.cancel(); dropJob?.cancel()
+        connectTimeoutJob?.cancel(); tickerJob?.cancel(); dropJob?.cancel(); qualityJob?.cancel()
         stopCapture()
         runCatching { pc?.close() }
         runCatching { pc?.dispose() }

@@ -1,6 +1,7 @@
 package com.fabxdi.dibadge.call
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.CallEnd
 import androidx.compose.material.icons.outlined.FlipCameraAndroid
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.Message
 import androidx.compose.material.icons.outlined.MicOff
 import androidx.compose.material.icons.outlined.Bluetooth
 import androidx.compose.material.icons.outlined.Headphones
@@ -66,6 +68,7 @@ private val CallText = Color(0xFFF0F3F5)
 private val CallMuted = Color(0xFF8A9199)
 private val CallButton = Color(0xFF222831)
 private val CallRed = Color(0xFFE8837A)
+private val CallAmber = Color(0xFFF2B84B)
 
 /**
  * The call screens: incoming, voice and video. They only show what [CallEngine] says and call its
@@ -80,12 +83,76 @@ fun CallScreen(
     val state by engine.state.collectAsState()
     val localTrack by engine.localVideo.collectAsState()
     val remoteTrack by engine.remoteVideo.collectAsState()
+    var showReplies by remember { mutableStateOf(false) }
+    var writing by remember { mutableStateOf(false) }
+    var custom by remember { mutableStateOf("") }
 
     Box(modifier = Modifier.fillMaxSize().background(CallBg)) {
         when {
-            state.phase == CallPhase.RINGING_IN -> IncomingLayout(state, onDecline = { engine.decline() }, onAccept = onAnswer)
+            state.phase == CallPhase.RINGING_IN -> IncomingLayout(state, onDecline = { engine.decline() }, onAccept = onAnswer, onMessage = { showReplies = true })
             state.isVideo || state.cameraOn -> VideoLayout(state, engine, localTrack, remoteTrack, onToggleCamera)
             else -> VoiceLayout(state, engine, onToggleCamera)
+        }
+        if (showReplies && state.phase == CallPhase.RINGING_IN) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f))
+                    .clickable { showReplies = false; writing = false }
+            )
+            Column(
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
+                    .background(Color(0xFF1A1D22))
+                    .clickable(enabled = false) {}
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 16.dp)
+            ) {
+                Text("Decline and send a message", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = CallText)
+                Spacer(Modifier.height(8.dp))
+                if (!writing) {
+                    listOf(
+                        "Can't talk now. I'll call you back.",
+                        "In a meeting. Message me.",
+                        "I'm driving. Will call later."
+                    ).forEach { reply ->
+                        QuickReplyRow(reply, CallText) { showReplies = false; engine.declineWithMessage(reply) }
+                    }
+                    QuickReplyRow("Write your own…", CallMuted) { writing = true }
+                } else {
+                    androidx.compose.foundation.text.BasicTextField(
+                        value = custom,
+                        onValueChange = { custom = it.take(300) },
+                        textStyle = androidx.compose.ui.text.TextStyle(color = CallText, fontSize = 15.sp),
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(DiBadgeTheme.colors.accent),
+                        modifier = Modifier.fillMaxWidth()
+                            .border(1.dp, Color(0xFF2E343D), RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "Send and decline", fontSize = 14.sp, color = if (custom.isNotBlank()) DiBadgeTheme.colors.accent else CallMuted,
+                        modifier = Modifier.align(Alignment.End)
+                            .clickable(enabled = custom.isNotBlank()) {
+                                val m = custom
+                                showReplies = false; writing = false; custom = ""
+                                engine.declineWithMessage(m)
+                            }
+                            .padding(8.dp)
+                    )
+                }
+            }
+        }
+        if (state.phase == CallPhase.CONNECTED && state.weakSignal) {
+            Box(
+                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding()
+                    .padding(top = 8.dp, start = 16.dp, end = 16.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(CallAmber.copy(alpha = 0.16f))
+                    .border(1.dp, CallAmber.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+            ) {
+                Text("Poor connection. Audio may break up.", fontSize = 13.sp, color = CallAmber, modifier = Modifier.align(Alignment.Center))
+            }
         }
     }
 }
@@ -93,7 +160,7 @@ fun CallScreen(
 // ---------------------------------------------------------------- incoming
 
 @Composable
-private fun IncomingLayout(state: CallState, onDecline: () -> Unit, onAccept: () -> Unit) {
+private fun IncomingLayout(state: CallState, onDecline: () -> Unit, onAccept: () -> Unit, onMessage: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -110,11 +177,34 @@ private fun IncomingLayout(state: CallState, onDecline: () -> Unit, onAccept: ()
         Spacer(Modifier.height(6.dp))
         Text("Incoming call…", fontSize = 15.sp, color = CallMuted)
         Spacer(Modifier.weight(1f))
+        Row(
+            modifier = Modifier.clip(RoundedCornerShape(50))
+                .border(1.dp, CallMuted.copy(alpha = 0.5f), RoundedCornerShape(50))
+                .clickable(onClick = onMessage)
+                .padding(horizontal = 20.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Outlined.Message, null, tint = CallText, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Message", fontSize = 14.sp, color = CallText)
+        }
+        Spacer(Modifier.height(28.dp))
         Row(modifier = Modifier.fillMaxWidth().padding(bottom = 64.dp), horizontalArrangement = Arrangement.SpaceAround) {
             RoundAction(Icons.Outlined.CallEnd, "Decline", size = 68, container = CallRed, tint = CallBg, onClick = onDecline)
             RoundAction(Icons.Outlined.Call, "Accept", size = 68, container = DiBadgeTheme.colors.accentFill, tint = Color.White, onClick = onAccept)
         }
     }
+}
+
+@Composable
+private fun QuickReplyRow(text: String, color: Color, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier.padding(top = 8.dp).fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, Color(0xFF2E343D), RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 13.dp)
+    ) { Text(text, fontSize = 14.sp, color = color) }
 }
 
 // ---------------------------------------------------------------- voice
@@ -368,7 +458,7 @@ private fun statusText(s: CallState): String = when (s.phase) {
     CallPhase.RINGING_OUT -> "Ringing…"
     CallPhase.RINGING_IN -> "Incoming call…"
     CallPhase.CONNECTING -> "Connecting…"
-    CallPhase.CONNECTED -> CallRepository.formatDuration(s.seconds)
+    CallPhase.CONNECTED -> CallRepository.formatDuration(s.seconds) + if (s.weakSignal) " · weak signal" else ""
     CallPhase.ENDED -> when (s.endReason) {
         CallEndReason.DECLINED -> "Declined"
         CallEndReason.NO_ANSWER -> "No answer"

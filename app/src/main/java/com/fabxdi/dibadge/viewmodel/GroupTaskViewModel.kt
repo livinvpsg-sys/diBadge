@@ -63,19 +63,13 @@ class GroupTaskViewModel(application: Application) : AndroidViewModel(applicatio
                 isCompleted = false
             )
             groupTaskDao.insertGroupTask(task)
-            var saved = false
             try {
                 firestore.collection("groups")
                     .document(groupId)
                     .collection("tasks")
                     .document(task.id)
-                    .set(task.toFirestoreMap(), SetOptions.merge())
-                    .await()
-                saved = true
+                    .set(task.toFirestoreMap() + ("tzOffsetMinutes" to phoneOffsetMinutes()), SetOptions.merge())
             } catch (e: Exception) {}
-            if (saved && assignedToUids.isNotBlank()) {
-                com.fabxdi.dibadge.util.TaskPushApi.assigned(groupId, listOf(task.id))
-            }
 
             launch(Dispatchers.Main) {
                 onAdded(startDate)
@@ -109,21 +103,14 @@ class GroupTaskViewModel(application: Application) : AndroidViewModel(applicatio
                 completedAt = if (isCompleted) System.currentTimeMillis() else null
             )
             groupTaskDao.insertGroupTask(updated)
-            var saved = false
             try {
                 firestore.collection("groups").document(groupId)
                     .collection("tasks").document(taskId)
                     .set(updated.toFirestoreMap(), SetOptions.merge())
-                    .await()
-                saved = true
             } catch (e: Exception) {}
 
             launch(Dispatchers.Main) {
                 onUpdated()
-            }
-            // Tell the person who assigned it (only when it was just ticked done and is saved)
-            if (saved && isCompleted && task.assignedByUid.isNotBlank() && task.assignedByUid != userUid) {
-                com.fabxdi.dibadge.util.TaskPushApi.completed(groupId, taskId)
             }
         }
     }
@@ -192,20 +179,15 @@ class GroupTaskViewModel(application: Application) : AndroidViewModel(applicatio
 
             groupTaskDao.insertAllGroupTasks(tasksToCreate)
 
-            val savedIds = mutableListOf<String>()
             for (task in tasksToCreate) {
                 try {
                     firestore.collection("groups")
                         .document(groupId)
                         .collection("tasks")
                         .document(task.id)
-                        .set(task.toFirestoreMap(), SetOptions.merge())
-                        .await()
-                    savedIds.add(task.id)
+                        .set(task.toFirestoreMap() + ("tzOffsetMinutes" to phoneOffsetMinutes()), SetOptions.merge())
                 } catch (e: Exception) {}
             }
-            // Tell each person they were given a task
-            com.fabxdi.dibadge.util.TaskPushApi.assigned(groupId, savedIds)
         }
     }
 
@@ -245,6 +227,9 @@ class GroupTaskViewModel(application: Application) : AndroidViewModel(applicatio
         } catch (e: Exception) {}
     }
 }
+
+/** This phone's time zone, in minutes east of UTC. A due time is read in the time zone of the person who made the task. */
+fun phoneOffsetMinutes(): Int = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60000
 
 fun GroupTaskEntity.toFirestoreMap(): Map<String, Any?> {
     return mapOf(

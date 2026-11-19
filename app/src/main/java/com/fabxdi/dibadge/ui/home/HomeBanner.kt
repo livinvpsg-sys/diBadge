@@ -10,6 +10,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Search
@@ -36,6 +37,8 @@ fun HomeBanner(
     searchQuery: String = "",
     onSearchQueryChange: (String) -> Unit = {},
     onMenuClick: () -> Unit = {},
+    onCallsClick: () -> Unit = {},
+    missedCallCount: Int = 0,
     onQrClick: () -> Unit = {},
     selectedCount: Int = 0,
     onDeleteClick: () -> Unit = {},
@@ -109,6 +112,49 @@ fun HomeBanner(
                     color = primaryTextColor,
                     modifier = Modifier.weight(1f)
                 )
+
+                // Calls: opens the call history. Red badge = missed calls not seen yet
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clickable { onCallsClick() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Call,
+                        contentDescription = if (missedCallCount > 0) "Calls, $missedCallCount missed" else "Calls",
+                        tint = primaryTextColor,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    if (missedCallCount > 0) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(top = 6.dp, end = 4.dp)
+                                .height(17.dp)
+                                .widthIn(min = 17.dp)
+                                .background(Color(0xFFD64545), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (missedCallCount > 9) "9+" else missedCallCount.toString(),
+                                fontSize = 10.sp,
+                                lineHeight = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                style = androidx.compose.ui.text.TextStyle(
+                                    platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
+                                    lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                                        alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+                                        trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both
+                                    )
+                                ),
+                                modifier = Modifier.padding(horizontal = if (missedCallCount > 9) 3.dp else 0.dp)
+                            )
+                        }
+                    }
+                }
 
                 Box(
                     modifier = Modifier

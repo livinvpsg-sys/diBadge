@@ -3,7 +3,12 @@ package com.fabxdi.dibadge.ui.connections
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,7 +22,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.Business
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.WorkOutline
 import androidx.compose.material.icons.outlined.Person
@@ -32,6 +36,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import com.fabxdi.dibadge.R
 import androidx.compose.ui.text.style.TextOverflow
@@ -691,6 +697,36 @@ fun ConnectionsScreen(
     }
 }
 
+/** A filled chat bubble with two lines of text inside, in the app accent colour. */
+@Composable
+fun ChatFilledIcon(tint: Color, contentDescription: String?, size: Int = 24) {
+    Canvas(
+        modifier = Modifier
+            .size(size.dp)
+            .semantics { if (contentDescription != null) this.contentDescription = contentDescription }
+    ) {
+        val k = this.size.width / 24f
+        val bubble = Path().apply {
+            moveTo(5f * k, 4f * k)
+            lineTo(19f * k, 4f * k)
+            quadraticBezierTo(21f * k, 4f * k, 21f * k, 6f * k)
+            lineTo(21f * k, 15f * k)
+            quadraticBezierTo(21f * k, 17f * k, 19f * k, 17f * k)
+            lineTo(10f * k, 17f * k)
+            lineTo(5f * k, 21.5f * k)
+            lineTo(5f * k, 17f * k)
+            quadraticBezierTo(3f * k, 17f * k, 3f * k, 15f * k)
+            lineTo(3f * k, 6f * k)
+            quadraticBezierTo(3f * k, 4f * k, 5f * k, 4f * k)
+            close()
+        }
+        drawPath(bubble, color = tint)
+        val line = Stroke(width = 1.6f * k, cap = StrokeCap.Round)
+        drawLine(Color.White, Offset(7.5f * k, 9f * k), Offset(16.5f * k, 9f * k), strokeWidth = line.width, cap = StrokeCap.Round)
+        drawLine(Color.White, Offset(7.5f * k, 12.5f * k), Offset(13.5f * k, 12.5f * k), strokeWidth = line.width, cap = StrokeCap.Round)
+    }
+}
+
 @Composable
 fun ConnectionRow(
     item: ConnectionItem,
@@ -763,18 +799,18 @@ fun ConnectionRow(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
+                        // Chat is always visible, no need to open the card
+                        IconButton(
+                            onClick = onChatClick,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            ChatFilledIcon(
+                                tint = tealAccent,
+                                contentDescription = "Chat with ${item.name}",
+                                size = 24
+                            )
+                        }
                         if (isExpanded) {
-                            IconButton(
-                                onClick = onChatClick,
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.ChatBubbleOutline,
-                                    contentDescription = "Chat with ${item.name}",
-                                    tint = tealAccent,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
                             IconButton(
                                 onClick = onBlock,
                                 modifier = Modifier.size(40.dp)
@@ -803,13 +839,23 @@ fun ConnectionRow(
                         }
                     } else {
                         Spacer(modifier = Modifier.height(2.dp))
-                        CompanyRoleLine(
-                            organization = item.organization,
-                            role = item.role,
-                            textColor = secondaryTextColor,
-                            iconColor = secondaryTextColor,
-                            fontSize = 12.sp
-                        )
+                        if (countryName.isNotBlank()) {
+                            Text(
+                                text = countryName,
+                                fontSize = 13.sp,
+                                color = secondaryTextColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        } else {
+                            CompanyRoleLine(
+                                organization = item.organization,
+                                role = item.role,
+                                textColor = secondaryTextColor,
+                                iconColor = secondaryTextColor,
+                                fontSize = 12.sp
+                            )
+                        }
                     }
                 }
             }

@@ -241,26 +241,45 @@ fun HomeEntryCard(
                 .heightIn(min = 48.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Left: 44dp Avatar Circle
-            Surface(
-                modifier = Modifier.size(44.dp),
-                shape = CircleShape,
-                color = avatarColor
-            ) {
-                if (photoUrl.isNotBlank()) {
-                    AsyncImage(
-                        model = photoUrl,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = entry.title.take(1).uppercase(),
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
+            // Left: 44dp Avatar Circle, with a small group badge at the bottom right for groups
+            Box(modifier = Modifier.size(44.dp)) {
+                Surface(
+                    modifier = Modifier.size(44.dp),
+                    shape = CircleShape,
+                    color = avatarColor
+                ) {
+                    if (photoUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = photoUrl,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = entry.title.take(1).uppercase(),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+                if (isGroup) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .offset(x = 3.dp, y = 3.dp)
+                            .size(20.dp)
+                            .background(colors.background, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Groups,
+                            contentDescription = "Group",
+                            tint = dc.accent,
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }
@@ -268,7 +287,7 @@ fun HomeEntryCard(
 
             Spacer(modifier = Modifier.width(14.dp))
 
-            // Middle: name (with a people icon for groups) and the last message
+            // Middle: name and the last message
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -280,15 +299,6 @@ fun HomeEntryCard(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false)
                     )
-                    if (isGroup) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Icon(
-                            imageVector = Icons.Outlined.Groups,
-                            contentDescription = "Group",
-                            tint = secondaryTextColor,
-                            modifier = Modifier.size(17.dp)
-                        )
-                    }
                 }
                 if (draft.isNotBlank()) {
                     Spacer(modifier = Modifier.height(3.dp))
