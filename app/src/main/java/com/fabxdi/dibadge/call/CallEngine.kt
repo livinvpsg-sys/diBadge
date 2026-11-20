@@ -43,6 +43,10 @@ import org.webrtc.SurfaceTextureHelper
 import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
 import org.webrtc.audio.JavaAudioDeviceModule
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -63,6 +67,9 @@ enum class CallEndReason { NONE, COMPLETED, DECLINED, NO_ANSWER, CANCELLED, FAIL
 /** Where the sound of the call comes out. */
 enum class AudioRoute { EARPIECE, SPEAKER, BLUETOOTH, WIRED }
 
+/** One person on a group call, for the call screen. */
+data class GroupMemberState(val uid: String, val name: String, val cameraOn: Boolean, val muted: Boolean, val isMe: Boolean)
+
 data class CallState(
     val phase: CallPhase = CallPhase.IDLE,
     val callId: String = "",
@@ -77,7 +84,11 @@ data class CallState(
     val frontCamera: Boolean = true,
     val seconds: Long = 0,          // time since you were connected
     val weakSignal: Boolean = false, // the connection is poor right now
-    val endReason: CallEndReason = CallEndReason.NONE
+    val reconnecting: Boolean = false, // a group call is linking up again after a drop
+    val endReason: CallEndReason = CallEndReason.NONE,
+    val isGroup: Boolean = false,
+    val groupId: String = "",
+    val participants: List<GroupMemberState> = emptyList()
 )
 
 /**
@@ -357,6 +368,10 @@ class CallEngine private constructor(private val appContext: Context) {
     /** The red button. Works at every stage. */
     fun hangUp() {
         val s = _state.value
+        if (s.isGroup && s.phase != CallPhase.IDLE && s.phase != CallPhase.ENDED) {
+            leaveGroupCall()
+            return
+        }
         val callId = s.callId
         when (s.phase) {
             CallPhase.IDLE, CallPhase.ENDED -> return
@@ -378,6 +393,9 @@ class CallEngine private constructor(private val appContext: Context) {
     fun setMuted(muted: Boolean) {
         audioTrack?.setEnabled(!muted)
         _state.update { it.copy(muted = muted) }
+        if (_state.value.isGroup && gCallId.isNotBlank()) {
+            scope.launch { runCatching { gRepo.updatePeer(gCallId, "muted", muted) } }
+        }
     }
 
     /** Kept for the old Speaker button: on = speaker, off = the best other route. */
@@ -404,6 +422,9 @@ class CallEngine private constructor(private val appContext: Context) {
             stopCapture()
         }
         _state.update { it.copy(cameraOn = on) }
+        if (_state.value.isGroup && gCallId.isNotBlank()) {
+            scope.launch { runCatching { gRepo.updatePeer(gCallId, "cameraOn", on) } }
+        }
     }
 
     fun switchCamera() {
@@ -424,6 +445,408 @@ class CallEngine private constructor(private val appContext: Context) {
             resetInternals()
             _state.value = CallState()
         }
+    }
+
+    // ================================================================ group calls (Cloudflare SFU)
+    //
+    // Everyone sends their microphone and camera ONCE to the Cloudflare SFU (the "push" connection) and
+    // pulls everybody else's tracks from it (the "pull" connection). Who is on the call, and each person's
+    // SFU session, is kept in Firestore (see GroupCallRepository); the Worker holds the SFU secret.
+
+    private val gRepo = GroupCallRepository()
+    private var gCallId = ""
+    private var gDoc: GroupCallDoc? = null
+    private var pushPc: PeerConnection? = null
+    private var pullPc: PeerConnection? = null
+    private var pushSession = ""
+    private var pullSession = ""
+    private val pullMutex = Mutex()
+    private val midOwner = java.util.concurrent.ConcurrentHashMap<String, Pair<String, String>>() // mid -> (uid, trackName)
+    private val pulledSessions = mutableMapOf<String, String>() // uid -> the session of theirs that is pulled
+    private val pulling = mutableSetOf<String>()
+    private var peersJob: Job? = null
+    private var groupCallJob: Job? = null
+    private var othersSeen = false
+    private var groupVideo = false
+    private var gMyName = ""
+    private var iceCache: List<PeerConnection.IceServer>? = null
+    private var reconnectJob: Job? = null
+    private var dropWatchJob: Job? = null
+    private var reconnectTries = 0
+    private var joinedAtMs = 0L
+
+    private val _remoteVideos = MutableStateFlow<Map<String, VideoTrack>>(emptyMap())
+    /** The video of each other person on a group call, by uid. */
+    val remoteVideos: StateFlow<Map<String, VideoTrack>> = _remoteVideos.asStateFlow()
+
+    private open class BaseObserver : PeerConnection.Observer {
+        override fun onSignalingChange(p0: PeerConnection.SignalingState?) {}
+        override fun onIceConnectionChange(p0: PeerConnection.IceConnectionState?) {}
+        override fun onIceConnectionReceivingChange(p0: Boolean) {}
+        override fun onIceGatheringChange(p0: PeerConnection.IceGatheringState?) {}
+        override fun onIceCandidate(p0: IceCandidate?) {}
+        override fun onIceCandidatesRemoved(p0: Array<out IceCandidate>?) {}
+        override fun onAddStream(p0: MediaStream?) {}
+        override fun onRemoveStream(p0: MediaStream?) {}
+        override fun onDataChannel(p0: org.webrtc.DataChannel?) {}
+        override fun onRenegotiationNeeded() {}
+    }
+
+    /** Starts a group call in the chat [groupId] and rings every member. */
+    fun startGroupCall(groupId: String, title: String, hostName: String, video: Boolean) {
+        if (_state.value.phase != CallPhase.IDLE) return
+        resetInternals()
+        _state.value = CallState(
+            phase = CallPhase.STARTING, peerName = title.ifBlank { "Group call" }, isVideo = video,
+            cameraOn = video, speakerOn = video, isGroup = true, groupId = groupId
+        )
+        CallService.start(appContext)
+        scope.launch {
+            try {
+                val id = gRepo.create(groupId, hostName, video)
+                gCallId = id
+                gDoc = gRepo.getCall(id)
+                _state.update { it.copy(callId = id) }
+                joinSfu(hostName, video)
+                gDoc?.let { d -> runCatching { gRepo.logMine(d, outgoing = true, joined = true) } }
+                GroupCallApi.ring(id)
+            } catch (e: Exception) {
+                Log.w(TAG, "startGroupCall failed: ${e.message}")
+                failGroup()
+            }
+        }
+    }
+
+    /** Joins a group call that is already running. */
+    fun joinGroupCall(callId: String, myName: String, title: String = "") {
+        if (_state.value.phase != CallPhase.IDLE) return
+        resetInternals()
+        _state.value = CallState(
+            phase = CallPhase.CONNECTING, callId = callId, peerName = title.ifBlank { "Group call" }, isGroup = true
+        )
+        CallService.start(appContext)
+        scope.launch {
+            try {
+                val doc = gRepo.getCall(callId)
+                if (doc == null || !doc.isActive) {
+                    finish(CallEndReason.CANCELLED)
+                    return@launch
+                }
+                gCallId = callId
+                gDoc = doc
+                _state.update {
+                    it.copy(groupId = doc.groupId, isVideo = doc.isVideo, cameraOn = doc.isVideo, speakerOn = doc.isVideo)
+                }
+                joinSfu(myName, doc.isVideo)
+                runCatching { gRepo.logMine(doc, outgoing = false, joined = true) }
+            } catch (e: Exception) {
+                Log.w(TAG, "joinGroupCall failed: ${e.message}")
+                failGroup()
+            }
+        }
+    }
+
+    /** Leave the call. The last person to leave ends it for everyone and leaves a line in the chat. */
+    fun leaveGroupCall() {
+        if (!_state.value.isGroup || finished) return
+        val callId = gCallId
+        scope.launch {
+            var ended: GroupCallDoc? = null
+            val doc = gDoc
+            if (doc != null && joinedAtMs > 0) {
+                runCatching { gRepo.logMine(doc, outgoing = doc.hostUid == myUid, joined = true, durationSec = (System.currentTimeMillis() - joinedAtMs) / 1000) }
+            }
+            if (callId.isNotBlank()) ended = runCatching { gRepo.leave(callId) }.getOrNull()
+            if (ended != null) {
+                runCatching { GroupCallApi.end(callId) }
+                val kind = if (ended.isVideo) "Group video call" else "Group voice call"
+                val text = if (!othersSeen) "$kind · no answer"
+                else "$kind · ${CallRepository.formatDuration((System.currentTimeMillis() - ended.createdAt) / 1000)}"
+                runCatching { gRepo.writeChatLine(ended, text) }
+            }
+            finish(CallEndReason.COMPLETED)
+        }
+    }
+
+    private fun failGroup() {
+        val callId = gCallId
+        scope.launch {
+            if (callId.isNotBlank()) runCatching { gRepo.leave(callId) }
+            finish(CallEndReason.FAILED)
+        }
+    }
+
+    /** The relay (TURN) servers for this call, fetched once. Without them only STUN is used. */
+    private suspend fun groupIceServers(): List<PeerConnection.IceServer> {
+        iceCache?.let { return it }
+        val stun = PeerConnection.IceServer.builder("stun:stun.cloudflare.com:3478").createIceServer()
+        val relay = withTimeoutOrNull(4000) { runCatching { GroupCallApi.iceServers(gCallId) }.getOrNull() }.orEmpty()
+        val list = listOf(stun) + relay.map { s ->
+            PeerConnection.IceServer.builder(s.urls).apply {
+                s.username?.let { setUsername(it) }
+                s.credential?.let { setPassword(it) }
+            }.createIceServer()
+        }
+        if (relay.isNotEmpty()) iceCache = list
+        return list
+    }
+
+    private suspend fun joinSfu(myName: String, video: Boolean) {
+        val callId = gCallId
+        groupVideo = video
+        gMyName = myName
+        reconnectTries = 0
+        connectSfu(video)
+        startAudioRouting()
+        startConnectTimeout()
+
+        // Now others can find my session and pull it
+        joinedAtMs = System.currentTimeMillis()
+        gRepo.join(callId, myName, pushSession, video)
+        peersJob = scope.launch { gRepo.observePeers(callId).collect { onGroupPeers(it) } }
+        groupCallJob = scope.launch {
+            gRepo.observeCall(callId).collect { d ->
+                if (d != null) gDoc = d
+                if (d != null && !d.isActive && !finished) finish(CallEndReason.COMPLETED)
+            }
+        }
+    }
+
+    /** Builds the sending and receiving connections and their SFU sessions. Used at the start and again after a drop. */
+    private suspend fun connectSfu(video: Boolean) {
+        val callId = gCallId
+        val config = PeerConnection.RTCConfiguration(groupIceServers()).apply {
+            sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+            bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
+            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
+        }
+
+        // ---- the connection that SENDS my microphone and camera
+        val pushRef = arrayOfNulls<PeerConnection>(1)
+        val push = factory.createPeerConnection(config, object : BaseObserver() {
+            override fun onConnectionChange(newState: PeerConnection.PeerConnectionState?) {
+                if (pushRef[0] !== pushPc) return // an old connection that was replaced
+                scope.launch { onGroupPushState(newState) }
+            }
+        }) ?: throw IllegalStateException("could not create the connection")
+        pushRef[0] = push
+        pushPc = push
+
+        val aTrack = audioTrack ?: run {
+            val src = factory.createAudioSource(MediaConstraints())
+            audioSource = src
+            factory.createAudioTrack("audio0", src).also { audioTrack = it; it.setEnabled(!_state.value.muted) }
+        }
+        val vTrack = videoTrack ?: run {
+            val src = factory.createVideoSource(false)
+            videoSource = src
+            factory.createVideoTrack("video0", src).also { videoTrack = it; _localVideo.value = it }
+        }
+
+        val sendOnly = RtpTransceiver.RtpTransceiverInit(RtpTransceiver.RtpTransceiverDirection.SEND_ONLY)
+        val aTr = push.addTransceiver(aTrack, sendOnly)
+        val vTr = push.addTransceiver(vTrack, sendOnly)
+        if (video || _state.value.cameraOn) {
+            startCapture()
+            vTrack.setEnabled(_state.value.cameraOn || video)
+        } else {
+            vTrack.setEnabled(false)
+        }
+
+        pushSession = GroupCallApi.sfu(callId, "session")?.optString("sessionId").orEmpty()
+        if (pushSession.isBlank()) throw IllegalStateException("no sending session")
+        val offer = createOfferOn(push)
+        setLocalOn(push, offer)
+        val tracks = JSONArray()
+            .put(JSONObject().put("location", "local").put("mid", aTr.mid).put("trackName", "audio"))
+            .put(JSONObject().put("location", "local").put("mid", vTr.mid).put("trackName", "video"))
+        val res = GroupCallApi.sfu(callId, "tracks", sessionId = pushSession, tracks = tracks, sdpType = "offer", sdp = offer.description)
+            ?: throw IllegalStateException("could not send tracks")
+        val answer = res.optJSONObject("sessionDescription") ?: throw IllegalStateException("no answer from the SFU")
+        setRemoteOn(push, SessionDescription(SessionDescription.Type.ANSWER, answer.getString("sdp")))
+
+        // ---- the connection that RECEIVES everybody else
+        val pullRef = arrayOfNulls<PeerConnection>(1)
+        val pull = factory.createPeerConnection(config, object : BaseObserver() {
+            override fun onTrack(transceiver: RtpTransceiver?) {
+                onGroupTrack(transceiver)
+            }
+            override fun onConnectionChange(newState: PeerConnection.PeerConnectionState?) {
+                if (pullRef[0] !== pullPc) return
+                if (newState == PeerConnection.PeerConnectionState.FAILED) scope.launch { startGroupReconnect() }
+            }
+        }) ?: throw IllegalStateException("could not create the receiving connection")
+        pullRef[0] = pull
+        pullPc = pull
+        pullSession = GroupCallApi.sfu(callId, "session")?.optString("sessionId").orEmpty()
+        if (pullSession.isBlank()) throw IllegalStateException("no receiving session")
+    }
+
+    /**
+     * The network dropped for good (or the connection failed): build both connections again and keep
+     * trying for two minutes, with the "Reconnecting" bar on. Then leave, so nobody sits on a dead call.
+     */
+    private fun startGroupReconnect() {
+        if (finished || !_state.value.isGroup || reconnectJob?.isActive == true) return
+        if (_state.value.phase != CallPhase.CONNECTED && _state.value.phase != CallPhase.CONNECTING) return
+        dropWatchJob?.cancel()
+        reconnectJob = scope.launch {
+            _state.update { it.copy(reconnecting = true, weakSignal = false) }
+            val deadline = System.currentTimeMillis() + 120_000
+            var wait = 1500L
+            while (!finished && System.currentTimeMillis() < deadline) {
+                try {
+                    reconnectTries++
+                    dropGroupMedia()
+                    connectSfu(groupVideo)
+                    // A new sending session: everyone else sees it here and pulls me again
+                    val cam = _state.value.cameraOn
+                    gRepo.join(gCallId, gMyName, pushSession, cam)
+                    if (_state.value.muted) runCatching { gRepo.updatePeer(gCallId, "muted", true) }
+                    return@launch
+                } catch (e: Exception) {
+                    Log.w(TAG, "reconnect failed: ${e.message}")
+                    delay(wait)
+                    wait = (wait * 2).coerceAtMost(8000L)
+                }
+            }
+            if (!finished) leaveGroupCall()
+        }
+    }
+
+    /** Closes the two connections (not the microphone or camera) so they can be built again. */
+    private suspend fun dropGroupMedia() {
+        val oldPush = pushPc
+        val oldPull = pullPc
+        pushPc = null; pullPc = null
+        pullMutex.withLock {
+            midOwner.clear(); pulledSessions.clear(); pulling.clear()
+        }
+        _remoteVideos.value = emptyMap()
+        runCatching { oldPush?.close() }
+        runCatching { oldPull?.close() }
+        runCatching { oldPush?.dispose() }
+        runCatching { oldPull?.dispose() }
+    }
+
+    private fun onGroupPushState(st: PeerConnection.PeerConnectionState?) {
+        when (st) {
+            PeerConnection.PeerConnectionState.CONNECTED -> {
+                dropWatchJob?.cancel()
+                reconnectTries = 0
+                onConnected()
+            }
+            PeerConnection.PeerConnectionState.DISCONNECTED -> {
+                if (_state.value.phase == CallPhase.CONNECTED) _state.update { it.copy(weakSignal = true) }
+                // A short drop heals on its own. If it lasts, build the connections again.
+                dropWatchJob?.cancel()
+                dropWatchJob = scope.launch {
+                    delay(8000)
+                    startGroupReconnect()
+                }
+            }
+            PeerConnection.PeerConnectionState.FAILED -> startGroupReconnect()
+            else -> Unit
+        }
+    }
+
+    private fun onGroupPeers(peers: List<GroupPeer>) {
+        val me = myUid
+        val others = peers.filter { it.uid != me && it.sessionId.isNotBlank() }
+        if (others.isNotEmpty()) othersSeen = true
+        _state.update {
+            it.copy(participants = peers.map { p -> GroupMemberState(p.uid, p.name, p.cameraOn, p.muted, p.uid == me) })
+        }
+        for (p in others) {
+            if (pulledSessions[p.uid] != p.sessionId && pulling.add(p.uid)) {
+                scope.launch {
+                    var ok = false
+                    repeat(3) {
+                        if (!ok) {
+                            ok = runCatching { pullPeer(p) }.onFailure { Log.w(TAG, "pull ${p.uid}: ${it.message}") }.isSuccess
+                            if (!ok) delay(1500)
+                        }
+                    }
+                    pulling.remove(p.uid)
+                }
+            }
+        }
+        // People who left
+        val ids = others.map { it.uid }.toSet()
+        for (uid in pulledSessions.keys.toList()) {
+            if (uid !in ids) {
+                pulledSessions.remove(uid)
+                _remoteVideos.update { it - uid }
+            }
+        }
+    }
+
+    /** Pulls one person's microphone and camera from the SFU. */
+    private suspend fun pullPeer(p: GroupPeer) = pullMutex.withLock {
+        if (pulledSessions[p.uid] == p.sessionId) return@withLock
+        val pull = pullPc ?: return@withLock
+        val tracks = JSONArray()
+            .put(JSONObject().put("location", "remote").put("sessionId", p.sessionId).put("trackName", "audio"))
+            .put(JSONObject().put("location", "remote").put("sessionId", p.sessionId).put("trackName", "video"))
+        val res = GroupCallApi.sfu(gCallId, "tracks", sessionId = pullSession, tracks = tracks)
+            ?: throw IllegalStateException("pull failed")
+        val arr = res.optJSONArray("tracks")
+        if (arr != null) {
+            for (i in 0 until arr.length()) {
+                val t = arr.getJSONObject(i)
+                if (t.has("errorCode")) throw IllegalStateException("track error ${t.optString("errorCode")}")
+                val mid = t.optString("mid")
+                if (mid.isNotBlank()) midOwner[mid] = p.uid to t.optString("trackName")
+            }
+        }
+        val sd = res.optJSONObject("sessionDescription")
+        if (sd != null && sd.optString("type") == "offer") {
+            setRemoteOn(pull, SessionDescription(SessionDescription.Type.OFFER, sd.getString("sdp")))
+            val answer = createAnswerOn(pull)
+            setLocalOn(pull, answer)
+            GroupCallApi.sfu(gCallId, "renegotiate", sessionId = pullSession, sdpType = "answer", sdp = answer.description)
+                ?: throw IllegalStateException("renegotiate failed")
+        }
+        pulledSessions[p.uid] = p.sessionId
+    }
+
+    private fun onGroupTrack(transceiver: RtpTransceiver?) {
+        val t = transceiver ?: return
+        val mid = t.mid ?: return
+        val owner = midOwner[mid] ?: return
+        val track = t.receiver.track() ?: return
+        if (track is VideoTrack) {
+            track.setEnabled(true)
+            _remoteVideos.update { it + (owner.first to track) }
+        }
+    }
+
+    private suspend fun createOfferOn(c: PeerConnection): SessionDescription = suspendCancellableCoroutine { cont ->
+        c.createOffer(object : SimpleSdp() {
+            override fun onCreateSuccess(d: SessionDescription?) { if (d != null) cont.resume(d) else cont.resumeWithException(IllegalStateException("no offer")) }
+            override fun onCreateFailure(e: String?) { cont.resumeWithException(IllegalStateException(e ?: "offer failed")) }
+        }, MediaConstraints())
+    }
+
+    private suspend fun createAnswerOn(c: PeerConnection): SessionDescription = suspendCancellableCoroutine { cont ->
+        c.createAnswer(object : SimpleSdp() {
+            override fun onCreateSuccess(d: SessionDescription?) { if (d != null) cont.resume(d) else cont.resumeWithException(IllegalStateException("no answer")) }
+            override fun onCreateFailure(e: String?) { cont.resumeWithException(IllegalStateException(e ?: "answer failed")) }
+        }, MediaConstraints())
+    }
+
+    private suspend fun setLocalOn(c: PeerConnection, d: SessionDescription) = suspendCancellableCoroutine<Unit> { cont ->
+        c.setLocalDescription(object : SimpleSdp() {
+            override fun onSetSuccess() { cont.resume(Unit) }
+            override fun onSetFailure(e: String?) { cont.resumeWithException(IllegalStateException(e ?: "set local failed")) }
+        }, d)
+    }
+
+    private suspend fun setRemoteOn(c: PeerConnection, d: SessionDescription) = suspendCancellableCoroutine<Unit> { cont ->
+        c.setRemoteDescription(object : SimpleSdp() {
+            override fun onSetSuccess() { cont.resume(Unit) }
+            override fun onSetFailure(e: String?) { cont.resumeWithException(IllegalStateException(e ?: "set remote failed")) }
+        }, d)
     }
 
     // ================================================================ the connection
@@ -518,7 +941,7 @@ class CallEngine private constructor(private val appContext: Context) {
         if (_state.value.phase == CallPhase.CONNECTED) {
             // It came back after a short drop
             badStreak = 0
-            _state.update { it.copy(weakSignal = false) }
+            _state.update { it.copy(weakSignal = false, reconnecting = false) }
             return
         }
         if (finished) return
@@ -543,7 +966,7 @@ class CallEngine private constructor(private val appContext: Context) {
         qualityJob = scope.launch {
             while (true) {
                 delay(3000)
-                val conn = pc ?: continue
+                val conn = pc ?: pushPc ?: continue
                 try {
                     conn.getStats { report -> scope.launch { judgeQuality(report) } }
                 } catch (e: Exception) {
@@ -600,7 +1023,9 @@ class CallEngine private constructor(private val appContext: Context) {
         connectTimeoutJob?.cancel()
         connectTimeoutJob = scope.launch {
             delay(CONNECT_SECONDS * 1000L)
-            if (_state.value.phase == CallPhase.CONNECTING) endBecauseLost()
+            val st = _state.value
+            if (st.isGroup && (st.phase == CallPhase.CONNECTING || st.phase == CallPhase.STARTING)) leaveGroupCall()
+            else if (st.phase == CallPhase.CONNECTING) endBecauseLost()
         }
     }
 
@@ -917,7 +1342,15 @@ class CallEngine private constructor(private val appContext: Context) {
     private fun releaseMedia() {
         observeJob?.cancel(); candidateJob?.cancel(); ringTimeoutJob?.cancel()
         connectTimeoutJob?.cancel(); tickerJob?.cancel(); dropJob?.cancel(); qualityJob?.cancel()
+        peersJob?.cancel(); groupCallJob?.cancel(); peersJob = null; groupCallJob = null
+        reconnectJob?.cancel(); dropWatchJob?.cancel(); reconnectJob = null; dropWatchJob = null
         stopCapture()
+        runCatching { pushPc?.close() }
+        runCatching { pullPc?.close() }
+        runCatching { pushPc?.dispose() }
+        runCatching { pullPc?.dispose() }
+        pushPc = null; pullPc = null
+        _remoteVideos.value = emptyMap()
         runCatching { pc?.close() }
         runCatching { pc?.dispose() }
         runCatching { audioTrack?.dispose() }
@@ -933,6 +1366,9 @@ class CallEngine private constructor(private val appContext: Context) {
     private fun resetInternals() {
         releaseMedia()
         call = null
+        gCallId = ""; gDoc = null; pushSession = ""; pullSession = ""; othersSeen = false
+        iceCache = null; reconnectTries = 0; joinedAtMs = 0L; groupVideo = false
+        midOwner.clear(); pulledSessions.clear(); pulling.clear()
         remoteSet = false
         pendingCandidates.clear()
         finished = false

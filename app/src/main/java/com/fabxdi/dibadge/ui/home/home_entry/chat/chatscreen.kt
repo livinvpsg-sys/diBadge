@@ -1007,13 +1007,23 @@ fun ChatScreen(
             com.fabxdi.dibadge.call.CallActivity.open(callCtx)
             return
         }
-        engine.startCall(
-            groupId = currentEntry.id.toString(),
-            calleeUid = otherUid,
-            callerName = me,
-            peerName = if (otherUserName.isNotBlank()) otherUserName else currentEntry.title,
-            video = video
-        )
+        if (isOneToOne) {
+            engine.startCall(
+                groupId = currentEntry.id.toString(),
+                calleeUid = otherUid,
+                callerName = me,
+                peerName = if (otherUserName.isNotBlank()) otherUserName else currentEntry.title,
+                video = video
+            )
+        } else {
+            // A group chat: everyone in the group is rung and can join
+            engine.startGroupCall(
+                groupId = currentEntry.id.toString(),
+                title = currentEntry.title,
+                hostName = me,
+                video = video
+            )
+        }
         com.fabxdi.dibadge.call.CallActivity.open(callCtx)
     }
     val callPermissionLauncher = rememberLauncherForActivityResult(
@@ -1028,7 +1038,7 @@ fun ChatScreen(
     }
     fun requestCall(video: Boolean) {
         callMenuOpen = false
-        if (otherUid.isBlank()) return
+        if (isOneToOne && otherUid.isBlank()) return
         pendingCallVideo = video
         val need = mutableListOf(Manifest.permission.RECORD_AUDIO)
         if (video) need.add(Manifest.permission.CAMERA)
@@ -2328,7 +2338,18 @@ fun ChatScreen(
                     showAttachmentOptions = false
                 }
         ) {
-            if (callMenuOpen && isOneToOne) {
+            if (!isOneToOne) {
+                // A group call is running in this chat: join it
+                com.fabxdi.dibadge.call.GroupCallBanner(
+                    groupId = currentEntry.id.toString(),
+                    textColor = primaryTextColor,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .zIndex(5f)
+                        .background(pageBgColor)
+                )
+            }
+            if (callMenuOpen) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()

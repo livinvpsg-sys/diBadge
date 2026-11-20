@@ -548,8 +548,8 @@ fun ChatTopBar(
                     }
                 }
 
-                // Call (1:1 chats only)
-                if (isOneToOne && onToggleCall != null) {
+                // Call (1:1 chats and groups)
+                if (onToggleCall != null) {
                     IconButton(
                         onClick = { onToggleCall() },
                         modifier = Modifier.size(48.dp)

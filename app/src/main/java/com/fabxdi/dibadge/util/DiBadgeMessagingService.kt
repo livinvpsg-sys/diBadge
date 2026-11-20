@@ -31,6 +31,22 @@ class DiBadgeMessagingService : FirebaseMessagingService() {
         when (data["type"]) {
             "message" -> PushNotifier.showMessage(applicationContext, data)
             "call" -> onIncomingCall(data)
+            "gcall" -> onGroupCall(data)
+            "gcall_end" -> {
+                val gn = com.fabxdi.dibadge.call.GroupCallNotifier
+                gn.cancel(applicationContext)
+                val callId = data["callId"].orEmpty()
+                val s = CallEngine.get(applicationContext).state.value
+                val onIt = s.isGroup && s.callId == callId
+                if (data["missed"] == "1" && !onIt) {
+                    gn.showMissed(
+                        applicationContext,
+                        callerName = data["callerName"].orEmpty(),
+                        video = data["callType"] == "video",
+                        at = data["at"]?.toLongOrNull() ?: 0L
+                    )
+                }
+            }
             "connection" -> ConnectionNotifier.show(applicationContext, data)
             "task" -> TaskNotifier.show(applicationContext, data)
             "announcement" -> AnnouncementNotifier.show(applicationContext, data)
@@ -54,6 +70,19 @@ class DiBadgeMessagingService : FirebaseMessagingService() {
                 }
             }
         }
+    }
+
+    private fun onGroupCall(data: Map<String, String>) {
+        val callId = data["callId"].orEmpty()
+        if (callId.isBlank()) return
+        // Already on a call: no ring (the call shows as missed in the Calls list)
+        if (!CallEngine.get(applicationContext).readyForIncoming()) return
+        com.fabxdi.dibadge.call.GroupCallNotifier.show(
+            applicationContext,
+            callId = callId,
+            callerName = data["callerName"].orEmpty(),
+            video = data["callType"] == "video"
+        )
     }
 
     private fun onIncomingCall(data: Map<String, String>) {

@@ -29,6 +29,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Call
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,6 +40,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -55,6 +58,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -71,8 +75,15 @@ data class CallLogItem(
     val outgoing: Boolean,
     val missed: Boolean,       // a call to you that you did not take
     val summary: String,      // "Missed · voice", "Outgoing · video · 4:12"...
-    val at: Long
+    val at: Long,
+    val isGroupCall: Boolean = false,
+    val groupCallId: String = ""
 )
+
+/** A group call you were rung for and never joined or declined, once it has had time to be answered. */
+private const val GROUP_RING_MS = 60_000L
+private fun isMissedGroup(e: GroupCallLogEntry, now: Long): Boolean =
+    !e.outgoing && !e.joined && !e.declined && e.createdAt > 0 && now - e.createdAt > GROUP_RING_MS
 
 /** Remembers when the Calls list was last opened, so only newer missed calls get the red badge. */
 object CallLogSeen {
@@ -111,6 +122,11 @@ fun rememberMissedCallCount(): Int {
     LaunchedEffect(Unit) { CallLogSeen.load(context) }
     val seen by CallLogSeen.seenAt.collectAsState()
     var times by remember { mutableStateOf<List<Long>>(emptyList()) }
+    var groupLog by remember { mutableStateOf<List<GroupCallLogEntry>>(emptyList()) }
+    var tick by remember { mutableStateOf(0L) }
+    LaunchedEffect(Unit) { GroupCallRepository().observeMyLog().collect { groupLog = it } }
+    // A ring turns into a missed call a minute later, so look again now and then
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(20_000); tick = System.currentTimeMillis() } }
     DisposableEffect(Unit) {
         val me = FirebaseAuth.getInstance().currentUser?.uid
         var reg: ListenerRegistration? = null
@@ -127,7 +143,9 @@ fun rememberMissedCallCount(): Int {
         }
         onDispose { reg?.remove() }
     }
-    return if (seen < 0) 0 else times.count { it > seen }
+    if (seen < 0) return 0
+    val now = maxOf(tick, System.currentTimeMillis())
+    return times.count { it > seen } + groupLog.count { isMissedGroup(it, now) && it.createdAt > seen }
 }
 
 @Composable
@@ -151,11 +169,26 @@ fun CallHistoryScreen(
     var loaded by remember { mutableStateOf(false) }
     val names = remember { mutableStateMapOf<String, String>() }
     var onlyMissed by remember { mutableStateOf(false) }
+    var groupLog by remember { mutableStateOf<List<GroupCallLogEntry>>(emptyList()) }
+    val groupTitles = remember { mutableStateMapOf<String, String>() }
+    var tick by remember { mutableStateOf(System.currentTimeMillis()) }
+    val uiScope = rememberCoroutineScope()
 
     BackHandler(onBack = onBack)
 
     // Opening the list clears the badge
     LaunchedEffect(Unit) { CallLogSeen.load(context); CallLogSeen.markSeen(context) }
+
+    LaunchedEffect(Unit) { GroupCallRepository().observeMyLog().collect { groupLog = it } }
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(15_000); tick = System.currentTimeMillis() } }
+    // The names of the groups the group calls were in
+    LaunchedEffect(groupLog) {
+        groupLog.map { it.groupId }.filter { it.isNotBlank() && it !in groupTitles }.distinct().forEach { gid ->
+            groupTitles[gid] = ""
+            FirebaseFirestore.getInstance().collection("personalGroups").document(gid).get()
+                .addOnSuccessListener { d -> groupTitles[gid] = d.getString("name").orEmpty().ifBlank { d.getString("title").orEmpty() } }
+        }
+    }
 
     DisposableEffect(me) {
         val regs = mutableListOf<ListenerRegistration>()
@@ -185,9 +218,31 @@ fun CallHistoryScreen(
         }
     }
 
-    val items: List<CallLogItem> = remember(asCaller, asCallee, names.toMap(), nicknames) {
+    val groupItems: List<CallLogItem> = remember(groupLog, groupTitles.toMap(), tick) {
         val now = System.currentTimeMillis()
-        (asCaller + asCallee).distinctBy { it["id"] }.mapNotNull { d ->
+        groupLog.mapNotNull { e ->
+            val kind = if (e.video) "video" else "voice"
+            val missed = isMissedGroup(e, now)
+            val summary = when {
+                missed -> "Missed group call · $kind"
+                e.declined && !e.joined -> "Declined group call · $kind"
+                e.joined && e.durationSec > 0 -> "Group $kind call · " + CallRepository.formatDuration(e.durationSec)
+                e.joined -> "Group $kind call"
+                e.outgoing -> "Group $kind call"
+                else -> return@mapNotNull null // still ringing
+            }
+            val title = groupTitles[e.groupId].orEmpty().ifBlank { if (e.hostName.isBlank()) "Group call" else e.hostName + "'s group" }
+            CallLogItem(
+                id = "g_" + e.callId, otherUid = e.hostUid, otherName = title, groupId = e.groupId,
+                video = e.video, outgoing = e.outgoing, missed = missed, summary = summary, at = e.createdAt,
+                isGroupCall = true, groupCallId = e.callId
+            )
+        }
+    }
+
+    val items: List<CallLogItem> = remember(asCaller, asCallee, names.toMap(), nicknames, groupItems) {
+        val now = System.currentTimeMillis()
+        ((asCaller + asCallee).distinctBy { it["id"] }.mapNotNull { d ->
             val callerUid = d["callerUid"] as? String ?: return@mapNotNull null
             val calleeUid = d["calleeUid"] as? String ?: return@mapNotNull null
             val outgoing = callerUid == me
@@ -217,7 +272,7 @@ fun CallHistoryScreen(
                 id = d["id"] as String, otherUid = other, otherName = name, groupId = d["groupId"] as? String ?: "",
                 video = video, outgoing = outgoing, missed = missed, summary = summary, at = created
             )
-        }.sortedByDescending { it.at }.take(100)
+        } + groupItems).sortedByDescending { it.at }.take(100)
     }
     val shown = if (onlyMissed) items.filter { it.missed } else items
 
@@ -227,6 +282,19 @@ fun CallHistoryScreen(
         val meName = FirebaseAuth.getInstance().currentUser?.displayName ?: "Me"
         val engine = CallEngine.get(context)
         if (engine.isBusy) { CallActivity.open(context); return }
+        if (item.isGroupCall) {
+            // Still going on: join it. Over: start a new call in the same group.
+            uiScope.launch {
+                val doc = runCatching { GroupCallRepository().getCall(item.groupCallId) }.getOrNull()
+                if (doc != null && doc.isActive) {
+                    CallActivity.joinGroup(context, item.groupCallId)
+                } else {
+                    engine.startGroupCall(item.groupId, item.otherName, meName, item.video)
+                    CallActivity.open(context)
+                }
+            }
+            return
+        }
         engine.startCall(item.groupId, item.otherUid, meName, item.otherName, item.video)
         CallActivity.open(context)
     }
@@ -286,8 +354,8 @@ fun CallHistoryScreen(
                         )
                     }
                     items(rows, key = { it.id }) { row ->
-                        CallRow(row, primary, secondary, error, accent) {
-                            if (it) callBack(row) else onOpenChat(row.otherUid, row.otherName)
+                        CallRow(row, primary, secondary, error, accent, pageBg) {
+                            if (it) callBack(row) else if (!row.isGroupCall) onOpenChat(row.otherUid, row.otherName)
                         }
                     }
                 }
@@ -310,16 +378,24 @@ private fun FilterChip(label: String, selected: Boolean, accent: Color, primary:
 
 /** [onClick] gets true when the phone icon was tapped, false for the row. */
 @Composable
-private fun CallRow(row: CallLogItem, primary: Color, secondary: Color, error: Color, accent: Color, onClick: (Boolean) -> Unit) {
+private fun CallRow(row: CallLogItem, primary: Color, secondary: Color, error: Color, accent: Color, pageBg: Color, onClick: (Boolean) -> Unit) {
     val initial = row.otherName.trim().firstOrNull()?.uppercase() ?: "?"
     Row(
         modifier = Modifier.fillMaxWidth().clickable { onClick(false) }.padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier.size(44.dp).clip(CircleShape).background(accent.copy(alpha = 0.18f)),
-            contentAlignment = Alignment.Center
-        ) { Text(initial, fontSize = 17.sp, color = accent) }
+        Box(modifier = Modifier.size(44.dp)) {
+            Box(
+                modifier = Modifier.size(44.dp).clip(CircleShape).background(accent.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center
+            ) { Text(initial, fontSize = 17.sp, color = accent) }
+            if (row.isGroupCall) {
+                Box(
+                    modifier = Modifier.align(Alignment.BottomEnd).size(20.dp).clip(CircleShape).background(pageBg),
+                    contentAlignment = Alignment.Center
+                ) { Icon(Icons.Outlined.Groups, null, tint = secondary, modifier = Modifier.size(14.dp)) }
+            }
+        }
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -333,7 +409,12 @@ private fun CallRow(row: CallLogItem, primary: Color, secondary: Color, error: C
         Box(
             modifier = Modifier.size(40.dp).clip(CircleShape).clickable { onClick(true) },
             contentAlignment = Alignment.Center
-        ) { Icon(Icons.Outlined.Call, "Call back", tint = accent, modifier = Modifier.size(20.dp)) }
+        ) {
+            Icon(
+                if (row.isGroupCall && row.video) Icons.Outlined.Videocam else Icons.Outlined.Call,
+                if (row.isGroupCall) "Join or start the call" else "Call back", tint = accent, modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
 

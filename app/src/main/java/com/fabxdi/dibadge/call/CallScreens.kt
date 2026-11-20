@@ -83,12 +83,14 @@ fun CallScreen(
     val state by engine.state.collectAsState()
     val localTrack by engine.localVideo.collectAsState()
     val remoteTrack by engine.remoteVideo.collectAsState()
+    val remoteVideos by engine.remoteVideos.collectAsState()
     var showReplies by remember { mutableStateOf(false) }
     var writing by remember { mutableStateOf(false) }
     var custom by remember { mutableStateOf("") }
 
     Box(modifier = Modifier.fillMaxSize().background(CallBg)) {
         when {
+            state.isGroup && state.phase != CallPhase.ENDED -> GroupLayout(state, engine, localTrack, remoteVideos, onToggleCamera)
             state.phase == CallPhase.RINGING_IN -> IncomingLayout(state, onDecline = { engine.decline() }, onAccept = onAnswer, onMessage = { showReplies = true })
             state.isVideo || state.cameraOn -> VideoLayout(state, engine, localTrack, remoteTrack, onToggleCamera)
             else -> VoiceLayout(state, engine, onToggleCamera)
@@ -141,7 +143,7 @@ fun CallScreen(
                 }
             }
         }
-        if (state.phase == CallPhase.CONNECTED && state.weakSignal) {
+        if (state.phase == CallPhase.CONNECTED && (state.weakSignal || state.reconnecting)) {
             Box(
                 modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding()
                     .padding(top = 8.dp, start = 16.dp, end = 16.dp)
@@ -151,7 +153,7 @@ fun CallScreen(
                     .border(1.dp, CallAmber.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
-                Text("Poor connection. Audio may break up.", fontSize = 13.sp, color = CallAmber, modifier = Modifier.align(Alignment.Center))
+                Text(if (state.reconnecting) "Connection lost. Reconnecting…" else "Poor connection. Audio may break up.", fontSize = 13.sp, color = CallAmber, modifier = Modifier.align(Alignment.Center))
             }
         }
     }
@@ -205,6 +207,104 @@ private fun QuickReplyRow(text: String, color: Color, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 13.dp)
     ) { Text(text, fontSize = 14.sp, color = color) }
+}
+
+// ---------------------------------------------------------------- group
+
+@Composable
+private fun GroupLayout(
+    state: CallState,
+    engine: CallEngine,
+    localTrack: VideoTrack?,
+    remoteVideos: Map<String, VideoTrack>,
+    onToggleCamera: (Boolean) -> Unit
+) {
+    val people = state.participants
+    Column(
+        modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 10.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(state.peerName.ifBlank { "Group call" }, fontSize = 17.sp, color = CallText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                if (people.size > 1 && state.phase == CallPhase.CONNECTED) statusText(state) + " · ${people.size} people" else statusText(state),
+                fontSize = 13.sp, color = CallMuted
+            )
+        }
+        if (people.isEmpty()) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Text(if (state.phase == CallPhase.STARTING) "Starting…" else "Joining…", fontSize = 15.sp, color = CallMuted)
+            }
+        } else {
+            val cols = when {
+                people.size <= 2 -> 1
+                people.size <= 6 -> 2
+                else -> 3
+            }
+            val rows = (people.size + cols - 1) / cols
+            Column(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (r in 0 until rows) {
+                    Row(modifier = Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (c in 0 until cols) {
+                            val idx = r * cols + c
+                            if (idx < people.size) {
+                                val p = people[idx]
+                                androidx.compose.runtime.key(p.uid) {
+                                    GroupTile(
+                                        person = p,
+                                        track = if (p.isMe) localTrack else remoteVideos[p.uid],
+                                        showVideo = if (p.isMe) state.cameraOn else p.cameraOn,
+                                        mirror = p.isMe && state.frontCamera,
+                                        engine = engine,
+                                        modifier = Modifier.weight(1f).fillMaxSize()
+                                    )
+                                }
+                            } else {
+                                Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        ControlsRow(state, engine, onToggleCamera, showFlip = true)
+        Spacer(Modifier.height(28.dp))
+    }
+}
+
+@Composable
+private fun GroupTile(
+    person: GroupMemberState,
+    track: VideoTrack?,
+    showVideo: Boolean,
+    mirror: Boolean,
+    engine: CallEngine,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xFF1B2027)),
+        contentAlignment = Alignment.Center
+    ) {
+        if (showVideo && track != null) {
+            WebRtcVideo(track = track, eglContext = engine.eglContext, mirror = mirror, overlay = false, modifier = Modifier.fillMaxSize())
+        } else {
+            CallAvatar(person.name.ifBlank { "?" }, 64)
+        }
+        Row(
+            modifier = Modifier.align(Alignment.BottomStart).padding(8.dp)
+                .clip(RoundedCornerShape(8.dp)).background(Color(0x99000000)).padding(horizontal = 8.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (person.muted) {
+                Icon(Icons.Outlined.MicOff, null, tint = CallText, modifier = Modifier.size(13.dp))
+                Spacer(Modifier.width(4.dp))
+            }
+            Text(
+                if (person.isMe) "You" else person.name.ifBlank { "Someone" },
+                fontSize = 12.sp, color = CallText, maxLines = 1, overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
 }
 
 // ---------------------------------------------------------------- voice
@@ -458,7 +558,7 @@ private fun statusText(s: CallState): String = when (s.phase) {
     CallPhase.RINGING_OUT -> "Ringing…"
     CallPhase.RINGING_IN -> "Incoming call…"
     CallPhase.CONNECTING -> "Connecting…"
-    CallPhase.CONNECTED -> CallRepository.formatDuration(s.seconds) + if (s.weakSignal) " · weak signal" else ""
+    CallPhase.CONNECTED -> CallRepository.formatDuration(s.seconds) + if (s.reconnecting) " · reconnecting" else if (s.weakSignal) " · weak signal" else ""
     CallPhase.ENDED -> when (s.endReason) {
         CallEndReason.DECLINED -> "Declined"
         CallEndReason.NO_ANSWER -> "No answer"
