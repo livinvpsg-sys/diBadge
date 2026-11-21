@@ -125,7 +125,7 @@ fun CommentThreadSheet(
     val primaryTextColor = if (isDark) Color(0xFFF2F2F4) else Color(0xFF15171C)
     val secondaryTextColor = if (isDark) Color(0xFFA3A3AA) else Color(0xFF667085)
     val dimTextColor = if (isDark) Color(0xFF7C7C84) else Color(0xFF8A90A0)
-    val tealAccent = if (isDark) Color(0xFF58B5AC) else Color(0xFF1B6F69)
+    val tealAccent = DiBadgeTheme.colors.accent // the app blue (the name is old; it is no longer teal)
 
     val currentUserId = remember { FirebaseAuth.getInstance().currentUser?.uid ?: "" }
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp

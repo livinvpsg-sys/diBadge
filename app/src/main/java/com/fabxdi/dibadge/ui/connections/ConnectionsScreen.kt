@@ -29,9 +29,12 @@ import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.fabxdi.dibadge.ui.home.buildSearchAnnotatedString
+import com.fabxdi.dibadge.util.capitalizeName
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -264,7 +267,8 @@ fun ConnectionsScreen(
                                     },
                                     onBlock = { blockTarget = item },
                                     onDisconnect = { disconnectTarget = item },
-                                    onChatClick = { onOpenChat(item) }
+                                    onChatClick = { onOpenChat(item) },
+                                    query = searchQuery.trim()
                                 )
                             }
                         }
@@ -309,7 +313,8 @@ fun ConnectionsScreen(
                                     onAction = {
                                         if (incoming != null) viewModel.acceptRequest(incoming)
                                         else viewModel.sendInvite(person)
-                                    }
+                                    },
+                                    query = searchQuery.trim()
                                 )
                             }
                         }
@@ -555,7 +560,7 @@ fun ConnectionsScreen(
             shape = RoundedCornerShape(24.dp),
             title = {
                 Text(
-                    text = "Disconnect from ${target.name}?",
+                    text = "Disconnect from ${capitalizeName(target.name)}?",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = primaryTextColor
@@ -563,7 +568,7 @@ fun ConnectionsScreen(
             },
             text = {
                 Text(
-                    text = "You will no longer appear in each other's connections. Your chat history stays on your phone and ${target.name} is not notified. You can send a new request later.",
+                    text = "You will no longer appear in each other's connections. Your chat history stays on your phone and ${capitalizeName(target.name)} is not notified. You can send a new request later.",
                     fontSize = 14.sp,
                     color = secondaryTextColor
                 )
@@ -596,7 +601,7 @@ fun ConnectionsScreen(
             shape = RoundedCornerShape(24.dp),
             title = {
                 Text(
-                    text = "Block ${target.name}?",
+                    text = "Block ${capitalizeName(target.name)}?",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = primaryTextColor
@@ -658,7 +663,7 @@ fun ConnectionsScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = person.name,
+                                        text = capitalizeName(person.name),
                                         fontSize = 15.sp,
                                         color = primaryTextColor,
                                         maxLines = 1,
@@ -739,9 +744,10 @@ fun ConnectionRow(
     onClick: () -> Unit,
     onBlock: () -> Unit,
     onDisconnect: () -> Unit = {},
-    onChatClick: () -> Unit = {}
+    onChatClick: () -> Unit = {},
+    query: String = ""
 ) {
-    val avatarBgColor = remember(item.id) { UserColorUtils.getColorForName(item.id) }
+    val avatarBgColor = remember(item.id, item.uid) { UserColorUtils.getColorForName(item.uid.ifBlank { item.id }) }
     val countryName = remember(item.country) {
         if (item.country.isBlank()) "" else CountryData.getCountryDisplayName(item.country)
     }
@@ -776,7 +782,7 @@ fun ConnectionRow(
                     } else {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
-                                text = item.name.take(1).uppercase(),
+                                text = capitalizeName(item.name).take(1),
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
@@ -788,72 +794,76 @@ fun ConnectionRow(
                 Spacer(modifier = Modifier.width(14.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
-                    // Name on the left; chat and block icons on the same line when open
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = item.name,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Normal,
-                            color = primaryTextColor,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-                        // Chat is always visible, no need to open the card
-                        IconButton(
-                            onClick = onChatClick,
-                            modifier = Modifier.size(40.dp)
+                    Text(
+                        text = buildSearchAnnotatedString(capitalizeName(item.name), query, primaryTextColor, searchHighlightColor()),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = primaryTextColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    // The location sits right under the name (the chat icon no longer makes the name line tall)
+                    if (countryName.isNotBlank()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 2.dp)
                         ) {
-                            ChatFilledIcon(
-                                tint = tealAccent,
-                                contentDescription = "Chat with ${item.name}",
-                                size = 24
+                            Icon(
+                                imageVector = Icons.Outlined.LocationOn,
+                                contentDescription = "Country",
+                                tint = secondaryTextColor,
+                                modifier = Modifier.size(15.dp)
                             )
-                        }
-                        if (isExpanded) {
-                            IconButton(
-                                onClick = onBlock,
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Block,
-                                    contentDescription = "Block ${item.name}",
-                                    tint = errorColor,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                        }
-                    }
-                    if (isExpanded) {
-                        if (countryName.isNotBlank()) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Outlined.LocationOn,
-                                    contentDescription = "Country",
-                                    tint = secondaryTextColor,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(text = countryName, fontSize = 13.sp, color = secondaryTextColor)
-                            }
-                        }
-                    } else {
-                        Spacer(modifier = Modifier.height(2.dp))
-                        if (countryName.isNotBlank()) {
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = countryName,
                                 fontSize = 13.sp,
+                                lineHeight = 16.sp,
                                 color = secondaryTextColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                        } else {
+                        }
+                    }
+                    // Closed card: company and role with their icons too. When open they show below.
+                    if (!isExpanded && (item.organization.isNotBlank() || item.role.isNotBlank())) {
+                        Box(modifier = Modifier.padding(top = 2.dp)) {
                             CompanyRoleLine(
                                 organization = item.organization,
                                 role = item.role,
                                 textColor = secondaryTextColor,
                                 iconColor = secondaryTextColor,
-                                fontSize = 12.sp
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
+
+                // Chat is always visible, no need to open the card. Block joins it when open.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.align(if (isExpanded) Alignment.Top else Alignment.CenterVertically)
+                ) {
+                    IconButton(
+                        onClick = onChatClick,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        ChatFilledIcon(
+                            tint = tealAccent,
+                            contentDescription = "Chat with ${capitalizeName(item.name)}",
+                            size = 24
+                        )
+                    }
+                    if (isExpanded) {
+                        IconButton(
+                            onClick = onBlock,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Block,
+                                contentDescription = "Block ${capitalizeName(item.name)}",
+                                tint = errorColor,
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                     }
@@ -932,7 +942,7 @@ private fun RequestCardBody(
     onSecond: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val avatarBgColor = remember(item.id) { UserColorUtils.getColorForName(item.id) }
+    val avatarBgColor = remember(item.id, item.uid) { UserColorUtils.getColorForName(item.uid.ifBlank { item.id }) }
     val countryName = remember(item.country) {
         if (item.country.isBlank()) "" else CountryData.getCountryDisplayName(item.country)
     }
@@ -966,7 +976,7 @@ private fun RequestCardBody(
                     } else {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
-                                text = item.name.take(1).uppercase(),
+                                text = capitalizeName(item.name).take(1),
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
@@ -979,7 +989,7 @@ private fun RequestCardBody(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = item.name,
+                        text = capitalizeName(item.name),
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Normal,
                         color = primaryTextColor,
@@ -1128,12 +1138,12 @@ fun PersonSearchRow(
     primaryTextColor: Color,
     secondaryTextColor: Color,
     tealAccent: Color,
-    onAction: () -> Unit
+    onAction: () -> Unit,
+    query: String = ""
 ) {
-    val avatarBgColor = remember(item.id) { UserColorUtils.getColorForName(item.id) }
-    val sublineText = remember(item.organization, item.role) {
-        if (item.organization.isNotBlank() && item.role.isNotBlank()) "${item.organization} • ${item.role}"
-        else item.organization.ifBlank { item.role }
+    val avatarBgColor = remember(item.id, item.uid) { UserColorUtils.getColorForName(item.uid.ifBlank { item.id }) }
+    val personCountry = remember(item.country) {
+        if (item.country.isBlank()) "" else CountryData.getCountryDisplayName(item.country)
     }
 
     Row(
@@ -1158,7 +1168,7 @@ fun PersonSearchRow(
             } else {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
-                        text = item.name.take(1).uppercase(),
+                        text = capitalizeName(item.name).take(1),
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -1171,34 +1181,54 @@ fun PersonSearchRow(
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = item.name,
+                text = buildSearchAnnotatedString(capitalizeName(item.name), query, primaryTextColor, searchHighlightColor()),
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Normal,
                 color = primaryTextColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            if (sublineText.isNotBlank()) {
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = sublineText,
-                    fontSize = 12.sp,
-                    color = secondaryTextColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+            if (personCountry.isNotBlank()) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                    Icon(
+                        imageVector = Icons.Outlined.LocationOn,
+                        contentDescription = "Country",
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(text = personCountry, fontSize = 13.sp, lineHeight = 16.sp, color = secondaryTextColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (item.organization.isNotBlank() || item.role.isNotBlank()) {
+                Box(modifier = Modifier.padding(top = 2.dp)) {
+                    CompanyRoleLine(
+                        organization = item.organization,
+                        role = item.role,
+                        textColor = secondaryTextColor,
+                        iconColor = secondaryTextColor,
+                        fontSize = 13.sp
+                    )
+                }
             }
         }
 
-        Text(
-            text = actionLabel,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (actionEnabled) tealAccent else secondaryTextColor,
-            modifier = Modifier
-                .clickable(enabled = actionEnabled) { onAction() }
-                .padding(horizontal = 8.dp, vertical = 12.dp)
-        )
+        // Outlined button: blue for Connect and Accept, grey for Pending
+        val buttonColor = if (actionEnabled) tealAccent else secondaryTextColor
+        Surface(
+            modifier = Modifier.clickable(enabled = actionEnabled) { onAction() },
+            shape = RoundedCornerShape(18.dp),
+            color = Color.Transparent,
+            border = BorderStroke(1.5.dp, buttonColor.copy(alpha = if (actionEnabled) 1f else 0.6f))
+        ) {
+            Text(
+                text = actionLabel,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = buttonColor,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp)
+            )
+        }
     }
 }
 
@@ -1300,6 +1330,7 @@ private fun CompanyRoleLine(
             Text(
                 text = organization,
                 fontSize = fontSize,
+                lineHeight = (fontSize.value * 1.25f).sp,
                 color = textColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1310,6 +1341,7 @@ private fun CompanyRoleLine(
             Text(
                 text = "  |  ",
                 fontSize = fontSize,
+                lineHeight = (fontSize.value * 1.25f).sp,
                 color = iconColor
             )
         }
@@ -1324,6 +1356,7 @@ private fun CompanyRoleLine(
             Text(
                 text = role,
                 fontSize = fontSize,
+                lineHeight = (fontSize.value * 1.25f).sp,
                 color = textColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -1344,7 +1377,7 @@ fun SuggestionRow(
     onClick: () -> Unit,
     onConnect: () -> Unit
 ) {
-    val avatarBgColor = remember(item.id) { UserColorUtils.getColorForName(item.id) }
+    val avatarBgColor = remember(item.id, item.uid) { UserColorUtils.getColorForName(item.uid.ifBlank { item.id }) }
     val countryName = remember(item.country) {
         if (item.country.isBlank()) "" else CountryData.getCountryDisplayName(item.country)
     }
@@ -1379,7 +1412,7 @@ fun SuggestionRow(
                     } else {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
-                                text = item.name.take(1).uppercase(),
+                                text = capitalizeName(item.name).take(1),
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
@@ -1392,7 +1425,7 @@ fun SuggestionRow(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = item.name,
+                        text = capitalizeName(item.name),
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Normal,
                         color = primaryTextColor,
@@ -1474,3 +1507,8 @@ fun SuggestionRow(
         }
     }
 }
+
+/** The soft yellow behind the letters you typed, the same as the Home search. */
+@Composable
+private fun searchHighlightColor(): Color =
+    if (MaterialTheme.colorScheme.background.luminance() < 0.5f) Color(0xFFFFB300).copy(alpha = 0.35f) else Color(0xFFFFF59D)

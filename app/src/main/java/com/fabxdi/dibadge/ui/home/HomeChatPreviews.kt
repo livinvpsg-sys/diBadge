@@ -53,6 +53,9 @@ class HomeChatPreviewsViewModel(application: Application) : AndroidViewModel(app
     private val userRegs = HashMap<String, ListenerRegistration>()
     private val groupPhoto = HashMap<String, String>()
     private val otherOf = HashMap<String, String>()
+    private val _others = MutableStateFlow<Map<String, String>>(emptyMap())
+    /** Chat id -> the other person's id, for direct chats. Used to colour the avatar the same everywhere. */
+    val otherUids: StateFlow<Map<String, String>> = _others.asStateFlow()
     private val userPhoto = HashMap<String, String>()
 
     private fun publishPhotos() {
@@ -63,6 +66,7 @@ class HomeChatPreviewsViewModel(application: Application) : AndroidViewModel(app
             if (url.isNotBlank()) out[id] = url
         }
         _photos.value = out
+        _others.value = HashMap(otherOf)
     }
 
     private fun watchUser(uid: String) {
@@ -84,6 +88,7 @@ class HomeChatPreviewsViewModel(application: Application) : AndroidViewModel(app
                 val other = members.firstOrNull { it != me }
                 if (other != null) {
                     otherOf[id] = other
+                    _others.value = HashMap(otherOf)
                     watchUser(other)
                 }
             } else {

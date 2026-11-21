@@ -82,6 +82,14 @@ class ConnectionsViewModel : ViewModel() {
     private var blockedListener: ListenerRegistration? = null
     private var loadedForUid: String? = null
 
+    // What each person has in their own profile right now (company, role, bio, photo ...), so a change
+    // they make shows here at once, not only the copy saved when we connected.
+    private val profileRegs = HashMap<String, ListenerRegistration>()
+    private val liveProfile = HashMap<String, ConnectionItem>()
+    private var baseConnections: List<ConnectionItem> = emptyList()
+    private var baseReceived: List<ConnectionItem> = emptyList()
+    private var baseSent: List<ConnectionItem> = emptyList()
+
     // This ViewModel outlives a sign-out, so it follows the signed-in account itself:
     // when the account changes, the old listeners are removed and the old lists are emptied.
     private val authStateListener = FirebaseAuth.AuthStateListener { fa ->
@@ -91,6 +99,7 @@ class ConnectionsViewModel : ViewModel() {
 
         connectionsListener?.remove(); connectionsListener = null
         blockedListener?.remove(); blockedListener = null
+        clearProfileWatchers()
         _connections.value = emptyList()
         _receivedRequests.value = emptyList()
         _sentRequests.value = emptyList()
@@ -114,6 +123,7 @@ class ConnectionsViewModel : ViewModel() {
         auth.removeAuthStateListener(authStateListener)
         connectionsListener?.remove()
         blockedListener?.remove()
+        clearProfileWatchers()
     }
 
     private fun loadBlocked() {
@@ -250,10 +260,53 @@ class ConnectionsViewModel : ViewModel() {
                     }
                 }
 
-                _connections.value = connList.sortedBy { it.name.lowercase() }
-                _receivedRequests.value = recList.sortedByDescending { it.timestamp }
-                _sentRequests.value = sentList.sortedByDescending { it.timestamp }
+                baseConnections = connList
+                baseReceived = recList
+                baseSent = sentList
+                watchProfiles((connList + recList + sentList).map { it.uid }.filter { it.isNotBlank() }.toSet())
+                publishConnections()
             }
+    }
+
+    private fun ConnectionItem.withLive(): ConnectionItem {
+        val live = liveProfile[uid] ?: return this
+        return copy(
+            name = live.name.ifBlank { name },
+            organization = live.organization,
+            role = live.role,
+            bio = live.bio,
+            country = live.country.ifBlank { country },
+            photoUrl = live.photoUrl.ifBlank { photoUrl }
+        )
+    }
+
+    /** Puts the saved connection lists and the live profile details together. */
+    private fun publishConnections() {
+        _connections.value = baseConnections.map { it.withLive() }.sortedBy { it.name.lowercase() }
+        _receivedRequests.value = baseReceived.map { it.withLive() }.sortedByDescending { it.timestamp }
+        _sentRequests.value = baseSent.map { it.withLive() }.sortedByDescending { it.timestamp }
+    }
+
+    private fun watchProfiles(uids: Set<String>) {
+        val wanted = uids.take(150).toSet()
+        for (gone in profileRegs.keys - wanted) {
+            profileRegs.remove(gone)?.remove()
+            liveProfile.remove(gone)
+        }
+        for (uid in wanted - profileRegs.keys) {
+            profileRegs[uid] = firestore.collection("users").document(uid).addSnapshotListener { doc, err ->
+                if (err != null || doc == null || !doc.exists()) return@addSnapshotListener
+                liveProfile[uid] = doc.toPerson()
+                publishConnections()
+            }
+        }
+    }
+
+    private fun clearProfileWatchers() {
+        profileRegs.values.forEach { it.remove() }
+        profileRegs.clear()
+        liveProfile.clear()
+        baseConnections = emptyList(); baseReceived = emptyList(); baseSent = emptyList()
     }
 
     // ---------------------------------------------------------------- Search

@@ -9,6 +9,8 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -111,6 +113,7 @@ fun MainDashboard(
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
     var homeSearchQuery by remember { mutableStateOf("") }
+    var homeFilter by remember { mutableStateOf(0) } // 0 All, 1 Unread, 2 Groups
     var showQrScanner by remember { mutableStateOf(false) }
     var showQrSheet by remember { mutableStateOf(false) }
     var showNewGroupSheet by remember { mutableStateOf(false) }
@@ -125,6 +128,7 @@ fun MainDashboard(
     val previewsVm: HomeChatPreviewsViewModel = viewModel()
     val previews by previewsVm.previews.collectAsState()
     val directIds by previewsVm.directIds.collectAsState()
+    val otherUids by previewsVm.otherUids.collectAsState()
     val chatPhotos by previewsVm.photos.collectAsState()
     val homeContext = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) { com.fabxdi.dibadge.util.ChatDrafts.load(homeContext) }
@@ -492,42 +496,58 @@ fun MainDashboard(
                                 }
 
                                 if (homeSearchQuery.isBlank()) {
-                                    if (homeEntries.isEmpty()) {
-                                        Box(
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            HomeEmptyState()
+                                    val unreadTotal = sortedEntries.count { (previews[it.id.toString()]?.unread ?: 0) > 0 }
+                                    val filteredEntries = when (homeFilter) {
+                                        1 -> sortedEntries.filter { (previews[it.id.toString()]?.unread ?: 0) > 0 }
+                                        2 -> sortedEntries.filter { isGroupEntry(it, directIds) }
+                                        else -> sortedEntries
+                                    }
+                                    Column(modifier = Modifier.fillMaxSize()) {
+                                        if (homeEntries.isNotEmpty()) {
+                                            HomeFilterChips(selected = homeFilter, unreadCount = unreadTotal, onSelect = { homeFilter = it })
                                         }
-                                    } else {
-                                        LazyColumn(
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)
-                                        ) {
-                                            items(sortedEntries.size) { index ->
-                                                val entry = sortedEntries[index]
-                                                HomeEntryCard(
-                                                    entry = entry,
-                                                    preview = previews[entry.id.toString()],
-                                                    isGroup = isGroupEntry(entry, directIds),
-                                                    photoUrl = chatPhotos[entry.id.toString()].orEmpty(),
-                                                    draft = chatDrafts[entry.id.toString()].orEmpty(),
-                                                    isSelected = selectedEntries.contains(entry),
-                                                    onClick = {
-                                                        if (selectedEntries.isNotEmpty()) {
-                                                            selectedEntries = if (selectedEntries.contains(entry)) {
-                                                                selectedEntries - entry
-                                                            } else {
-                                                                selectedEntries + entry
+                                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                                            if (homeEntries.isEmpty()) {
+                                                Box(
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    HomeEmptyState()
+                                                }
+                                            } else if (filteredEntries.isEmpty()) {
+                                                HomeFilterEmpty(homeFilter)
+                                            } else {
+                                                LazyColumn(
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp)
+                                                ) {
+                                                    items(filteredEntries.size) { index ->
+                                                        val entry = filteredEntries[index]
+                                                        HomeEntryCard(
+                                                            entry = entry,
+                                                            preview = previews[entry.id.toString()],
+                                                            isGroup = isGroupEntry(entry, directIds),
+                                                            photoUrl = chatPhotos[entry.id.toString()].orEmpty(),
+                                                            draft = chatDrafts[entry.id.toString()].orEmpty(),
+                                                            colorKey = otherUids[entry.id.toString()].orEmpty(),
+                                                            isSelected = selectedEntries.contains(entry),
+                                                            onClick = {
+                                                                if (selectedEntries.isNotEmpty()) {
+                                                                    selectedEntries = if (selectedEntries.contains(entry)) {
+                                                                        selectedEntries - entry
+                                                                    } else {
+                                                                        selectedEntries + entry
+                                                                    }
+                                                                } else {
+                                                                    selectedEntryForChat = entry
+                                                                }
+                                                            },
+                                                            onLongClick = {
+                                                                selectedEntries = selectedEntries + entry
                                                             }
-                                                        } else {
-                                                            selectedEntryForChat = entry
-                                                        }
-                                                    },
-                                                    onLongClick = {
-                                                        selectedEntries = selectedEntries + entry
+                                                        )
                                                     }
-                                                )
+                                                }
                                             }
                                         }
                                     }
@@ -611,7 +631,7 @@ fun MainDashboard(
                                                         subtitle = displaySubtitle,
                                                         isGroup = isGroup,
                                                         photoUrl = chatPhotos[entry.id.toString()].orEmpty(),
-                                                        idForColor = entry.id.toString(),
+                                                        idForColor = otherUids[entry.id.toString()] ?: entry.id.toString(),
                                                         query = query,
                                                         onClick = {
                                                             focusManager.clearFocus()
@@ -897,5 +917,53 @@ fun HomeEmptyStateDarkPreview() {
                 HomeEmptyState()
             }
         }
+    }
+}
+
+/** All, Unread and Groups under the search bar. Outline only: the chosen one has a blue outline and blue text. */
+@Composable
+fun HomeFilterChips(selected: Int, unreadCount: Int, onSelect: (Int) -> Unit) {
+    val labels = listOf("All", if (unreadCount > 0) "Unread $unreadCount" else "Unread", "Groups")
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        labels.forEachIndexed { index, label ->
+            val on = selected == index
+            val accent = DiBadgeTheme.colors.accent
+            val shape = RoundedCornerShape(18.dp)
+            Box(
+                modifier = Modifier
+                    .clip(shape)
+                    .border(
+                        width = if (on) 1.5.dp else 1.dp,
+                        color = if (on) accent else MaterialTheme.colorScheme.outlineVariant,
+                        shape = shape
+                    )
+                    .clickable { onSelect(index) }
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = label,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
+                    color = if (on) accent else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+/** Nothing matches the Unread or Groups filter. */
+@Composable
+fun HomeFilterEmpty(filter: Int) {
+    Box(modifier = Modifier.fillMaxSize().padding(bottom = 80.dp), contentAlignment = Alignment.Center) {
+        Text(
+            text = if (filter == 1) "No unread chats" else "No groups yet",
+            fontSize = 15.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

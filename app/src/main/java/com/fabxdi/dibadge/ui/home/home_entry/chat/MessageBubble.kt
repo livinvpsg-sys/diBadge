@@ -2187,6 +2187,8 @@ private fun AttachmentAndTextSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = if (message.isGroupMention) Arrangement.SpaceBetween else Arrangement.End
         ) {
+            // On my own blue bubble the soft accent colour is hard to see in dark mode, so use near-white there
+            val replyColor = if (isDark && message.isSentByMe) Color(0xFFF2F4FF) else tealAccent
             if (message.isGroupMention) {
                 Row(
                     modifier = Modifier.clickable { onCommentsClick(message) },
@@ -2203,7 +2205,7 @@ private fun AttachmentAndTextSection(
                         Icon(
                             imageVector = Icons.Outlined.ChatBubbleOutline,
                             contentDescription = "Replies",
-                            tint = tealAccent,
+                            tint = replyColor,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
@@ -2215,7 +2217,7 @@ private fun AttachmentAndTextSection(
                                 text = replyWord,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = tealAccent
+                                color = replyColor
                             )
                             Spacer(modifier = Modifier.width(4.dp))
 
@@ -2228,7 +2230,7 @@ private fun AttachmentAndTextSection(
                                 modifier = Modifier
                                     .height(18.dp)
                                     .widthIn(min = 18.dp)
-                                    .background(tealAccent, CircleShape)
+                                    .background(replyColor, CircleShape)
                                     .padding(horizontal = 5.dp)
                             ) {
                                 Text(
@@ -2246,7 +2248,7 @@ private fun AttachmentAndTextSection(
                                 text = replyLabel,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = tealAccent
+                                color = replyColor
                             )
                         }
                     }

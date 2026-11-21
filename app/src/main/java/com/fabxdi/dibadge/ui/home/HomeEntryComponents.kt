@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import com.fabxdi.dibadge.util.capitalizeName
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -202,7 +203,8 @@ fun HomeEntryCard(
     preview: ChatPreview? = null,
     isGroup: Boolean = isGroupEntry(entry),
     photoUrl: String = "",
-    draft: String = ""
+    draft: String = "",
+    colorKey: String = ""
 ) {
     val colors = MaterialTheme.colorScheme
     val dc = DiBadgeTheme.colors
@@ -213,8 +215,9 @@ fun HomeEntryCard(
     val myUid = remember { FirebaseAuth.getInstance().currentUser?.uid.orEmpty() }
 
     // Stable color hash for group ID
-    val avatarColor = remember(entry.id) {
-        UserColorUtils.getColorForName(entry.id.toString())
+    // A direct chat uses the other person's id, so the colour matches Connections and everywhere else
+    val avatarColor = remember(entry.id, colorKey) {
+        UserColorUtils.getColorForName(colorKey.ifBlank { entry.id.toString() })
     }
 
     val unread = preview?.unread ?: 0
@@ -270,8 +273,8 @@ fun HomeEntryCard(
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .offset(x = 3.dp, y = 3.dp)
-                            .size(20.dp)
+                            .offset(x = 4.dp, y = 4.dp)
+                            .size(26.dp)
                             .background(colors.background, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
@@ -279,7 +282,7 @@ fun HomeEntryCard(
                             imageVector = Icons.Outlined.Groups,
                             contentDescription = "Group",
                             tint = dc.accent,
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
@@ -291,7 +294,7 @@ fun HomeEntryCard(
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = capitalizeFirst(entry.title),
+                        text = if (isGroup) capitalizeFirst(entry.title) else capitalizeName(entry.title),
                         fontSize = 16.sp,
                         fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Normal,
                         color = primaryTextColor,
