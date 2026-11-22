@@ -299,7 +299,8 @@ fun ChatScreen(
                 // 2b. Are we still connected?
                 db.collection("users").document(currentUserId)
                     .collection("userConnections").document(otherUid)
-                    .addSnapshotListener { snap, _ ->
+                    // Also report when the server confirms what the phone already had, so "gone" is not missed
+                    .addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snap, _ ->
                         if (snap == null) return@addSnapshotListener
                         if (snap.exists()) {
                             connectionState = snap.getString("status") ?: "connected"
@@ -825,6 +826,16 @@ fun ChatScreen(
         }
     }
 
+    // The bar at the bottom changes height when the two people become disconnected (or connect again).
+    // The list gets shorter then, so move to the newest message again so it is not left behind the bar.
+    LaunchedEffect(isDisconnected, initialScrollDone) {
+        if (isDisconnected && initialScrollDone && messages.isNotEmpty()) {
+            delay(150)
+            val last = listState.layoutInfo.totalItemsCount - 1
+            if (last >= 0) listState.scrollToItem(last)
+        }
+    }
+
     // Delete Message Sheet
     if (showDeleteDialog && selectedMessages.isNotEmpty()) {
         val selectedMsgObjects = remember(selectedMessages, messages) {
@@ -1007,23 +1018,13 @@ fun ChatScreen(
             com.fabxdi.dibadge.call.CallActivity.open(callCtx)
             return
         }
-        if (isOneToOne) {
-            engine.startCall(
-                groupId = currentEntry.id.toString(),
-                calleeUid = otherUid,
-                callerName = me,
-                peerName = if (otherUserName.isNotBlank()) otherUserName else currentEntry.title,
-                video = video
-            )
-        } else {
-            // A group chat: everyone in the group is rung and can join
-            engine.startGroupCall(
-                groupId = currentEntry.id.toString(),
-                title = currentEntry.title,
-                hostName = me,
-                video = video
-            )
-        }
+        engine.startCall(
+            groupId = currentEntry.id.toString(),
+            calleeUid = otherUid,
+            callerName = me,
+            peerName = if (otherUserName.isNotBlank()) otherUserName else currentEntry.title,
+            video = video
+        )
         com.fabxdi.dibadge.call.CallActivity.open(callCtx)
     }
     val callPermissionLauncher = rememberLauncherForActivityResult(
@@ -1038,7 +1039,7 @@ fun ChatScreen(
     }
     fun requestCall(video: Boolean) {
         callMenuOpen = false
-        if (isOneToOne && otherUid.isBlank()) return
+        if (otherUid.isBlank()) return
         pendingCallVideo = video
         val need = mutableListOf(Manifest.permission.RECORD_AUDIO)
         if (video) need.add(Manifest.permission.CAMERA)
@@ -2338,18 +2339,7 @@ fun ChatScreen(
                     showAttachmentOptions = false
                 }
         ) {
-            if (!isOneToOne) {
-                // A group call is running in this chat: join it
-                com.fabxdi.dibadge.call.GroupCallBanner(
-                    groupId = currentEntry.id.toString(),
-                    textColor = primaryTextColor,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .zIndex(5f)
-                        .background(pageBgColor)
-                )
-            }
-            if (callMenuOpen) {
+            if (callMenuOpen && isOneToOne) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -2490,6 +2480,10 @@ fun ChatScreen(
                                     )
                                 } else if (msgToRender.msgType == "connectionNotice") {
                                     ConnectionNoticeLine(msgToRender, secondaryTextColor)
+                                } else if (msgToRender.msgType == "disconnectNotice" ||
+                                    (msgToRender.msgType == "memberNotice" && msgToRender.text.contains(" disconnected from "))
+                                ) {
+                                    // Nothing to draw: the bar at the bottom already says the two are not connected
                                 } else if (msgToRender.msgType == "callNotice") {
                                     CallNoticeLine(msgToRender, secondaryTextColor)
                                 } else if (msgToRender.msgType == "systemLibraryAdded" || msgToRender.msgType == "system_library_added") {
@@ -2899,7 +2893,7 @@ fun ChatScreen(
 private fun canGroupMessages(a: ChatMessage, b: ChatMessage): Boolean {
     fun plain(m: ChatMessage) = !m.isDeleted && !m.isGroupMention && !m.text.contains("@All") &&
             m.msgType != "systemLibraryAdded" && m.msgType != "system_library_added" &&
-            m.msgType != "connectionRequest" && m.msgType != "connectionNotice" && m.msgType != "callNotice"
+            m.msgType != "connectionRequest" && m.msgType != "connectionNotice" && m.msgType != "callNotice" && m.msgType != "disconnectNotice" && m.msgType != "memberNotice"
     return plain(a) && plain(b) &&
             a.isSentByMe == b.isSentByMe &&
             a.senderName == b.senderName &&

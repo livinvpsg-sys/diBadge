@@ -3,6 +3,7 @@ package com.fabxdi.dibadge.ui.connections
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.geometry.Offset
@@ -32,6 +33,7 @@ import androidx.compose.runtime.*
 import com.fabxdi.dibadge.ui.home.buildSearchAnnotatedString
 import com.fabxdi.dibadge.util.capitalizeName
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -46,7 +48,21 @@ import com.fabxdi.dibadge.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.Manifest
+import android.content.pm.PackageManager
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.outlined.CalendarToday
+import androidx.compose.material.icons.outlined.Call
+import androidx.compose.material.icons.outlined.Videocam
+import androidx.core.content.ContextCompat
+import com.fabxdi.dibadge.call.CallActivity
+import com.fabxdi.dibadge.call.CallEngine
+import com.fabxdi.dibadge.call.CallPermissions
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.delay
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -78,6 +94,43 @@ fun ConnectionsScreen(
     var showBlockedList by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+
+    // Calling a connection from the list (voice, or video from the opened card)
+    var pendingCall by remember { mutableStateOf<Pair<ConnectionItem, Boolean>?>(null) }
+    fun beginCall(item: ConnectionItem, video: Boolean) {
+        val me = FirebaseAuth.getInstance().currentUser ?: return
+        val engine = CallEngine.get(context)
+        if (engine.isBusy) { CallActivity.open(context); return }
+        // Same chat id the 1:1 chat uses, so the call shows up in that chat
+        val key = listOf(me.uid, item.uid).sorted().joinToString("_")
+        val chatId = (key.hashCode() and 0x7FFFFFFF).let { if (it == 0) 1 else it }.toString()
+        FirebaseFirestore.getInstance().collection("personalGroups").document(chatId)
+            .set(
+                mapOf("id" to chatId, "type" to "direct", "members" to listOf(me.uid, item.uid), "createdBy" to me.uid),
+                SetOptions.merge()
+            )
+            .addOnCompleteListener {
+                engine.startCall(chatId, item.uid, me.displayName ?: "Me", capitalizeName(item.name), video)
+                CallActivity.open(context)
+            }
+    }
+    val callPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ ->
+        val p = pendingCall
+        pendingCall = null
+        val micOk = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val camOk = p?.second != true || ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        if (p != null && micOk && camOk) beginCall(p.first, p.second)
+        else if (p != null) Toast.makeText(context, "Permission is needed for calls", Toast.LENGTH_SHORT).show()
+    }
+    fun callConnection(item: ConnectionItem, video: Boolean) {
+        if (item.uid.isBlank()) return
+        val need = mutableListOf(Manifest.permission.RECORD_AUDIO)
+        if (video) need.add(Manifest.permission.CAMERA)
+        val missing = need.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED } +
+                CallPermissions.bluetoothOnce(context)
+        if (missing.isEmpty()) beginCall(item, video) else { pendingCall = item to video; callPermLauncher.launch(missing.toTypedArray()) }
+    }
+
     LaunchedEffect(Unit) {
         viewModel.message.collect { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
     }
@@ -268,6 +321,7 @@ fun ConnectionsScreen(
                                     onBlock = { blockTarget = item },
                                     onDisconnect = { disconnectTarget = item },
                                     onChatClick = { onOpenChat(item) },
+                                    onCallClick = { video -> callConnection(item, video) },
                                     query = searchQuery.trim()
                                 )
                             }
@@ -342,8 +396,8 @@ fun ConnectionsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            .padding(horizontal = 20.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         ConnectionsChip(
                             label = "Connections",
@@ -481,7 +535,8 @@ fun ConnectionsScreen(
                                             },
                                             onBlock = { blockTarget = item },
                                             onDisconnect = { disconnectTarget = item },
-                                            onChatClick = { onOpenChat(item) }
+                                            onChatClick = { onOpenChat(item) },
+                                            onCallClick = { video -> callConnection(item, video) }
                                         )
                                     }
                                 }
@@ -745,6 +800,7 @@ fun ConnectionRow(
     onBlock: () -> Unit,
     onDisconnect: () -> Unit = {},
     onChatClick: () -> Unit = {},
+    onCallClick: (video: Boolean) -> Unit = {},
     query: String = ""
 ) {
     val avatarBgColor = remember(item.id, item.uid) { UserColorUtils.getColorForName(item.uid.ifBlank { item.id }) }
@@ -802,8 +858,8 @@ fun ConnectionRow(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    // The location sits right under the name (the chat icon no longer makes the name line tall)
-                    if (countryName.isNotBlank()) {
+                    // Open card: the location sits right under the name. Closed card: organisation, role and date instead.
+                    if (isExpanded && countryName.isNotBlank()) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(top = 2.dp)
@@ -837,32 +893,47 @@ fun ConnectionRow(
                             )
                         }
                     }
-                }
-
-                // Chat is always visible, no need to open the card. Block joins it when open.
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.align(if (isExpanded) Alignment.Top else Alignment.CenterVertically)
-                ) {
-                    IconButton(
-                        onClick = onChatClick,
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        ChatFilledIcon(
-                            tint = tealAccent,
-                            contentDescription = "Chat with ${capitalizeName(item.name)}",
-                            size = 24
-                        )
-                    }
-                    if (isExpanded) {
-                        IconButton(
-                            onClick = onBlock,
-                            modifier = Modifier.size(40.dp)
+                    // Closed card: the date they connected, under the organisation and role (or under the name)
+                    if (!isExpanded && item.connectedAt > 0L) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(top = 2.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Outlined.Block,
-                                contentDescription = "Block ${capitalizeName(item.name)}",
-                                tint = errorColor,
+                                imageVector = Icons.Outlined.CalendarToday,
+                                contentDescription = null,
+                                tint = secondaryTextColor,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Connected " + remember(item.connectedAt) {
+                                    java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault())
+                                        .format(java.util.Date(item.connectedAt))
+                                },
+                                fontSize = 13.sp,
+                                lineHeight = 16.sp,
+                                color = secondaryTextColor
+                            )
+                        }
+                    }
+                }
+
+                // Closed card: chat and voice call are always one tap away
+                if (!isExpanded) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onChatClick, modifier = Modifier.size(40.dp)) {
+                            ChatFilledIcon(
+                                tint = tealAccent,
+                                contentDescription = "Chat with ${capitalizeName(item.name)}",
+                                size = 24
+                            )
+                        }
+                        IconButton(onClick = { onCallClick(false) }, modifier = Modifier.size(40.dp)) {
+                            Icon(
+                                imageVector = Icons.Outlined.Call,
+                                contentDescription = "Call ${capitalizeName(item.name)}",
+                                tint = tealAccent,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -887,38 +958,74 @@ fun ConnectionRow(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(text = item.bio, fontSize = 14.sp, color = secondaryTextColor)
                     }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Below the details: remove this person from my connections
-                        TextButton(onClick = onDisconnect, modifier = Modifier.heightIn(min = 48.dp)) {
+                    if (item.connectedAt > 0L) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                imageVector = Icons.Outlined.PersonRemove,
+                                imageVector = Icons.Outlined.CalendarToday,
                                 contentDescription = null,
-                                tint = errorColor,
-                                modifier = Modifier.size(20.dp)
+                                tint = secondaryTextColor,
+                                modifier = Modifier.size(16.dp)
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Disconnect",
+                                text = "Connected " + remember(item.connectedAt) {
+                                    java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault())
+                                        .format(java.util.Date(item.connectedAt))
+                                },
                                 fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = errorColor
+                                color = secondaryTextColor
                             )
                         }
-                        IconButton(onClick = onClick) {
-                            Icon(
-                                imageVector = Icons.Default.KeyboardArrowUp,
-                                contentDescription = "Collapse",
-                                tint = primaryTextColor,
-                                modifier = Modifier.size(24.dp)
-                            )
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    // Chat, Call, Video and Disconnect on one line. Tap the top of the card to close it.
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        ConnectionActionPill("Chat", tealAccent, Modifier.weight(1f), onChatClick) {
+                            ChatFilledIcon(tint = tealAccent, contentDescription = null, size = 15)
+                        }
+                        ConnectionActionPill("Call", tealAccent, Modifier.weight(1f), { onCallClick(false) }) {
+                            Icon(Icons.Outlined.Call, null, tint = tealAccent, modifier = Modifier.size(15.dp))
+                        }
+                        ConnectionActionPill("Video", tealAccent, Modifier.weight(1f), { onCallClick(true) }) {
+                            Icon(Icons.Outlined.Videocam, null, tint = tealAccent, modifier = Modifier.size(15.dp))
+                        }
+                        ConnectionActionPill("Disconnect", errorColor, Modifier.weight(1.5f), onDisconnect) {
+                            Icon(Icons.Outlined.PersonRemove, null, tint = errorColor, modifier = Modifier.size(15.dp))
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+/** Outlined pill button used in the opened connection card (Chat, Call, Video). */
+@Composable
+private fun ConnectionActionPill(
+    label: String,
+    color: Color,
+    modifier: Modifier,
+    onClick: () -> Unit,
+    icon: @Composable () -> Unit
+) {
+    Surface(
+        modifier = modifier.height(30.dp).clip(RoundedCornerShape(15.dp)).clickable { onClick() },
+        shape = RoundedCornerShape(15.dp),
+        color = Color.Transparent,
+        border = BorderStroke(1.dp, color.copy(alpha = 0.5f))
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            icon()
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(text = label, fontSize = 12.sp, color = color, maxLines = 1)
         }
     }
 }
@@ -1245,37 +1352,40 @@ private fun ConnectionsChip(
     tealAccent: Color,
     onClick: () -> Unit
 ) {
-    Surface(
+    // Same size and look as the filter chips on the Home screen (All, Unread, Groups)
+    val shape = RoundedCornerShape(18.dp)
+    Row(
         modifier = Modifier
-            .heightIn(min = 36.dp)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(18.dp),
-        color = Color.Transparent,
-        border = BorderStroke(1.dp, if (selected) tealAccent else outlineColor)
+            .clip(shape)
+            .border(
+                width = if (selected) 1.5.dp else 1.dp,
+                color = if (selected) tealAccent else MaterialTheme.colorScheme.outlineVariant,
+                shape = shape
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = label,
-                fontSize = 13.sp,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (selected) tealAccent else secondaryTextColor,
-                maxLines = 1
-            )
-            Spacer(modifier = Modifier.width(5.dp))
-            Text(
-                text = count.toString(),
-                fontSize = 13.sp,
-                fontWeight = if (highlightCount && !selected) FontWeight.Bold else FontWeight.Normal,
-                color = when {
-                    selected -> tealAccent.copy(alpha = 0.7f)
-                    highlightCount -> tealAccent
-                    else -> secondaryTextColor
-                }
-            )
-        }
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+            color = if (selected) tealAccent else secondaryTextColor,
+            maxLines = 1
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = count.toString(),
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            fontWeight = if (highlightCount && !selected) FontWeight.Bold else FontWeight.Normal,
+            color = when {
+                selected -> tealAccent.copy(alpha = 0.7f)
+                highlightCount -> tealAccent
+                else -> secondaryTextColor
+            }
+        )
     }
 }
 

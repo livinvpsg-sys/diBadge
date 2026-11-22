@@ -753,6 +753,11 @@ fun AppBottomBar(
     val diBadgeColors = DiBadgeTheme.colors
     val colors = MaterialTheme.colorScheme
 
+    // A dot on Connections while someone's request is waiting for an answer. It goes when all are answered.
+    val requestsViewModel: ConnectionsViewModel = viewModel()
+    val waitingRequests by requestsViewModel.receivedRequests.collectAsState()
+    val connectionsDot = hasConnectionsDot || waitingRequests.isNotEmpty()
+
     NavigationBar(
         containerColor = colors.surface,
         tonalElevation = 0.dp
@@ -768,7 +773,7 @@ fun AppBottomBar(
 
             val showDot = when (tab) {
                 HomeTab.MyTasks -> hasMyTasksDot
-                HomeTab.Connections -> hasConnectionsDot
+                HomeTab.Connections -> connectionsDot
                 HomeTab.Note -> hasInboxDot
                 else -> false
             }

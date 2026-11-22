@@ -30,7 +30,9 @@ private data class RecentMessage(
     val senderName: String,
     val text: String,
     val isCall: Boolean,
-    val deleted: Boolean
+    val deleted: Boolean,
+    /** A disconnect notice: not shown as the chat's last message and not counted as unread */
+    val hidden: Boolean = false
 )
 
 /** Watches the newest messages of every chat on the home list. */
@@ -133,7 +135,9 @@ class HomeChatPreviewsViewModel(application: Application) : AndroidViewModel(app
                             senderName = data["senderName"] as? String ?: "",
                             text = previewOf(data),
                             isCall = data["msgType"] == "callNotice",
-                            deleted = data["deleted"] == true
+                            deleted = data["deleted"] == true,
+                            hidden = data["msgType"] == "disconnectNotice" ||
+                                    (data["msgType"] == "memberNotice" && (data["text"] as? String)?.contains(" disconnected from ") == true)
                         )
                     }.sortedByDescending { it.at }
                     recompute()
@@ -152,9 +156,9 @@ class HomeChatPreviewsViewModel(application: Application) : AndroidViewModel(app
         val me = FirebaseAuth.getInstance().currentUser?.uid ?: ""
         val out = HashMap<String, ChatPreview>()
         for ((id, list) in recent) {
-            val last = list.firstOrNull { !it.deleted } ?: continue
+            val last = list.firstOrNull { !it.deleted && !it.hidden } ?: continue
             val seen = ChatSeen.get(getApplication(), id)
-            val unread = list.count { !it.deleted && it.senderUid != me && it.at > seen }
+            val unread = list.count { !it.deleted && !it.hidden && it.senderUid != me && it.at > seen }
             out[id] = ChatPreview(last.text, last.senderUid, last.senderName, last.isCall, last.at, unread)
         }
         _previews.value = out

@@ -30,7 +30,8 @@ data class ConnectionItem(
     val photoUrl: String = "",
     val status: String = "connected", // "connected", "received", "sent"
     val timestamp: Long = System.currentTimeMillis(),
-    val country: String = "" // ISO code, only filled for people found by search / suggestions
+    val country: String = "", // ISO code, only filled for people found by search / suggestions
+    val connectedAt: Long = 0L // when the request was accepted; 0 for older connections
 )
 
 class ConnectionsViewModel : ViewModel() {
@@ -239,6 +240,8 @@ class ConnectionsViewModel : ViewModel() {
                     val photoUrl = doc.getString("photoUrl") ?: ""
                     val status = doc.getString("status") ?: "connected"
                     val time = doc.getLong("timestamp") ?: System.currentTimeMillis()
+                    // Older connections have no accept date: use the date the request was made
+                    val connectedAt = doc.getLong("connectedAt") ?: doc.getLong("timestamp") ?: 0L
 
                     val item = ConnectionItem(
                         id = id,
@@ -250,7 +253,8 @@ class ConnectionsViewModel : ViewModel() {
                         photoUrl = photoUrl,
                         status = status,
                         timestamp = time,
-                        country = country
+                        country = country,
+                        connectedAt = connectedAt
                     )
 
                     when (status) {
@@ -464,9 +468,11 @@ class ConnectionsViewModel : ViewModel() {
         val me = auth.currentUser ?: return
         viewModelScope.launch {
             try {
-                myConnections()?.document(item.id)?.update("status", "connected")?.await()
+                val now = System.currentTimeMillis()
+                myConnections()?.document(item.id)
+                    ?.update(mapOf("status" to "connected", "connectedAt" to now))?.await()
                 theirConnections(item.uid).document(me.uid)
-                    .update("status", "connected").await()
+                    .update(mapOf("status" to "connected", "connectedAt" to now)).await()
                 com.fabxdi.dibadge.util.ConnectionPushApi.notify(item.uid, "accepted")
             } catch (e: Exception) {
                 reportFailure("accept the request", e)
@@ -493,36 +499,6 @@ class ConnectionsViewModel : ViewModel() {
     }
 
     fun removeConnection(item: ConnectionItem) {
-        val me = auth.currentUser
         declineRequest(item)
-        if (me != null) postDisconnectNotice(me.uid, item.uid, item.name)
-    }
-
-    /** If these two have a 1:1 chat, leave "X disconnected from Y" in it (shown on both phones). */
-    private fun postDisconnectNotice(myUid: String, otherUid: String, otherName: String) {
-        viewModelScope.launch {
-            try {
-                val key = listOf(myUid, otherUid).sorted().joinToString("_")
-                val chatId = (key.hashCode() and 0x7FFFFFFF).let { if (it == 0) 1 else it }.toString()
-                val chat = firestore.collection("personalGroups").document(chatId)
-                if (!chat.get().await().exists()) return@launch
-                val mine = try {
-                    firestore.collection("users").document(myUid).get().await().getString("displayName")
-                } catch (e: Exception) { null } ?: auth.currentUser?.displayName ?: "Someone"
-                val id = java.util.UUID.randomUUID().toString()
-                chat.collection("messages").document(id).set(
-                    mapOf(
-                        "id" to id,
-                        "senderUid" to myUid,
-                        "senderName" to com.fabxdi.dibadge.util.capitalizeName(mine),
-                        "timestamp" to System.currentTimeMillis(),
-                        "text" to "${com.fabxdi.dibadge.util.capitalizeName(mine)} disconnected from ${com.fabxdi.dibadge.util.capitalizeName(otherName)}",
-                        "msgType" to "memberNotice"
-                    )
-                ).await()
-            } catch (e: Exception) {
-                // The notice is a nicety; the disconnect itself already happened
-            }
-        }
     }
 }

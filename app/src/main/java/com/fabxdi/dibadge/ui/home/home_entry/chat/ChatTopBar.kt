@@ -436,7 +436,7 @@ fun ChatTopBar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
+                    .heightIn(min = 48.dp)
                     .padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -498,6 +498,7 @@ fun ChatTopBar(
                             Text(
                                 text = headerTitle,
                                 fontSize = 17.sp,
+                                lineHeight = 22.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = primaryTextColor,
                                 maxLines = 1,
@@ -515,6 +516,7 @@ fun ChatTopBar(
                                 Text(
                                     text = statusLine,
                                     fontSize = 13.sp,
+                                    lineHeight = 16.sp,
                                     color = secondaryTextColor,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -548,8 +550,8 @@ fun ChatTopBar(
                     }
                 }
 
-                // Call (1:1 chats and groups)
-                if (onToggleCall != null) {
+                // Call (1:1 chats only)
+                if (isOneToOne && onToggleCall != null) {
                     IconButton(
                         onClick = { onToggleCall() },
                         modifier = Modifier.size(48.dp)
