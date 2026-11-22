@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,6 +23,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -272,34 +274,20 @@ fun MyTasksScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Filter Chips Row ("All", "Assigned to me")
+                // Filter pills: My tasks, Assigned to me
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     listOf("All", "Assigned to me").forEach { filterOption ->
-                        val isSelected = selectedFilter == filterOption
-                        Surface(
-                            modifier = Modifier
-                                .height(32.dp)
-                                .clickable { selectedFilter = filterOption },
-                            shape = RoundedCornerShape(16.dp),
-                            color = Color.Transparent,
-                            border = BorderStroke(1.dp, if (isSelected) primaryTextColor else outlineColor)
-                        ) {
-                            Box(
-                                modifier = Modifier.padding(horizontal = 14.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = if (filterOption == "All") "My tasks" else filterOption,
-                                    fontSize = 13.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = primaryTextColor
-                                )
-                            }
-                        }
+                        PillChip(
+                            label = if (filterOption == "All") "My tasks" else filterOption,
+                            selected = selectedFilter == filterOption,
+                            accent = tealAccent,
+                            secondaryText = secondaryTextColor,
+                            onClick = { selectedFilter = filterOption }
+                        )
                     }
                 }
             }
@@ -923,4 +911,48 @@ fun sortTasksByTime(reminders: List<ReminderEntity>): List<ReminderEntity> {
         compareBy<ReminderEntity> { parseTimeInMinutes(it.time) }
             .thenBy { it.id }
     )
+}
+
+/** Filter pill, the same size and look as the chips on the Home and Connections screens. */
+@Composable
+private fun PillChip(
+    label: String,
+    selected: Boolean,
+    accent: Color,
+    secondaryText: Color,
+    onClick: () -> Unit,
+    count: String? = null
+) {
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .border(
+                width = if (selected) 1.5.dp else 1.dp,
+                color = if (selected) accent else MaterialTheme.colorScheme.outlineVariant,
+                shape = shape
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+            color = if (selected) accent else secondaryText,
+            maxLines = 1
+        )
+        if (count != null) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = count,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = accent
+            )
+        }
+    }
 }

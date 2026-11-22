@@ -1,6 +1,8 @@
 package com.fabxdi.dibadge.ui.connections
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -13,8 +15,15 @@ import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.LocationOn
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PersonRemove
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Videocam
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -26,7 +35,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -70,9 +81,10 @@ private fun jobRange(job: ProfileJob): String {
 }
 
 /**
- * The full profile of a connection, opened by tapping their photo.
- * The top quarter of the screen is their photo (or their coloured avatar), then name, role, the date you
- * connected, Chat / Call / Video / Disconnect, the other details and their experience.
+ * The full profile of a connection or request, opened by tapping the person.
+ * The top quarter is their photo (or coloured avatar), then name, role, the date, the other details and their
+ * experience. The actions are pinned at the bottom: Chat / Call / Video (connected), Decline / Accept (request
+ * received), Pending / Cancel request (request sent), Connect (anyone else). Disconnect is in the top-right menu.
  */
 @Composable
 fun ConnectionProfileScreen(
@@ -80,7 +92,11 @@ fun ConnectionProfileScreen(
     onBack: () -> Unit,
     onChat: () -> Unit,
     onCall: (video: Boolean) -> Unit,
-    onDisconnect: () -> Unit
+    onDisconnect: () -> Unit,
+    onAccept: () -> Unit = {},
+    onDecline: () -> Unit = {},
+    onCancel: () -> Unit = {},
+    onConnect: () -> Unit = {}
 ) {
     val colors = MaterialTheme.colorScheme
     val accent = DiBadgeTheme.colors.accent
@@ -89,6 +105,9 @@ fun ConnectionProfileScreen(
     val secondary = colors.onSurfaceVariant
     val name = capitalizeName(item.name)
     val connected = item.status == "connected"
+    val received = item.status == "received"
+    val sent = item.status == "sent"
+    var menuOpen by remember { mutableStateOf(false) }
     val avatarColor = remember(item.id, item.uid) { UserColorUtils.getColorForName(item.uid.ifBlank { item.id }) }
     val country = remember(item.country) { if (item.country.isBlank()) "" else CountryData.getCountryDisplayName(item.country) }
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
@@ -119,160 +138,255 @@ fun ConnectionProfileScreen(
         else -> item.organization
     }
 
-    Dialog(
-        onDismissRequest = onBack,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
-    ) {
+    // A normal full-screen layer (not a Dialog), so the phone's own status and navigation bar spacing applies
+    BackHandler(onBack = onBack)
+    run {
         Surface(modifier = Modifier.fillMaxSize(), color = pageBg) {
-            Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                // Top quarter: photo, or the coloured avatar with their initial
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(screenHeight * 0.25f)
-                        .background(
-                            Brush.verticalGradient(listOf(avatarColor, lerp(avatarColor, Color.Black, 0.28f)))
-                        )
-                ) {
-                    if (item.photoUrl.isNotBlank()) {
-                        AsyncImage(
-                            model = item.photoUrl,
-                            contentDescription = "Photo of $name",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Text(
-                            text = name.take(1),
-                            fontSize = 72.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White.copy(alpha = 0.95f),
-                            modifier = Modifier.align(Alignment.Center)
-                        )
-                    }
-                    // A soft dark fade at the top keeps the back arrow easy to see on any photo
+            Column(modifier = Modifier.fillMaxSize()) {
+                Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                    // Top quarter: photo, or the coloured avatar with their initial
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(96.dp)
-                            .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.45f), Color.Transparent)))
-                    )
-                    Box(
-                        modifier = Modifier
-                            .statusBarsPadding()
-                            .padding(10.dp)
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.45f))
-                            .clickable(onClick = onBack),
-                        contentAlignment = Alignment.Center
+                            .height(screenHeight * 0.25f)
+                            .background(
+                                Brush.verticalGradient(listOf(avatarColor, lerp(avatarColor, Color.Black, 0.28f)))
+                            )
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White, modifier = Modifier.size(22.dp))
-                    }
-                }
-
-                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp)) {
-                    Text(text = name, fontSize = 22.sp, color = primary)
-                    if (headline.isNotBlank()) {
-                        Text(text = headline, fontSize = 14.sp, color = secondary, modifier = Modifier.padding(top = 2.dp))
-                    }
-                    if (item.connectedAt > 0L) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                            Icon(Icons.Outlined.CalendarToday, null, tint = secondary, modifier = Modifier.size(15.dp))
-                            Spacer(Modifier.width(6.dp))
+                        if (item.photoUrl.isNotBlank()) {
+                            // Behind: a blurred, darkened copy of the photo (the blur needs Android 12; older phones get the colour)
+                            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                                AsyncImage(
+                                    model = item.photoUrl,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize().blur(28.dp)
+                                )
+                            }
+                            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)))
+                            // In front: the photo as a circle, the same shape as everywhere else in the app
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .statusBarsPadding()
+                                    .padding(vertical = 12.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                AsyncImage(
+                                    model = item.photoUrl,
+                                    contentDescription = "Photo of $name",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(112.dp)
+                                        .clip(CircleShape)
+                                        .border(2.dp, Color.White.copy(alpha = 0.55f), CircleShape)
+                                )
+                            }
+                        } else {
                             Text(
-                                text = "Connected " + remember(item.connectedAt) {
-                                    java.text.SimpleDateFormat("d MMM yyyy", Locale.getDefault())
-                                        .format(java.util.Date(item.connectedAt))
-                                },
-                                fontSize = 13.sp,
-                                color = secondary
+                                text = name.take(1),
+                                fontSize = 72.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White.copy(alpha = 0.95f),
+                                modifier = Modifier.align(Alignment.Center)
                             )
                         }
-                    }
-
-                    // Chat, call and disconnect only make sense while the two are connected
-                    if (connected) Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        ConnectionActionPill("Chat", accent, Modifier.weight(1f), onChat) {
-                            ChatFilledIcon(tint = accent, contentDescription = null, size = 15)
+                        // A soft dark fade at the top keeps the back arrow easy to see on any photo
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(96.dp)
+                                .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.45f), Color.Transparent)))
+                        )
+                        Box(
+                            modifier = Modifier
+                                .statusBarsPadding()
+                                .padding(10.dp)
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.45f))
+                                .clickable(onClick = onBack),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = Color.White, modifier = Modifier.size(22.dp))
                         }
-                        ConnectionActionPill("Call", accent, Modifier.weight(1f), { onCall(false) }) {
-                            Icon(Icons.Outlined.Call, null, tint = accent, modifier = Modifier.size(15.dp))
-                        }
-                        ConnectionActionPill("Video", accent, Modifier.weight(1f), { onCall(true) }) {
-                            Icon(Icons.Outlined.Videocam, null, tint = accent, modifier = Modifier.size(15.dp))
-                        }
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-                    if (item.bio.isNotBlank()) ProfileDetailRow(Icons.Outlined.Info, "About", item.bio, primary, secondary)
-                    if (country.isNotBlank()) ProfileDetailRow(Icons.Outlined.LocationOn, "Location", country, primary, secondary)
-                    if (connected && item.badgeNumber.isNotBlank()) {
-                        ProfileDetailRow(
-                            Icons.Outlined.Badge, "Badge number", item.badgeNumber, primary, secondary,
-                            letterSpacing = 1.sp,
-                            onClick = {
-                                val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                cm.setPrimaryClip(android.content.ClipData.newPlainText("Badge number", item.badgeNumber))
-                                android.widget.Toast.makeText(context, "Badge number copied", android.widget.Toast.LENGTH_SHORT).show()
+                        // Connected people only: a small menu with Disconnect
+                        if (connected) {
+                            Box(modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(10.dp)) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = 0.45f))
+                                        .clickable { menuOpen = true },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Outlined.MoreVert, "More", tint = Color.White, modifier = Modifier.size(22.dp))
+                                }
+                                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text("Disconnect from $name", color = colors.error) },
+                                        leadingIcon = { Icon(Icons.Outlined.PersonRemove, null, tint = colors.error) },
+                                        onClick = {
+                                            menuOpen = false
+                                            onDisconnect()
+                                        }
+                                    )
+                                }
                             }
-                        )
+                        }
                     }
 
-                    if (jobs.isNotEmpty()) {
-                        Text(
-                            text = "EXPERIENCE",
-                            fontSize = 12.sp,
-                            letterSpacing = 0.6.sp,
-                            color = secondary,
-                            modifier = Modifier.padding(top = 18.dp, bottom = 10.dp)
-                        )
-                        jobs.forEachIndexed { index, job ->
-                            Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Box(modifier = Modifier.padding(top = 6.dp).size(9.dp).clip(CircleShape).background(accent))
-                                    if (index < jobs.lastIndex) {
-                                        Box(
-                                            modifier = Modifier
-                                                .padding(top = 3.dp)
-                                                .width(1.dp)
-                                                .fillMaxHeight()
-                                                .background(secondary.copy(alpha = 0.35f))
-                                        )
+                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp)) {
+                        Text(text = name, fontSize = 22.sp, color = primary)
+                        if (headline.isNotBlank()) {
+                            Text(text = headline, fontSize = 14.sp, color = secondary, modifier = Modifier.padding(top = 2.dp))
+                        }
+                        val dateMillis = if (connected) item.connectedAt else if (received || sent) item.timestamp else 0L
+                        if (dateMillis > 0L) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                                Icon(Icons.Outlined.CalendarToday, null, tint = secondary, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = (if (connected) "Connected " else "Requested ") + remember(dateMillis) {
+                                        java.text.SimpleDateFormat("d MMM yyyy", Locale.getDefault())
+                                            .format(java.util.Date(dateMillis))
+                                    },
+                                    fontSize = 13.sp,
+                                    color = secondary
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(14.dp))
+                        if (item.bio.isNotBlank()) ProfileDetailRow(Icons.Outlined.Info, "About", item.bio, primary, secondary)
+                        if (country.isNotBlank()) ProfileDetailRow(Icons.Outlined.LocationOn, "Location", country, primary, secondary)
+                        if (connected && item.badgeNumber.isNotBlank()) {
+                            ProfileDetailRow(
+                                Icons.Outlined.Badge, "Badge number", item.badgeNumber, primary, secondary,
+                                letterSpacing = 1.sp,
+                                onClick = {
+                                    val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                    cm.setPrimaryClip(android.content.ClipData.newPlainText("Badge number", item.badgeNumber))
+                                    android.widget.Toast.makeText(context, "Badge number copied", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
+
+                        if (jobs.isNotEmpty()) {
+                            Text(
+                                text = "EXPERIENCE",
+                                fontSize = 12.sp,
+                                letterSpacing = 0.6.sp,
+                                color = secondary,
+                                modifier = Modifier.padding(top = 18.dp, bottom = 10.dp)
+                            )
+                            jobs.forEachIndexed { index, job ->
+                                Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Box(modifier = Modifier.padding(top = 6.dp).size(9.dp).clip(CircleShape).background(accent))
+                                        if (index < jobs.lastIndex) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .padding(top = 3.dp)
+                                                    .width(1.dp)
+                                                    .fillMaxHeight()
+                                                    .background(secondary.copy(alpha = 0.35f))
+                                            )
+                                        }
+                                    }
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(modifier = Modifier.padding(bottom = if (index < jobs.lastIndex) 14.dp else 0.dp)) {
+                                        if (job.role.isNotBlank()) Text(job.role, fontSize = 15.sp, color = primary)
+                                        if (job.company.isNotBlank()) Text(job.company, fontSize = 13.sp, color = secondary)
+                                        val range = jobRange(job)
+                                        if (range.isNotBlank()) Text(range, fontSize = 12.sp, color = secondary.copy(alpha = 0.8f))
                                     }
                                 }
-                                Spacer(Modifier.width(12.dp))
-                                Column(modifier = Modifier.padding(bottom = if (index < jobs.lastIndex) 14.dp else 0.dp)) {
-                                    if (job.role.isNotBlank()) Text(job.role, fontSize = 15.sp, color = primary)
-                                    if (job.company.isNotBlank()) Text(job.company, fontSize = 13.sp, color = secondary)
-                                    val range = jobRange(job)
-                                    if (range.isNotBlank()) Text(range, fontSize = 12.sp, color = secondary.copy(alpha = 0.8f))
+                            }
+                        }
+                        Spacer(Modifier.height(16.dp))
+                    }
+                }
+
+                // The actions are always pinned at the bottom
+                Column(modifier = Modifier.fillMaxWidth().background(pageBg)) {
+                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(secondary.copy(alpha = 0.2f)))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = if (!connected && !received && !sent) Arrangement.Center else Arrangement.spacedBy(10.dp)
+                    ) {
+                        when {
+                            connected -> {
+                                ProfileBarPill("Chat", accent, Modifier.weight(1f), true, onChat) {
+                                    ChatFilledIcon(tint = accent, contentDescription = null, size = 18)
+                                }
+                                ProfileBarPill("Call", accent, Modifier.weight(1f), true, { onCall(false) }) {
+                                    Icon(Icons.Outlined.Call, null, tint = accent, modifier = Modifier.size(18.dp))
+                                }
+                                ProfileBarPill("Video", accent, Modifier.weight(1f), true, { onCall(true) }) {
+                                    Icon(Icons.Outlined.Videocam, null, tint = accent, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                            received -> {
+                                ProfileBarPill("Decline", secondary, Modifier.weight(1f), true, onDecline) {
+                                    Icon(Icons.Outlined.Close, null, tint = secondary, modifier = Modifier.size(18.dp))
+                                }
+                                ProfileBarPill("Accept", accent, Modifier.weight(1f), true, onAccept) {
+                                    Icon(Icons.Outlined.Check, null, tint = accent, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                            sent -> {
+                                ProfileBarPill("Pending", secondary, Modifier.weight(1f), false, {}) {
+                                    Icon(Icons.Outlined.Schedule, null, tint = secondary, modifier = Modifier.size(18.dp))
+                                }
+                                ProfileBarPill("Cancel request", accent, Modifier.weight(1f), true, onCancel) {
+                                    Icon(Icons.Outlined.Close, null, tint = accent, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                            else -> {
+                                ProfileBarPill("Connect", accent, Modifier.width(160.dp), true, onConnect) {
+                                    Icon(Icons.Outlined.PersonAdd, null, tint = accent, modifier = Modifier.size(18.dp))
                                 }
                             }
                         }
                     }
-                    if (connected) {
-                        Spacer(Modifier.height(22.dp))
-                        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(secondary.copy(alpha = 0.2f)))
-                        Row(
-                            modifier = Modifier
-                                .padding(top = 6.dp)
-                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
-                                .clickable(onClick = onDisconnect)
-                                .padding(horizontal = 4.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Outlined.PersonRemove, null, tint = colors.error, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Text("Disconnect from $name", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = colors.error)
-                        }
-                    }
-                    Spacer(Modifier.navigationBarsPadding().height(16.dp))
                 }
             }
+        }
+    }
+}
+
+/** Outlined action pill pinned at the bottom of the profile screen. */
+@Composable
+private fun ProfileBarPill(
+    label: String,
+    color: Color,
+    modifier: Modifier,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    icon: @Composable () -> Unit
+) {
+    Surface(
+        modifier = modifier
+            .height(42.dp)
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(21.dp))
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(21.dp),
+        color = Color.Transparent,
+        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = if (enabled) 0.5f else 0.3f))
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            icon()
+            Spacer(Modifier.width(6.dp))
+            Text(text = label, fontSize = 14.sp, color = color, maxLines = 1)
         }
     }
 }

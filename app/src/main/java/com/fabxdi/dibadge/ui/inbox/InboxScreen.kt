@@ -4,6 +4,7 @@ import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -25,6 +26,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
@@ -324,64 +326,27 @@ fun InboxScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Filter Pills
+                    // Filter pills: All, Actions
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        val isAllSelected = selectedFilter == "All"
-                        Surface(
-                            modifier = Modifier
-                                .height(32.dp)
-                                .clickable { selectedFilter = "All" },
-                            shape = RoundedCornerShape(16.dp),
-                            color = Color.Transparent,
-                            border = BorderStroke(1.dp, if (isAllSelected) primaryTextColor else outlineColor)
-                        ) {
-                            Box(
-                                modifier = Modifier.padding(horizontal = 14.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "All",
-                                    fontSize = 13.sp,
-                                    fontWeight = if (isAllSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = primaryTextColor
-                                )
-                            }
-                        }
-
-                        val isActionsSelected = selectedFilter == "Actions"
-                        Surface(
-                            modifier = Modifier
-                                .height(32.dp)
-                                .clickable { selectedFilter = "Actions" },
-                            shape = RoundedCornerShape(16.dp),
-                            color = Color.Transparent,
-                            border = BorderStroke(1.dp, if (isActionsSelected) primaryTextColor else outlineColor)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Text(
-                                    text = "Actions",
-                                    fontSize = 13.sp,
-                                    fontWeight = if (isActionsSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = primaryTextColor
-                                )
-                                if (pendingActionsCount > 0) {
-                                    Text(
-                                        text = if (pendingActionsCount >= 100) "99+" else pendingActionsCount.toString(),
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = tealAccent
-                                    )
-                                }
-                            }
-                        }
+                        PillChip(
+                            label = "All",
+                            selected = selectedFilter == "All",
+                            accent = tealAccent,
+                            secondaryText = secondaryTextColor,
+                            onClick = { selectedFilter = "All" }
+                        )
+                        PillChip(
+                            label = "Actions",
+                            selected = selectedFilter == "Actions",
+                            accent = tealAccent,
+                            secondaryText = secondaryTextColor,
+                            onClick = { selectedFilter = "Actions" },
+                            count = if (pendingActionsCount > 0) (if (pendingActionsCount >= 100) "99+" else pendingActionsCount.toString()) else null
+                        )
                     }
                 }
             }
@@ -911,6 +876,50 @@ fun InboxRowItem(
                 text = formattedTime,
                 fontSize = 12.sp,
                 color = secondaryTextColor
+            )
+        }
+    }
+}
+
+/** Filter pill, the same size and look as the chips on the Home and Connections screens. */
+@Composable
+private fun PillChip(
+    label: String,
+    selected: Boolean,
+    accent: Color,
+    secondaryText: Color,
+    onClick: () -> Unit,
+    count: String? = null
+) {
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .border(
+                width = if (selected) 1.5.dp else 1.dp,
+                color = if (selected) accent else MaterialTheme.colorScheme.outlineVariant,
+                shape = shape
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+            color = if (selected) accent else secondaryText,
+            maxLines = 1
+        )
+        if (count != null) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = count,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = accent
             )
         }
     }

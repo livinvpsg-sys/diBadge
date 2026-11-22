@@ -77,14 +77,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // TEMPORARY: launch timing, so we can see where the startup time goes
-    private fun launchLog(what: String) {
-        val ms = android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime()
-        android.util.Log.d("DiBadgeLaunch", "$what at ${ms}ms since process start")
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
-        launchLog("onCreate start")
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -106,7 +99,6 @@ class MainActivity : ComponentActivity() {
             openSnoozeTimePickerState = intent.getBooleanExtra("OPEN_SNOOZE_TIME_PICKER", false)
         }
 
-        launchLog("before setContent")
         setContent {
             val themeViewModel: ThemeViewModel = viewModel()
             val themeMode by themeViewModel.themeMode.collectAsState()
@@ -119,21 +111,16 @@ class MainActivity : ComponentActivity() {
                 var appReady by remember { mutableStateOf(splashShown) }
                 LaunchedEffect(Unit) {
                     if (showSplash) {
-                        launchLog("launch screen composed")
                         withFrameNanos { }      // wait until the launch screen is on screen
-                        launchLog("launch screen drawn")
                         delay(500)              // let its text finish easing in
                         appReady = true         // app builds underneath the launch screen
-                        launchLog("app building")
                         // Building the app can hold up the screen for a moment, so the time the
                         // launch screen stays is counted from after that, not before
                         withFrameNanos { }
                         withFrameNanos { }
-                        launchLog("app built")
                         delay(1200)
                         splashShown = true
                         showSplash = false
-                        launchLog("launch screen removed")
                     }
                 }
                 Box(modifier = Modifier.fillMaxSize()) {

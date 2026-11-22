@@ -22,6 +22,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Block
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Business
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.WorkOutline
@@ -168,443 +170,443 @@ fun ConnectionsScreen(
     val tealAccent = diBadgeColors.accent
     val errorColor = colors.error
 
-    Scaffold(
-        topBar = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(pageBgColor)
-                    .statusBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 8.dp)
-            ) {
-                if (isSearchActive) {
-                    // Search Bar Mode
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        color = colors.surfaceVariant.copy(alpha = 0.35f),
-                        border = BorderStroke(1.dp, outlineColor.copy(alpha = 0.5f))
-                    ) {
-                        Row(
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            topBar = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(pageBgColor)
+                        .statusBarsPadding()
+                        .padding(horizontal = 20.dp, vertical = 8.dp)
+                ) {
+                    if (isSearchActive) {
+                        // Search Bar Mode
+                        Surface(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            color = colors.surfaceVariant.copy(alpha = 0.35f),
+                            border = BorderStroke(1.dp, outlineColor.copy(alpha = 0.5f))
                         ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Search,
-                                contentDescription = "Search",
-                                tint = secondaryTextColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Box(modifier = Modifier.weight(1f)) {
-                                if (searchQuery.isEmpty()) {
-                                    Text(
-                                        text = "Search people or organization",
-                                        fontSize = 15.sp,
-                                        color = secondaryTextColor
-                                    )
-                                }
-                                BasicTextField(
-                                    value = searchQuery,
-                                    onValueChange = { searchQuery = it },
-                                    singleLine = true,
-                                    textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                        fontSize = 15.sp,
-                                        color = primaryTextColor
-                                    ),
-                                    cursorBrush = SolidColor(tealAccent),
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                            IconButton(
-                                onClick = {
-                                    isSearchActive = false
-                                    searchQuery = ""
-                                },
-                                modifier = Modifier.size(28.dp)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Close search",
-                                    tint = primaryTextColor,
-                                    modifier = Modifier.size(18.dp)
+                                    imageVector = Icons.Outlined.Search,
+                                    contentDescription = "Search",
+                                    tint = secondaryTextColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Box(modifier = Modifier.weight(1f)) {
+                                    if (searchQuery.isEmpty()) {
+                                        Text(
+                                            text = "Search people or organization",
+                                            fontSize = 15.sp,
+                                            color = secondaryTextColor
+                                        )
+                                    }
+                                    BasicTextField(
+                                        value = searchQuery,
+                                        onValueChange = { searchQuery = it },
+                                        singleLine = true,
+                                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                            fontSize = 15.sp,
+                                            color = primaryTextColor
+                                        ),
+                                        cursorBrush = SolidColor(tealAccent),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        isSearchActive = false
+                                        searchQuery = ""
+                                    },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Close search",
+                                        tint = primaryTextColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        // Normal Title Header
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Connections",
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Normal,
+                                color = primaryTextColor
+                            )
+
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clickable { isSearchActive = true },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Search,
+                                    contentDescription = "Search people",
+                                    tint = secondaryTextColor,
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
                         }
                     }
-                } else {
-                    // Normal Title Header
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Connections",
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Normal,
-                            color = primaryTextColor
-                        )
+                }
+            },
+            bottomBar = bottomBar
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .background(pageBgColor)
+            ) {
+                if (isSearchActive) {
+                    // ==================== SEARCH MODE RESULTS ====================
+                    val q = searchQuery.trim().lowercase()
+                    val filteredConnected = connections.filter {
+                        it.name.lowercase().contains(q) || it.organization.lowercase().contains(q)
+                    }
 
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clickable { isSearchActive = true },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Search,
-                                contentDescription = "Search people",
-                                tint = secondaryTextColor,
-                                modifier = Modifier.size(22.dp)
+                    if (q.isNotEmpty() && filteredConnected.isEmpty() && searchResults.isEmpty() && !searching) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "No people found",
+                                fontSize = 15.sp,
+                                color = secondaryTextColor
                             )
                         }
-                    }
-                }
-            }
-        },
-        bottomBar = bottomBar
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .background(pageBgColor)
-        ) {
-            if (isSearchActive) {
-                // ==================== SEARCH MODE RESULTS ====================
-                val q = searchQuery.trim().lowercase()
-                val filteredConnected = connections.filter {
-                    it.name.lowercase().contains(q) || it.organization.lowercase().contains(q)
-                }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (filteredConnected.isNotEmpty()) {
+                                item {
+                                    Text(
+                                        text = "CONNECTED",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = secondaryTextColor,
+                                        modifier = Modifier.padding(vertical = 4.dp)
+                                    )
+                                }
+                                items(filteredConnected, key = { it.id }) { item ->
+                                    ConnectionRow(
+                                        item = item,
+                                        isExpanded = false,
+                                        primaryTextColor = primaryTextColor,
+                                        secondaryTextColor = secondaryTextColor,
+                                        cardBgColor = cardBgColor,
+                                        tealAccent = tealAccent,
+                                        errorColor = errorColor,
+                                        onClick = {
+                                            profileTarget = item
+                                        },
+                                        onBlock = { blockTarget = item },
+                                        onDisconnect = { disconnectTarget = item },
+                                        onChatClick = { onOpenChat(item) },
+                                        onCallClick = { video -> callConnection(item, video) },
+                                        onAvatarClick = { profileTarget = item },
+                                        query = searchQuery.trim()
+                                    )
+                                }
+                            }
 
-                if (q.isNotEmpty() && filteredConnected.isEmpty() && searchResults.isEmpty() && !searching) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "No people found",
-                            fontSize = 15.sp,
-                            color = secondaryTextColor
-                        )
+                            if (searching && searchResults.isEmpty()) {
+                                item {
+                                    Text(
+                                        text = "Searching...",
+                                        fontSize = 13.sp,
+                                        color = secondaryTextColor,
+                                        modifier = Modifier.padding(vertical = 8.dp)
+                                    )
+                                }
+                            }
+
+                            val connectedUids = connections.map { it.uid }.toSet()
+                            val people = searchResults.filter { it.uid !in connectedUids }
+                            if (people.isNotEmpty()) {
+                                item {
+                                    Text(
+                                        text = "PEOPLE ON DIBADGE",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = secondaryTextColor,
+                                        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                                    )
+                                }
+                                items(people, key = { "p_" + it.uid }) { person ->
+                                    val incoming = receivedRequests.firstOrNull { it.uid == person.uid }
+                                    val outgoing = sentRequests.any { it.uid == person.uid }
+                                    PersonSearchRow(
+                                        item = person,
+                                        actionLabel = when {
+                                            incoming != null -> "Accept"
+                                            outgoing -> "Pending"
+                                            else -> "Connect"
+                                        },
+                                        actionEnabled = !outgoing,
+                                        primaryTextColor = primaryTextColor,
+                                        secondaryTextColor = secondaryTextColor,
+                                        tealAccent = tealAccent,
+                                        onAction = {
+                                            if (incoming != null) viewModel.acceptRequest(incoming)
+                                            else viewModel.sendInvite(person)
+                                        },
+                                        onAvatarClick = { profileTarget = person },
+                                        onClick = { profileTarget = person },
+                                        query = searchQuery.trim()
+                                    )
+                                }
+                            }
+                        }
                     }
                 } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        if (filteredConnected.isNotEmpty()) {
-                            item {
-                                Text(
-                                    text = "CONNECTED",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = secondaryTextColor,
-                                    modifier = Modifier.padding(vertical = 4.dp)
-                                )
-                            }
-                            items(filteredConnected, key = { it.id }) { item ->
-                                ConnectionRow(
-                                    item = item,
-                                    isExpanded = expandedConnectionId == item.id,
-                                    primaryTextColor = primaryTextColor,
-                                    secondaryTextColor = secondaryTextColor,
-                                    cardBgColor = cardBgColor,
-                                    tealAccent = tealAccent,
-                                    errorColor = errorColor,
-                                    onClick = {
-                                        expandedConnectionId = if (expandedConnectionId == item.id) null else item.id
-                                    },
-                                    onBlock = { blockTarget = item },
-                                    onDisconnect = { disconnectTarget = item },
-                                    onChatClick = { onOpenChat(item) },
-                                    onCallClick = { video -> callConnection(item, video) },
-                                    onAvatarClick = { profileTarget = item },
-                                    query = searchQuery.trim()
-                                )
-                            }
-                        }
-
-                        if (searching && searchResults.isEmpty()) {
-                            item {
-                                Text(
-                                    text = "Searching...",
-                                    fontSize = 13.sp,
-                                    color = secondaryTextColor,
-                                    modifier = Modifier.padding(vertical = 8.dp)
-                                )
-                            }
-                        }
-
-                        val connectedUids = connections.map { it.uid }.toSet()
-                        val people = searchResults.filter { it.uid !in connectedUids }
-                        if (people.isNotEmpty()) {
-                            item {
-                                Text(
-                                    text = "PEOPLE ON DIBADGE",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = secondaryTextColor,
-                                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
-                                )
-                            }
-                            items(people, key = { "p_" + it.uid }) { person ->
-                                val incoming = receivedRequests.firstOrNull { it.uid == person.uid }
-                                val outgoing = sentRequests.any { it.uid == person.uid }
-                                PersonSearchRow(
-                                    item = person,
-                                    actionLabel = when {
-                                        incoming != null -> "Accept"
-                                        outgoing -> "Pending"
-                                        else -> "Connect"
-                                    },
-                                    actionEnabled = !outgoing,
-                                    primaryTextColor = primaryTextColor,
-                                    secondaryTextColor = secondaryTextColor,
-                                    tealAccent = tealAccent,
-                                    onAction = {
-                                        if (incoming != null) viewModel.acceptRequest(incoming)
-                                        else viewModel.sendInvite(person)
-                                    },
-                                    onAvatarClick = { profileTarget = person },
-                                    query = searchQuery.trim()
-                                )
-                            }
-                        }
+                    // ============ CHIPS: Connections / Requests / Sent, plus people you may know ============
+                    val defaultTab = when {
+                        receivedRequests.isNotEmpty() -> "requests"
+                        connections.isNotEmpty() -> "connections"
+                        sentRequests.isNotEmpty() -> "sent"
+                        else -> "connections"
                     }
-                }
-            } else {
-                // ============ CHIPS: Connections / Requests / Sent, plus people you may know ============
-                val defaultTab = when {
-                    receivedRequests.isNotEmpty() -> "requests"
-                    connections.isNotEmpty() -> "connections"
-                    sentRequests.isNotEmpty() -> "sent"
-                    else -> "connections"
-                }
-                var pickedTab by remember { mutableStateOf<String?>(null) }
-                var expandedSuggestionId by remember { mutableStateOf<String?>(null) }
-                val tab = pickedTab ?: defaultTab
+                    var pickedTab by remember { mutableStateOf<String?>(null) }
+                    var expandedSuggestionId by remember { mutableStateOf<String?>(null) }
+                    val tab = pickedTab ?: defaultTab
 
-                val allSuggestions by viewModel.suggestions.collectAsState()
-                val suggestions = remember(allSuggestions, connections, receivedRequests, sentRequests, blockedPeople) {
-                    val known = (connections + receivedRequests + sentRequests + blockedPeople).map { it.uid }.toSet()
-                    allSuggestions.filter { it.uid !in known }.take(6)
-                }
-
-                Column(modifier = Modifier.fillMaxSize()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        ConnectionsChip(
-                            label = "Connections",
-                            count = connections.size,
-                            selected = tab == "connections",
-                            highlightCount = false,
-                            pageBgColor = pageBgColor,
-                            primaryTextColor = primaryTextColor,
-                            secondaryTextColor = secondaryTextColor,
-                            outlineColor = outlineColor,
-                            tealAccent = tealAccent,
-                            onClick = { pickedTab = "connections" }
-                        )
-                        ConnectionsChip(
-                            label = "Requests",
-                            count = receivedRequests.size,
-                            selected = tab == "requests",
-                            highlightCount = receivedRequests.isNotEmpty(),
-                            pageBgColor = pageBgColor,
-                            primaryTextColor = primaryTextColor,
-                            secondaryTextColor = secondaryTextColor,
-                            outlineColor = outlineColor,
-                            tealAccent = tealAccent,
-                            onClick = { pickedTab = "requests" }
-                        )
-                        ConnectionsChip(
-                            label = "Sent",
-                            count = sentRequests.size,
-                            selected = tab == "sent",
-                            highlightCount = false,
-                            pageBgColor = pageBgColor,
-                            primaryTextColor = primaryTextColor,
-                            secondaryTextColor = secondaryTextColor,
-                            outlineColor = outlineColor,
-                            tealAccent = tealAccent,
-                            onClick = { pickedTab = "sent" }
-                        )
+                    val allSuggestions by viewModel.suggestions.collectAsState()
+                    val suggestions = remember(allSuggestions, connections, receivedRequests, sentRequests, blockedPeople) {
+                        val known = (connections + receivedRequests + sentRequests + blockedPeople).map { it.uid }.toSet()
+                        allSuggestions.filter { it.uid !in known }.take(6)
                     }
 
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        when (tab) {
-                            "requests" -> {
-                                if (receivedRequests.isEmpty()) {
-                                    item(key = "requests_empty") {
-                                        TabEmptyState(
-                                            title = "No requests right now",
-                                            subtitle = "When someone wants to connect, it shows up here",
-                                            primaryTextColor = primaryTextColor,
-                                            secondaryTextColor = secondaryTextColor
-                                        )
-                                    }
-                                } else {
-                                    items(receivedRequests, key = { "r_" + it.id }) { item ->
-                                        ReceivedRequestCard(
-                                            item = item,
-                                            primaryTextColor = primaryTextColor,
-                                            secondaryTextColor = secondaryTextColor,
-                                            cardBgColor = cardBgColor,
-                                            tealAccent = tealAccent,
-                                            onAccept = { viewModel.acceptRequest(item) },
-                                            onDecline = { viewModel.declineRequest(item) },
-                                            onAvatarClick = { profileTarget = item }
-                                        )
-                                    }
-                                }
-                            }
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            ConnectionsChip(
+                                label = "Connected",
+                                count = connections.size,
+                                selected = tab == "connections",
+                                highlightCount = false,
+                                pageBgColor = pageBgColor,
+                                primaryTextColor = primaryTextColor,
+                                secondaryTextColor = secondaryTextColor,
+                                outlineColor = outlineColor,
+                                tealAccent = tealAccent,
+                                onClick = { pickedTab = "connections" }
+                            )
+                            ConnectionsChip(
+                                label = "Requests",
+                                count = receivedRequests.size,
+                                selected = tab == "requests",
+                                highlightCount = receivedRequests.isNotEmpty(),
+                                pageBgColor = pageBgColor,
+                                primaryTextColor = primaryTextColor,
+                                secondaryTextColor = secondaryTextColor,
+                                outlineColor = outlineColor,
+                                tealAccent = tealAccent,
+                                onClick = { pickedTab = "requests" }
+                            )
+                            ConnectionsChip(
+                                label = "Sent",
+                                count = sentRequests.size,
+                                selected = tab == "sent",
+                                highlightCount = false,
+                                pageBgColor = pageBgColor,
+                                primaryTextColor = primaryTextColor,
+                                secondaryTextColor = secondaryTextColor,
+                                outlineColor = outlineColor,
+                                tealAccent = tealAccent,
+                                onClick = { pickedTab = "sent" }
+                            )
+                        }
 
-                            "sent" -> {
-                                if (sentRequests.isEmpty()) {
-                                    item(key = "sent_empty") {
-                                        TabEmptyState(
-                                            title = "No sent requests",
-                                            subtitle = "Requests you send wait here until the other person replies",
-                                            primaryTextColor = primaryTextColor,
-                                            secondaryTextColor = secondaryTextColor
-                                        )
-                                    }
-                                } else {
-                                    items(sentRequests, key = { "s_" + it.id }) { item ->
-                                        SentRequestCard(
-                                            item = item,
-                                            primaryTextColor = primaryTextColor,
-                                            secondaryTextColor = secondaryTextColor,
-                                            cardBgColor = cardBgColor,
-                                            onCancel = { viewModel.cancelSentRequest(item) },
-                                            onAvatarClick = { profileTarget = item }
-                                        )
-                                    }
-                                }
-                                item(key = "sent_search") {
-                                    Text(
-                                        text = "Search people",
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = tealAccent,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable { isSearchActive = true }
-                                            .padding(vertical = 16.dp),
-                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                    )
-                                }
-                            }
-
-                            else -> {
-                                if (connections.isEmpty()) {
-                                    item(key = "no_connections_yet") {
-                                        TabEmptyState(
-                                            title = "No connections yet",
-                                            subtitle = when {
-                                                receivedRequests.isNotEmpty() -> "You have ${receivedRequests.size} request${if (receivedRequests.size == 1) "" else "s"} waiting"
-                                                sentRequests.isNotEmpty() -> "Your sent requests are waiting for a reply"
-                                                else -> "Connect with people you work with"
-                                            },
-                                            primaryTextColor = primaryTextColor,
-                                            secondaryTextColor = secondaryTextColor
-                                        )
-                                    }
-                                } else {
-                                    items(connections, key = { it.id }) { item ->
-                                        ConnectionRow(
-                                            item = item,
-                                            isExpanded = expandedConnectionId == item.id,
-                                            primaryTextColor = primaryTextColor,
-                                            secondaryTextColor = secondaryTextColor,
-                                            cardBgColor = cardBgColor,
-                                            tealAccent = tealAccent,
-                                            errorColor = errorColor,
-                                            onClick = {
-                                                expandedConnectionId = if (expandedConnectionId == item.id) null else item.id
-                                            },
-                                            onBlock = { blockTarget = item },
-                                            onDisconnect = { disconnectTarget = item },
-                                            onChatClick = { onOpenChat(item) },
-                                            onCallClick = { video -> callConnection(item, video) },
-                                            onAvatarClick = { profileTarget = item }
-                                        )
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            when (tab) {
+                                "requests" -> {
+                                    if (receivedRequests.isEmpty()) {
+                                        item(key = "requests_empty") {
+                                            TabEmptyState(
+                                                title = "No requests right now",
+                                                subtitle = "When someone wants to connect, it shows up here",
+                                                primaryTextColor = primaryTextColor,
+                                                secondaryTextColor = secondaryTextColor
+                                            )
+                                        }
+                                    } else {
+                                        items(receivedRequests, key = { "r_" + it.id }) { item ->
+                                            RequestRow(
+                                                item = item,
+                                                received = true,
+                                                primaryTextColor = primaryTextColor,
+                                                secondaryTextColor = secondaryTextColor,
+                                                tealAccent = tealAccent,
+                                                onAccept = { viewModel.acceptRequest(item) },
+                                                onDecline = { viewModel.declineRequest(item) },
+                                                onClick = { profileTarget = item }
+                                            )
+                                        }
                                     }
                                 }
 
-                                if (suggestions.isNotEmpty()) {
-                                    item(key = "header_suggestions") {
+                                "sent" -> {
+                                    if (sentRequests.isEmpty()) {
+                                        item(key = "sent_empty") {
+                                            TabEmptyState(
+                                                title = "No sent requests",
+                                                subtitle = "Requests you send wait here until the other person replies",
+                                                primaryTextColor = primaryTextColor,
+                                                secondaryTextColor = secondaryTextColor
+                                            )
+                                        }
+                                    } else {
+                                        items(sentRequests, key = { "s_" + it.id }) { item ->
+                                            RequestRow(
+                                                item = item,
+                                                received = false,
+                                                primaryTextColor = primaryTextColor,
+                                                secondaryTextColor = secondaryTextColor,
+                                                tealAccent = tealAccent,
+                                                onClick = { profileTarget = item }
+                                            )
+                                        }
+                                    }
+                                    item(key = "sent_search") {
                                         Text(
-                                            text = "People you may know",
-                                            fontSize = 15.sp,
+                                            text = "Search people",
+                                            fontSize = 14.sp,
                                             fontWeight = FontWeight.SemiBold,
-                                            color = primaryTextColor,
-                                            modifier = Modifier.padding(top = 16.dp, bottom = 2.dp)
-                                        )
-                                    }
-                                    items(suggestions, key = { "sg_" + it.uid }) { person ->
-                                        SuggestionRow(
-                                            item = person,
-                                            isExpanded = expandedSuggestionId == person.uid,
-                                            primaryTextColor = primaryTextColor,
-                                            secondaryTextColor = secondaryTextColor,
-                                            cardBgColor = cardBgColor,
-                                            tealAccent = tealAccent,
-                                            onClick = {
-                                                expandedSuggestionId =
-                                                    if (expandedSuggestionId == person.uid) null else person.uid
-                                            },
-                                            onConnect = {
-                                                expandedSuggestionId = null
-                                                viewModel.sendInvite(person)
-                                            },
-                                            onAvatarClick = { profileTarget = person }
-                                        )
-                                    }
-                                }
-
-                                item(key = "connections_search") {
-                                    Text(
-                                        text = "Search people",
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = tealAccent,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable { isSearchActive = true }
-                                            .padding(vertical = 16.dp),
-                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                    )
-                                }
-
-                                if (blockedPeople.isNotEmpty()) {
-                                    item(key = "blocked_link") {
-                                        Text(
-                                            text = "Blocked people (${blockedPeople.size})",
-                                            fontSize = 13.sp,
-                                            color = secondaryTextColor,
+                                            color = tealAccent,
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .clickable { showBlockedList = true }
-                                                .padding(vertical = 12.dp),
+                                                .clickable { isSearchActive = true }
+                                                .padding(vertical = 16.dp),
                                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                         )
+                                    }
+                                }
+
+                                else -> {
+                                    if (connections.isEmpty()) {
+                                        item(key = "no_connections_yet") {
+                                            TabEmptyState(
+                                                title = "No connections yet",
+                                                subtitle = when {
+                                                    receivedRequests.isNotEmpty() -> "You have ${receivedRequests.size} request${if (receivedRequests.size == 1) "" else "s"} waiting"
+                                                    sentRequests.isNotEmpty() -> "Your sent requests are waiting for a reply"
+                                                    else -> "Connect with people you work with"
+                                                },
+                                                primaryTextColor = primaryTextColor,
+                                                secondaryTextColor = secondaryTextColor
+                                            )
+                                        }
+                                    } else {
+                                        items(connections, key = { it.id }) { item ->
+                                            ConnectionRow(
+                                                item = item,
+                                                isExpanded = false,
+                                                primaryTextColor = primaryTextColor,
+                                                secondaryTextColor = secondaryTextColor,
+                                                cardBgColor = cardBgColor,
+                                                tealAccent = tealAccent,
+                                                errorColor = errorColor,
+                                                onClick = {
+                                                    profileTarget = item
+                                                },
+                                                onBlock = { blockTarget = item },
+                                                onDisconnect = { disconnectTarget = item },
+                                                onChatClick = { onOpenChat(item) },
+                                                onCallClick = { video -> callConnection(item, video) },
+                                                onAvatarClick = { profileTarget = item }
+                                            )
+                                        }
+                                    }
+
+                                    if (suggestions.isNotEmpty()) {
+                                        item(key = "header_suggestions") {
+                                            Text(
+                                                text = "People you may know",
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = primaryTextColor,
+                                                modifier = Modifier.padding(top = 16.dp, bottom = 2.dp)
+                                            )
+                                        }
+                                        items(suggestions, key = { "sg_" + it.uid }) { person ->
+                                            SuggestionRow(
+                                                item = person,
+                                                isExpanded = false,
+                                                primaryTextColor = primaryTextColor,
+                                                secondaryTextColor = secondaryTextColor,
+                                                cardBgColor = cardBgColor,
+                                                tealAccent = tealAccent,
+                                                onClick = { profileTarget = person },
+                                                onConnect = {
+                                                    expandedSuggestionId = null
+                                                    viewModel.sendInvite(person)
+                                                },
+                                                onAvatarClick = { profileTarget = person }
+                                            )
+                                        }
+                                    }
+
+                                    item(key = "connections_search") {
+                                        Text(
+                                            text = "Search people",
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = tealAccent,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { isSearchActive = true }
+                                                .padding(vertical = 16.dp),
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                    }
+
+                                    if (blockedPeople.isNotEmpty()) {
+                                        item(key = "blocked_link") {
+                                            Text(
+                                                text = "Blocked people (${blockedPeople.size})",
+                                                fontSize = 13.sp,
+                                                color = secondaryTextColor,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable { showBlockedList = true }
+                                                    .padding(vertical = 12.dp),
+                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -613,24 +615,28 @@ fun ConnectionsScreen(
                 }
             }
         }
-    }
 
-    // The full profile, opened by tapping anyone's photo. It uses the live copy of that person when there is one,
-    // and closes by itself once a connected person is disconnected.
-    profileTarget?.let { opened ->
-        val live = (connections + receivedRequests + sentRequests + allSuggestionsForProfile)
-            .firstOrNull { it.uid.isNotBlank() && it.uid == opened.uid }
-        val person = live ?: opened
-        if (opened.status == "connected" && connections.none { it.uid == opened.uid }) {
-            LaunchedEffect(opened.uid) { profileTarget = null }
-        } else {
-            ConnectionProfileScreen(
-                item = person,
-                onBack = { profileTarget = null },
-                onChat = { profileTarget = null; onOpenChat(person) },
-                onCall = { video -> profileTarget = null; callConnection(person, video) },
-                onDisconnect = { disconnectTarget = person }
-            )
+        // The full profile, opened by tapping anyone's photo. It uses the live copy of that person when there is one,
+        // and closes by itself once a connected person is disconnected.
+        profileTarget?.let { opened ->
+            val live = (connections + receivedRequests + sentRequests + allSuggestionsForProfile)
+                .firstOrNull { it.uid.isNotBlank() && it.uid == opened.uid }
+            val person = live ?: opened
+            if (opened.status == "connected" && connections.none { it.uid == opened.uid }) {
+                LaunchedEffect(opened.uid) { profileTarget = null }
+            } else {
+                ConnectionProfileScreen(
+                    item = person,
+                    onBack = { profileTarget = null },
+                    onChat = { profileTarget = null; onOpenChat(person) },
+                    onCall = { video -> profileTarget = null; callConnection(person, video) },
+                    onDisconnect = { disconnectTarget = person },
+                    onAccept = { profileTarget = null; viewModel.acceptRequest(person) },
+                    onDecline = { profileTarget = null; viewModel.declineRequest(person) },
+                    onCancel = { profileTarget = null; viewModel.cancelSentRequest(person) },
+                    onConnect = { profileTarget = null; viewModel.sendInvite(person) }
+                )
+            }
         }
     }
 
@@ -927,13 +933,6 @@ fun ConnectionRow(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(top = 2.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Outlined.CalendarToday,
-                                contentDescription = null,
-                                tint = secondaryTextColor,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Connected " + remember(item.connectedAt) {
                                     java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault())
@@ -1211,6 +1210,112 @@ private fun RequestCardBody(
     }
 }
 
+/**
+ * A request in the Requests or Sent list. It looks like a connection row: photo, name, company | role and the
+ * date it was sent. On the right: Decline and Accept for a received request, "Pending" for a sent one.
+ * Tapping the row opens the full profile.
+ */
+@Composable
+private fun RequestRow(
+    item: ConnectionItem,
+    received: Boolean,
+    primaryTextColor: Color,
+    secondaryTextColor: Color,
+    tealAccent: Color,
+    onAccept: () -> Unit = {},
+    onDecline: () -> Unit = {},
+    onClick: () -> Unit
+) {
+    val avatarBgColor = remember(item.id, item.uid) { UserColorUtils.getColorForName(item.uid.ifBlank { item.id }) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .clickable { onClick() }
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(modifier = Modifier.size(44.dp).clip(CircleShape), shape = CircleShape, color = avatarBgColor) {
+            if (item.photoUrl.isNotBlank()) {
+                AsyncImage(
+                    model = item.photoUrl,
+                    contentDescription = "Avatar",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = capitalizeName(item.name).take(1),
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = capitalizeName(item.name),
+                fontSize = 16.sp,
+                color = primaryTextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (item.organization.isNotBlank() || item.role.isNotBlank()) {
+                Box(modifier = Modifier.padding(top = 2.dp)) {
+                    CompanyRoleLine(
+                        organization = item.organization,
+                        role = item.role,
+                        textColor = secondaryTextColor,
+                        iconColor = secondaryTextColor,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+            if (item.timestamp > 0L) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                    Text(
+                        text = "Requested " + remember(item.timestamp) {
+                            java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.getDefault())
+                                .format(java.util.Date(item.timestamp))
+                        },
+                        fontSize = 13.sp,
+                        lineHeight = 16.sp,
+                        color = secondaryTextColor
+                    )
+                }
+            }
+        }
+
+        if (received) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onDecline, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = "Decline ${capitalizeName(item.name)}",
+                        tint = secondaryTextColor,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                IconButton(onClick = onAccept, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        imageVector = Icons.Outlined.Check,
+                        contentDescription = "Accept ${capitalizeName(item.name)}",
+                        tint = tealAccent,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        } else {
+            Text(text = "Pending", fontSize = 13.sp, color = secondaryTextColor)
+        }
+    }
+}
+
 @Composable
 fun ReceivedRequestCard(
     item: ConnectionItem,
@@ -1273,6 +1378,7 @@ fun PersonSearchRow(
     tealAccent: Color,
     onAction: () -> Unit,
     onAvatarClick: () -> Unit = {},
+    onClick: () -> Unit = {},
     query: String = ""
 ) {
     val avatarBgColor = remember(item.id, item.uid) { UserColorUtils.getColorForName(item.uid.ifBlank { item.id }) }
@@ -1284,6 +1390,7 @@ fun PersonSearchRow(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 52.dp)
+            .clickable { onClick() }
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1595,6 +1702,23 @@ fun SuggestionRow(
                             fontSize = 12.sp
                         )
                     }
+                }
+
+                // Connect button on the right, same look as in the search results
+                Spacer(modifier = Modifier.width(8.dp))
+                Surface(
+                    modifier = Modifier.clickable { onConnect() },
+                    shape = RoundedCornerShape(18.dp),
+                    color = Color.Transparent,
+                    border = BorderStroke(1.5.dp, tealAccent)
+                ) {
+                    Text(
+                        text = "Connect",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = tealAccent,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp)
+                    )
                 }
             }
 
