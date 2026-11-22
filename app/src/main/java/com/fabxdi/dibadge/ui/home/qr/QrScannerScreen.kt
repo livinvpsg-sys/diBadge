@@ -1,4 +1,4 @@
-package com.fabxdi.dibadge.ui.home
+package com.fabxdi.dibadge.ui.home.qr
 
 import android.Manifest
 import android.content.Context
@@ -23,8 +23,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.FlashOff
 import androidx.compose.material.icons.outlined.FlashOn
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -41,6 +43,7 @@ import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -64,8 +67,9 @@ import java.util.concurrent.Executors
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QrScannerScreen(
-    userCode: String = "7K2M9QX4B",
+    userCode: String = "",
     onBack: () -> Unit,
+    onMyQrClick: () -> Unit = {},
     onConnectionRequestSent: (String) -> Unit = {},
     onAttendanceMarked: (title: String, orgName: String) -> Unit = { _, _ -> }
 ) {
@@ -84,6 +88,7 @@ fun QrScannerScreen(
     var lastWrongTime by remember { mutableLongStateOf(0L) }
 
     var showPersonSheet by remember { mutableStateOf(false) }
+
     var showAttendanceSheet by remember { mutableStateOf(false) }
 
     val launcher = rememberLauncherForActivityResult(
@@ -159,7 +164,7 @@ fun QrScannerScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = primaryTextColor, modifier = Modifier.size(24.dp))
                     }
                     Spacer(modifier = Modifier.width(12.dp))
-                    Text("Scan QR code", fontSize = 20.sp, fontWeight = FontWeight.Normal, color = primaryTextColor)
+                    Text("Scan a QR code", fontSize = 20.sp, fontWeight = FontWeight.Normal, color = primaryTextColor)
                 }
             }
         ) { innerPadding ->
@@ -242,10 +247,13 @@ fun QrScannerScreen(
         )
 
         // Viewfinder Mask Overlay
+        val frameColor = tealAccent.copy(alpha = 0.85f)
+        // Same place and size as the QR tile on the My QR code screen: 200dp under the status bar, 224dp square
+        val statusTopPx = WindowInsets.statusBars.getTop(LocalDensity.current).toFloat()
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val boxSizePx = 260.dp.toPx()
+            val boxSizePx = 224.dp.toPx()
             val left = (size.width - boxSizePx) / 2f
-            val top = (size.height - boxSizePx) / 2f - 40.dp.toPx()
+            val top = statusTopPx + 200.dp.toPx()
             val right = left + boxSizePx
             val bottom = top + boxSizePx
 
@@ -263,28 +271,16 @@ fun QrScannerScreen(
                 )
                 fillType = PathFillType.EvenOdd
             }
-            drawPath(path = path, color = Color.Black.copy(alpha = 0.50f))
+            drawPath(path = path, color = Color.Black.copy(alpha = 0.60f))
 
-            // White Corner Brackets
-            val strokeWidth = 4.dp.toPx()
-            val cornerLength = 32.dp.toPx()
-            val bracketColor = Color(0xFFF0F3F5)
-
-            // Top-Left
-            drawLine(color = bracketColor, start = Offset(left, top + cornerLength), end = Offset(left, top), strokeWidth = strokeWidth, cap = StrokeCap.Round)
-            drawLine(color = bracketColor, start = Offset(left, top), end = Offset(left + cornerLength, top), strokeWidth = strokeWidth, cap = StrokeCap.Round)
-
-            // Top-Right
-            drawLine(color = bracketColor, start = Offset(right - cornerLength, top), end = Offset(right, top), strokeWidth = strokeWidth, cap = StrokeCap.Round)
-            drawLine(color = bracketColor, start = Offset(right, top), end = Offset(right, top + cornerLength), strokeWidth = strokeWidth, cap = StrokeCap.Round)
-
-            // Bottom-Left
-            drawLine(color = bracketColor, start = Offset(left, bottom - cornerLength), end = Offset(left, bottom), strokeWidth = strokeWidth, cap = StrokeCap.Round)
-            drawLine(color = bracketColor, start = Offset(left, bottom), end = Offset(left + cornerLength, bottom), strokeWidth = strokeWidth, cap = StrokeCap.Round)
-
-            // Bottom-Right
-            drawLine(color = bracketColor, start = Offset(right - cornerLength, bottom), end = Offset(right, bottom), strokeWidth = strokeWidth, cap = StrokeCap.Round)
-            drawLine(color = bracketColor, start = Offset(right, bottom - 1f), end = Offset(right, bottom - cornerLength), strokeWidth = strokeWidth, cap = StrokeCap.Round)
+            // Rounded frame around the scan area
+            drawRoundRect(
+                color = frameColor,
+                topLeft = Offset(left, top),
+                size = Size(boxSizePx, boxSizePx),
+                cornerRadius = CornerRadius(18.dp.toPx(), 18.dp.toPx()),
+                style = Stroke(width = 3.dp.toPx())
+            )
         }
 
         // Header Over Camera
@@ -302,7 +298,7 @@ fun QrScannerScreen(
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color(0xFFF0F3F5), modifier = Modifier.size(24.dp))
                 }
                 Spacer(modifier = Modifier.width(12.dp))
-                Text("Scan QR code", fontSize = 20.sp, fontWeight = FontWeight.Normal, color = Color(0xFFF0F3F5))
+                Text("Scan a QR code", fontSize = 20.sp, fontWeight = FontWeight.Normal, color = Color(0xFFF0F3F5))
             }
 
             IconButton(
@@ -312,49 +308,34 @@ fun QrScannerScreen(
                 },
                 modifier = Modifier.size(44.dp)
             ) {
-                Icon(Icons.Outlined.FlashOn, contentDescription = "Torch", tint = Color(0xFFF0F3F5), modifier = Modifier.size(22.dp))
+                Icon(
+                    imageVector = if (isFlashOn) Icons.Outlined.FlashOn else Icons.Outlined.FlashOff,
+                    contentDescription = "Torch",
+                    tint = if (isFlashOn) tealAccent else Color(0xFFF0F3F5),
+                    modifier = Modifier.size(22.dp)
+                )
             }
         }
 
-        // Instruction Text Under Viewfinder
+        // Bottom pill: My QR code
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(bottom = 120.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "Point the camera at a diBadge QR code",
-                fontSize = 15.sp,
-                color = Color(0xFFF0F3F5),
-                textAlign = TextAlign.Center
-            )
-        }
-
-        // Bottom Outlined Pill: Choose from gallery
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(bottom = 48.dp),
-            contentAlignment = Alignment.Center
+                .statusBarsPadding()
+                .padding(top = 498.dp),
+            contentAlignment = Alignment.TopCenter
         ) {
             Surface(
-                onClick = { galleryLauncher.launch("image/*") },
-                modifier = Modifier
-                    .height(44.dp)
-                    .wrapContentWidth(),
+                onClick = onMyQrClick,
+                modifier = Modifier.height(44.dp),
                 shape = RoundedCornerShape(22.dp),
                 color = Color.Transparent,
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f))
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 20.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Outlined.Image, contentDescription = null, tint = Color(0xFFF0F3F5), modifier = Modifier.size(20.dp))
+                Row(modifier = Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.QrCode2, contentDescription = null, tint = Color(0xFFF0F3F5), modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(10.dp))
-                    Text("Choose from gallery", fontSize = 14.sp, color = Color(0xFFF0F3F5))
+                    Text("My QR code", fontSize = 14.sp, color = Color(0xFFF0F3F5))
                 }
             }
         }
@@ -372,81 +353,18 @@ fun QrScannerScreen(
 
     // Person Scan Result Sheet
     if (showPersonSheet && scannedCode != null) {
-        val extractedCode = scannedCode!!.replace("dibadge:", "")
-        val personName = remember(extractedCode) { "Alex Morgan" }
-
-        ModalBottomSheet(
-            onDismissRequest = {
+        ScannedPersonSheet(
+            code = scannedCode!!.trim().replace("dibadge:", "", ignoreCase = true),
+            ownCode = userCode,
+            onClose = {
                 showPersonSheet = false
                 scannedCode = null
             },
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-            containerColor = cardBgColor,
-            scrimColor = Color.Black.copy(alpha = 0.45f),
-            tonalElevation = 0.dp
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 16.dp)
-                    .padding(bottom = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // 64dp Round Avatar
-                val avatarColor = remember(personName) { UserColorUtils.getColorForName(personName) }
-                val outlineColor = colors.outline
-                Surface(
-                    modifier = Modifier.size(64.dp),
-                    shape = CircleShape,
-                    color = avatarColor,
-                    border = BorderStroke(1.dp, outlineColor)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(personName.take(1), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Person Name (20sp Medium, NO badge number text)
-                Text(personName, fontSize = 20.sp, fontWeight = FontWeight.Medium, color = primaryTextColor)
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Send Connection Request Text Button
-                Text(
-                    text = "Send connection request",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = tealAccent,
-                    modifier = Modifier
-                        .clickable {
-                            showPersonSheet = false
-                            scannedCode = null
-                            onConnectionRequestSent(personName)
-                            onBack()
-                        }
-                        .padding(horizontal = 20.dp, vertical = 12.dp)
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Cancel Text Button
-                Text(
-                    text = "Cancel",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = secondaryTextColor,
-                    modifier = Modifier
-                        .clickable {
-                            showPersonSheet = false
-                            scannedCode = null
-                        }
-                        .padding(horizontal = 20.dp, vertical = 8.dp)
-                )
+            onRequestSent = { name ->
+                onConnectionRequestSent(name)
+                onBack()
             }
-        }
+        )
     }
 
     // Attendance Scan Result Sheet
@@ -543,7 +461,7 @@ private fun processScannedCode(
     }
 
     val extractedCode = clean.replace("dibadge:", "", ignoreCase = true)
-    if (extractedCode.equals(userCode, ignoreCase = true)) {
+    if (userCode.isNotBlank() && extractedCode.equals(userCode, ignoreCase = true)) {
         onOwnCode()
         return
     }

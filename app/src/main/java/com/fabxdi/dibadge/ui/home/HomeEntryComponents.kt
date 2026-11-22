@@ -11,6 +11,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.NotificationsOff
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -204,7 +206,9 @@ fun HomeEntryCard(
     isGroup: Boolean = isGroupEntry(entry),
     photoUrl: String = "",
     draft: String = "",
-    colorKey: String = ""
+    colorKey: String = "",
+    isPinned: Boolean = false,
+    isMuted: Boolean = false
 ) {
     val colors = MaterialTheme.colorScheme
     val dc = DiBadgeTheme.colors
@@ -352,21 +356,31 @@ fun HomeEntryCard(
                         fontWeight = if (hasUnread) FontWeight.SemiBold else FontWeight.Normal,
                         color = if (hasUnread) dc.accent else secondaryTextColor
                     )
-                    if (hasUnread) {
+                    if (hasUnread || isPinned || isMuted) {
                         Spacer(modifier = Modifier.height(5.dp))
-                        Box(
-                            modifier = Modifier
-                                .defaultMinSize(minWidth = 20.dp, minHeight = 20.dp)
-                                .background(dc.accentFill, RoundedCornerShape(10.dp))
-                                .padding(horizontal = 6.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = if (unread > 99) "99+" else unread.toString(),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color.White
-                            )
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (isMuted) {
+                                Icon(Icons.Outlined.NotificationsOff, "Muted", tint = secondaryTextColor, modifier = Modifier.size(15.dp))
+                            }
+                            if (isPinned) {
+                                Icon(Icons.Outlined.PushPin, "Pinned", tint = secondaryTextColor, modifier = Modifier.size(15.dp))
+                            }
+                            if (hasUnread) {
+                                Box(
+                                    modifier = Modifier
+                                        .defaultMinSize(minWidth = 20.dp, minHeight = 20.dp)
+                                        .background(if (isMuted) secondaryTextColor.copy(alpha = 0.6f) else dc.accentFill, RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = if (unread > 99) "99+" else unread.toString(),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
                         }
                     }
                 }

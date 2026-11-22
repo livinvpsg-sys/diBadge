@@ -91,6 +91,8 @@ fun ConnectionsScreen(
     val blockedPeople by viewModel.blockedPeople.collectAsState()
     var blockTarget by remember { mutableStateOf<ConnectionItem?>(null) }
     var disconnectTarget by remember { mutableStateOf<ConnectionItem?>(null) }
+    var profileTarget by remember { mutableStateOf<ConnectionItem?>(null) }
+    val allSuggestionsForProfile by viewModel.suggestions.collectAsState()
     var showBlockedList by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
@@ -322,6 +324,7 @@ fun ConnectionsScreen(
                                     onDisconnect = { disconnectTarget = item },
                                     onChatClick = { onOpenChat(item) },
                                     onCallClick = { video -> callConnection(item, video) },
+                                    onAvatarClick = { profileTarget = item },
                                     query = searchQuery.trim()
                                 )
                             }
@@ -368,6 +371,7 @@ fun ConnectionsScreen(
                                         if (incoming != null) viewModel.acceptRequest(incoming)
                                         else viewModel.sendInvite(person)
                                     },
+                                    onAvatarClick = { profileTarget = person },
                                     query = searchQuery.trim()
                                 )
                             }
@@ -464,7 +468,8 @@ fun ConnectionsScreen(
                                             cardBgColor = cardBgColor,
                                             tealAccent = tealAccent,
                                             onAccept = { viewModel.acceptRequest(item) },
-                                            onDecline = { viewModel.declineRequest(item) }
+                                            onDecline = { viewModel.declineRequest(item) },
+                                            onAvatarClick = { profileTarget = item }
                                         )
                                     }
                                 }
@@ -487,7 +492,8 @@ fun ConnectionsScreen(
                                             primaryTextColor = primaryTextColor,
                                             secondaryTextColor = secondaryTextColor,
                                             cardBgColor = cardBgColor,
-                                            onCancel = { viewModel.cancelSentRequest(item) }
+                                            onCancel = { viewModel.cancelSentRequest(item) },
+                                            onAvatarClick = { profileTarget = item }
                                         )
                                     }
                                 }
@@ -536,7 +542,8 @@ fun ConnectionsScreen(
                                             onBlock = { blockTarget = item },
                                             onDisconnect = { disconnectTarget = item },
                                             onChatClick = { onOpenChat(item) },
-                                            onCallClick = { video -> callConnection(item, video) }
+                                            onCallClick = { video -> callConnection(item, video) },
+                                            onAvatarClick = { profileTarget = item }
                                         )
                                     }
                                 }
@@ -566,7 +573,8 @@ fun ConnectionsScreen(
                                             onConnect = {
                                                 expandedSuggestionId = null
                                                 viewModel.sendInvite(person)
-                                            }
+                                            },
+                                            onAvatarClick = { profileTarget = person }
                                         )
                                     }
                                 }
@@ -604,6 +612,25 @@ fun ConnectionsScreen(
                     }
                 }
             }
+        }
+    }
+
+    // The full profile, opened by tapping anyone's photo. It uses the live copy of that person when there is one,
+    // and closes by itself once a connected person is disconnected.
+    profileTarget?.let { opened ->
+        val live = (connections + receivedRequests + sentRequests + allSuggestionsForProfile)
+            .firstOrNull { it.uid.isNotBlank() && it.uid == opened.uid }
+        val person = live ?: opened
+        if (opened.status == "connected" && connections.none { it.uid == opened.uid }) {
+            LaunchedEffect(opened.uid) { profileTarget = null }
+        } else {
+            ConnectionProfileScreen(
+                item = person,
+                onBack = { profileTarget = null },
+                onChat = { profileTarget = null; onOpenChat(person) },
+                onCall = { video -> profileTarget = null; callConnection(person, video) },
+                onDisconnect = { disconnectTarget = person }
+            )
         }
     }
 
@@ -801,6 +828,7 @@ fun ConnectionRow(
     onDisconnect: () -> Unit = {},
     onChatClick: () -> Unit = {},
     onCallClick: (video: Boolean) -> Unit = {},
+    onAvatarClick: () -> Unit = {},
     query: String = ""
 ) {
     val avatarBgColor = remember(item.id, item.uid) { UserColorUtils.getColorForName(item.uid.ifBlank { item.id }) }
@@ -824,7 +852,7 @@ fun ConnectionRow(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    modifier = Modifier.size(44.dp),
+                    modifier = Modifier.size(44.dp).clip(CircleShape).clickable { onAvatarClick() },
                     shape = CircleShape,
                     color = avatarBgColor
                 ) {
@@ -954,10 +982,6 @@ fun ConnectionRow(
                         iconColor = secondaryTextColor,
                         fontSize = 15.sp
                     )
-                    if (item.bio.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(text = item.bio, fontSize = 14.sp, color = secondaryTextColor)
-                    }
                     if (item.connectedAt > 0L) {
                         Spacer(modifier = Modifier.height(6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -979,7 +1003,7 @@ fun ConnectionRow(
                         }
                     }
                     Spacer(modifier = Modifier.height(10.dp))
-                    // Chat, Call, Video and Disconnect on one line. Tap the top of the card to close it.
+                    // Chat, Call and Video on one line. Tap the top of the card to close it. Disconnect is on the profile screen.
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -993,9 +1017,6 @@ fun ConnectionRow(
                         ConnectionActionPill("Video", tealAccent, Modifier.weight(1f), { onCallClick(true) }) {
                             Icon(Icons.Outlined.Videocam, null, tint = tealAccent, modifier = Modifier.size(15.dp))
                         }
-                        ConnectionActionPill("Disconnect", errorColor, Modifier.weight(1.5f), onDisconnect) {
-                            Icon(Icons.Outlined.PersonRemove, null, tint = errorColor, modifier = Modifier.size(15.dp))
-                        }
                     }
                 }
             }
@@ -1005,7 +1026,7 @@ fun ConnectionRow(
 
 /** Outlined pill button used in the opened connection card (Chat, Call, Video). */
 @Composable
-private fun ConnectionActionPill(
+internal fun ConnectionActionPill(
     label: String,
     color: Color,
     modifier: Modifier,
@@ -1046,7 +1067,8 @@ private fun RequestCardBody(
     firstEnabled: Boolean,
     onFirst: () -> Unit,
     secondLabel: String,
-    onSecond: () -> Unit
+    onSecond: () -> Unit,
+    onAvatarClick: () -> Unit = {}
 ) {
     var expanded by remember { mutableStateOf(false) }
     val avatarBgColor = remember(item.id, item.uid) { UserColorUtils.getColorForName(item.uid.ifBlank { item.id }) }
@@ -1063,13 +1085,13 @@ private fun RequestCardBody(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 52.dp)
+                    .heightIn(min = 44.dp)
                     .clickable { expanded = !expanded }
-                    .padding(vertical = 4.dp),
+                    .padding(vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    modifier = Modifier.size(44.dp),
+                    modifier = Modifier.size(44.dp).clip(CircleShape).clickable { onAvatarClick() },
                     shape = CircleShape,
                     color = avatarBgColor
                 ) {
@@ -1160,7 +1182,7 @@ private fun RequestCardBody(
                         color = firstColor,
                         modifier = Modifier
                             .clickable(enabled = firstEnabled) { onFirst() }
-                            .heightIn(min = 44.dp)
+                            .heightIn(min = 32.dp)
                             .wrapContentHeight(Alignment.CenterVertically)
                             .padding(end = 22.dp)
                     )
@@ -1170,7 +1192,7 @@ private fun RequestCardBody(
                         color = secondaryTextColor,
                         modifier = Modifier
                             .clickable { onSecond() }
-                            .heightIn(min = 44.dp)
+                            .heightIn(min = 32.dp)
                             .wrapContentHeight(Alignment.CenterVertically)
                     )
                 }
@@ -1197,7 +1219,8 @@ fun ReceivedRequestCard(
     cardBgColor: Color,
     tealAccent: Color,
     onAccept: () -> Unit,
-    onDecline: () -> Unit
+    onDecline: () -> Unit,
+    onAvatarClick: () -> Unit = {}
 ) {
     RequestCardBody(
         item = item,
@@ -1210,7 +1233,8 @@ fun ReceivedRequestCard(
         firstEnabled = true,
         onFirst = onAccept,
         secondLabel = "Decline",
-        onSecond = onDecline
+        onSecond = onDecline,
+        onAvatarClick = onAvatarClick
     )
 }
 
@@ -1220,7 +1244,8 @@ fun SentRequestCard(
     primaryTextColor: Color,
     secondaryTextColor: Color,
     cardBgColor: Color,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    onAvatarClick: () -> Unit = {}
 ) {
     RequestCardBody(
         item = item,
@@ -1233,7 +1258,8 @@ fun SentRequestCard(
         firstEnabled = false,
         onFirst = {},
         secondLabel = "Cancel",
-        onSecond = onCancel
+        onSecond = onCancel,
+        onAvatarClick = onAvatarClick
     )
 }
 
@@ -1246,6 +1272,7 @@ fun PersonSearchRow(
     secondaryTextColor: Color,
     tealAccent: Color,
     onAction: () -> Unit,
+    onAvatarClick: () -> Unit = {},
     query: String = ""
 ) {
     val avatarBgColor = remember(item.id, item.uid) { UserColorUtils.getColorForName(item.uid.ifBlank { item.id }) }
@@ -1261,7 +1288,7 @@ fun PersonSearchRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Surface(
-            modifier = Modifier.size(44.dp),
+            modifier = Modifier.size(44.dp).clip(CircleShape).clickable { onAvatarClick() },
             shape = CircleShape,
             color = avatarBgColor
         ) {
@@ -1485,7 +1512,8 @@ fun SuggestionRow(
     cardBgColor: Color,
     tealAccent: Color,
     onClick: () -> Unit,
-    onConnect: () -> Unit
+    onConnect: () -> Unit,
+    onAvatarClick: () -> Unit = {}
 ) {
     val avatarBgColor = remember(item.id, item.uid) { UserColorUtils.getColorForName(item.uid.ifBlank { item.id }) }
     val countryName = remember(item.country) {
@@ -1508,7 +1536,7 @@ fun SuggestionRow(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    modifier = Modifier.size(44.dp),
+                    modifier = Modifier.size(44.dp).clip(CircleShape).clickable { onAvatarClick() },
                     shape = CircleShape,
                     color = avatarBgColor
                 ) {

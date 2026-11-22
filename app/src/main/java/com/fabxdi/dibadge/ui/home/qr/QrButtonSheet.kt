@@ -1,4 +1,4 @@
-package com.fabxdi.dibadge.ui.home
+package com.fabxdi.dibadge.ui.home.qr
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*

@@ -12,6 +12,9 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.NotificationsOff
+import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.*
@@ -42,7 +45,11 @@ fun HomeBanner(
     onQrClick: () -> Unit = {},
     selectedCount: Int = 0,
     onDeleteClick: () -> Unit = {},
-    onClearSelection: () -> Unit = {}
+    onClearSelection: () -> Unit = {},
+    allPinned: Boolean = false,
+    allMuted: Boolean = false,
+    onPinClick: () -> Unit = {},
+    onMuteClick: () -> Unit = {}
 ) {
     val colors = MaterialTheme.colorScheme
     val diBadgeColors = DiBadgeTheme.colors
@@ -90,12 +97,28 @@ fun HomeBanner(
                         color = primaryTextColor
                     )
                 }
-                IconButton(onClick = onDeleteClick) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Delete",
-                        tint = colors.error
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onPinClick) {
+                        Icon(
+                            imageVector = Icons.Outlined.PushPin,
+                            contentDescription = if (allPinned) "Unpin" else "Pin to top",
+                            tint = if (allPinned) accentColor else primaryTextColor
+                        )
+                    }
+                    IconButton(onClick = onMuteClick) {
+                        Icon(
+                            imageVector = if (allMuted) Icons.Outlined.Notifications else Icons.Outlined.NotificationsOff,
+                            contentDescription = if (allMuted) "Unmute" else "Mute notifications",
+                            tint = if (allMuted) accentColor else primaryTextColor
+                        )
+                    }
+                    IconButton(onClick = onDeleteClick) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete",
+                            tint = colors.error
+                        )
+                    }
                 }
             }
         } else {

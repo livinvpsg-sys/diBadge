@@ -1,83 +1,40 @@
 package com.fabxdi.dibadge.util
 
 import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.RectF
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.qrcode.QRCodeWriter
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 
+/**
+ * Makes a real, scannable QR code (ZXing). Black modules on white, 2-module quiet zone.
+ * High error correction, so a dot or logo drawn over the middle does not stop it scanning.
+ */
 object QrCodeGenerator {
 
     fun generateQrBitmap(payload: String, sizePx: Int = 512): Bitmap {
-        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        canvas.drawColor(Color.WHITE)
-
-        val paint = Paint().apply {
-            isAntiAlias = true
-            color = Color.BLACK
-            style = Paint.Style.FILL
+        // An empty text cannot be encoded; give a blank tile instead of crashing
+        if (payload.isBlank()) {
+            return Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.WHITE) }
         }
-
-        val matrixSize = 25
-        val cellSize = sizePx.toFloat() / matrixSize
-        val margin = 2
-
-        val matrix = Array(matrixSize) { BooleanArray(matrixSize) }
-
-        // Finder Pattern 1: Top-Left
-        drawFinderPattern(matrix, 0, 0)
-        // Finder Pattern 2: Top-Right
-        drawFinderPattern(matrix, matrixSize - 7, 0)
-        // Finder Pattern 3: Bottom-Left
-        drawFinderPattern(matrix, 0, matrixSize - 7)
-
-        // Timing Patterns
-        for (i in 8 until matrixSize - 8) {
-            matrix[6][i] = (i % 2 == 0)
-            matrix[i][6] = (i % 2 == 0)
-        }
-
-        // Encode payload bits deterministically into matrix
-        val hash = payload.hashCode()
-        var bitIndex = 0
-        val bytes = payload.toByteArray()
-
-        for (row in 8 until matrixSize - 1) {
-            for (col in 8 until matrixSize - 1) {
-                if (row == 6 || col == 6) continue
-                val byteVal = if (bitIndex / 8 < bytes.size) bytes[bitIndex / 8].toInt() else hash
-                val bit = ((byteVal shr (bitIndex % 8)) and 1) == 1
-                matrix[row][col] = bit
-                bitIndex++
+        val hints = mapOf(
+            EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.H,
+            EncodeHintType.CHARACTER_SET to "UTF-8",
+            EncodeHintType.MARGIN to 2
+        )
+        val matrix = QRCodeWriter().encode(payload, BarcodeFormat.QR_CODE, sizePx, sizePx, hints)
+        val w = matrix.width
+        val h = matrix.height
+        val pixels = IntArray(w * h)
+        for (y in 0 until h) {
+            val row = y * w
+            for (x in 0 until w) {
+                pixels[row + x] = if (matrix.get(x, y)) Color.BLACK else Color.WHITE
             }
         }
-
-        // Draw Matrix to Canvas
-        for (r in 0 until matrixSize) {
-            for (c in 0 until matrixSize) {
-                if (matrix[r][c]) {
-                    val left = c * cellSize
-                    val top = r * cellSize
-                    val right = left + cellSize
-                    val bottom = top + cellSize
-                    canvas.drawRect(left, top, right, bottom, paint)
-                }
-            }
-        }
-
+        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        bitmap.setPixels(pixels, 0, w, 0, 0, w, h)
         return bitmap
-    }
-
-    private fun drawFinderPattern(matrix: Array<BooleanArray>, startR: Int, startC: Int) {
-        for (r in 0 until 7) {
-            for (c in 0 until 7) {
-                val isBorder = (r == 0 || r == 6 || c == 0 || c == 6)
-                val isCenter = (r in 2..4 && c in 2..4)
-                if (isBorder || isCenter) {
-                    matrix[startR + r][startC + c] = true
-                }
-            }
-        }
     }
 }

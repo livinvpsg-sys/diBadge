@@ -111,6 +111,9 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
+    // QR Code Generator
+    implementation("com.google.zxing:core:3.5.3")
+
     implementation("org.osmdroid:osmdroid-android:6.1.20")
     implementation("androidx.emoji2:emoji2-emojipicker:1.5.0")
 }

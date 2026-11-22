@@ -25,7 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fabxdi.dibadge.data.FormSigner
-import com.fabxdi.dibadge.ui.home.QrScannerScreen
+import com.fabxdi.dibadge.ui.home.qr.QrScannerScreen
 import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.UserColorUtils
 import com.fabxdi.dibadge.viewmodel.GroupMember

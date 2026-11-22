@@ -31,7 +31,8 @@ data class ConnectionItem(
     val status: String = "connected", // "connected", "received", "sent"
     val timestamp: Long = System.currentTimeMillis(),
     val country: String = "", // ISO code, only filled for people found by search / suggestions
-    val connectedAt: Long = 0L // when the request was accepted; 0 for older connections
+    val connectedAt: Long = 0L, // when the request was accepted; 0 for older connections
+    val badgeNumber: String = ""
 )
 
 class ConnectionsViewModel : ViewModel() {
@@ -279,6 +280,7 @@ class ConnectionsViewModel : ViewModel() {
             organization = live.organization,
             role = live.role,
             bio = live.bio,
+            badgeNumber = live.badgeNumber,
             country = live.country.ifBlank { country },
             photoUrl = live.photoUrl.ifBlank { photoUrl }
         )
@@ -322,6 +324,7 @@ class ConnectionsViewModel : ViewModel() {
         organization = getString("organization") ?: getString("company") ?: "",
         role = getString("role") ?: getString("jobTitle") ?: "",
         bio = getString("bio") ?: "",
+        badgeNumber = getString("badgeNumber") ?: "",
         photoUrl = getString("photoUrl") ?: getString("photoURL") ?: "",
         status = "none",
         country = getString("country") ?: ""

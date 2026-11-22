@@ -50,6 +50,30 @@
             </intent-filter>
         </activity>
 
+        <!-- Opens the app from an invite link: dibadge://u/CODE or the web link from the Worker -->
+        <activity
+            android:name="com.fabxdi.dibadge.ui.home.qr.InviteLinkActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:noHistory="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="dibadge" android:host="u" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="dibadge-push.dibadge.workers.dev"
+                    android:pathPrefix="/u/" />
+            </intent-filter>
+        </activity>
+
         <!-- The call screen. Shows over the lock screen when someone calls. -->
         <activity
             android:name="com.fabxdi.dibadge.call.CallActivity"

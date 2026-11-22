@@ -56,8 +56,11 @@ import com.fabxdi.dibadge.ui.inbox.InboxScreen
 import com.fabxdi.dibadge.ui.inbox.MessageDetailScreen
 import com.fabxdi.dibadge.viewmodel.InboxViewModel
 import com.fabxdi.dibadge.ui.home.home_entry.chat.ChatScreen
-import com.fabxdi.dibadge.ui.home.QrScannerScreen
-import com.fabxdi.dibadge.ui.home.MyQrCodeScreen
+import com.fabxdi.dibadge.ui.home.qr.MyQrCodeScreen
+import com.fabxdi.dibadge.ui.home.qr.PendingInvite
+import com.fabxdi.dibadge.ui.home.qr.QrScannerScreen
+import com.fabxdi.dibadge.ui.home.qr.ScannedPersonSheet
+import com.fabxdi.dibadge.ui.home.qr.rememberMyQrCode
 import com.fabxdi.dibadge.ui.activity.ActivityScreen
 import com.fabxdi.dibadge.ui.my_credentials.MyCredentialsScreen
 import com.fabxdi.dibadge.ui.my_forms.MyFormsScreen
@@ -115,7 +118,6 @@ fun MainDashboard(
     var homeSearchQuery by remember { mutableStateOf("") }
     var homeFilter by remember { mutableStateOf(0) } // 0 All, 1 Unread, 2 Groups
     var showQrScanner by remember { mutableStateOf(false) }
-    var showQrSheet by remember { mutableStateOf(false) }
     var showNewGroupSheet by remember { mutableStateOf(false) }
     var selectedEntries by remember { mutableStateOf(setOf<HomeEntryEntity>()) }
     var showDeleteEntryDialog by remember { mutableStateOf(false) }
@@ -132,15 +134,25 @@ fun MainDashboard(
     val chatPhotos by previewsVm.photos.collectAsState()
     val homeContext = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) { com.fabxdi.dibadge.util.ChatDrafts.load(homeContext) }
+    // Pinned and muted chats
+    LaunchedEffect(Unit) {
+        com.fabxdi.dibadge.util.ChatPins.load(homeContext)
+        com.fabxdi.dibadge.util.ChatMutes.start()
+    }
+    val pinnedIds by com.fabxdi.dibadge.util.ChatPins.pins.collectAsState()
+    val mutedIds by com.fabxdi.dibadge.util.ChatMutes.muted.collectAsState()
     // Tidy up: remove the empty "diBadge" notification left after the last real one was opened or cleared
     LaunchedEffect(Unit) { com.fabxdi.dibadge.util.NotifyGroup.cleanup(homeContext) }
     val chatDrafts by com.fabxdi.dibadge.util.ChatDrafts.drafts.collectAsState()
     LaunchedEffect(homeEntries) { previewsVm.watch(homeEntries.map { it.id.toString() }) }
-    val sortedEntries = remember(homeEntries, previews) {
-        homeEntries.sortedByDescending {
-            previews[it.id.toString()]?.at
-                ?: it.timestamp.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-        }
+    // Pinned chats first, then everything newest first
+    val sortedEntries = remember(homeEntries, previews, pinnedIds) {
+        homeEntries.sortedWith(
+            compareByDescending<HomeEntryEntity> { it.id.toString() in pinnedIds }.thenByDescending {
+                previews[it.id.toString()]?.at
+                    ?: it.timestamp.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+            }
+        )
     }
 
     // Opens the chat when a push notification was tapped
@@ -191,6 +203,9 @@ fun MainDashboard(
     var showSettingsScreen by remember { mutableStateOf(false) }
     var showCallsScreen by remember { mutableStateOf(false) }
     val missedCallCount = com.fabxdi.dibadge.call.rememberMissedCallCount()
+    val myQrCode = rememberMyQrCode()
+    // An invite link was opened (dibadge://u/CODE): show who it is
+    val pendingInvite by PendingInvite.code.collectAsState()
     var showQrScannerScreen by remember { mutableStateOf(false) }
     var showMyQrCodeScreen by remember { mutableStateOf(false) }
     var showOvertimeForm by remember { mutableStateOf(false) }
@@ -198,7 +213,11 @@ fun MainDashboard(
 
     if (showQrScannerScreen) {
         QrScannerScreen(
-            userCode = "7K2M9QX4B",
+            userCode = myQrCode,
+            onMyQrClick = {
+                showQrScannerScreen = false
+                showMyQrCodeScreen = true
+            },
             onBack = { showQrScannerScreen = false }
         )
         return
@@ -207,7 +226,11 @@ fun MainDashboard(
     if (showMyQrCodeScreen) {
         MyQrCodeScreen(
             userFullName = fullName,
-            userCode = "7K2M9QX4B",
+            photoUrl = photoUrl,
+            onScan = {
+                showMyQrCodeScreen = false
+                showQrScannerScreen = true
+            },
             onBack = { showMyQrCodeScreen = false }
         )
         return
@@ -433,10 +456,26 @@ fun MainDashboard(
                                 onMenuClick = { scope.launch { drawerState.open() } },
                                 onCallsClick = { showCallsScreen = true },
                                 missedCallCount = missedCallCount,
-                                onQrClick = { showQrSheet = true },
+                                onQrClick = { showQrScannerScreen = true },
                                 selectedCount = selectedEntries.size,
                                 onDeleteClick = { showDeleteEntryDialog = true },
-                                onClearSelection = { selectedEntries = emptySet() }
+                                onClearSelection = { selectedEntries = emptySet() },
+                                allPinned = selectedEntries.isNotEmpty() && selectedEntries.all { it.id.toString() in pinnedIds },
+                                allMuted = selectedEntries.isNotEmpty() && selectedEntries.all { it.id.toString() in mutedIds },
+                                onPinClick = {
+                                    val ids = selectedEntries.map { it.id.toString() }
+                                    val unpin = selectedEntries.all { it.id.toString() in pinnedIds }
+                                    com.fabxdi.dibadge.util.ChatPins.set(homeContext, ids, !unpin)
+                                    android.widget.Toast.makeText(homeContext, if (unpin) "Unpinned" else "Pinned to top", android.widget.Toast.LENGTH_SHORT).show()
+                                    selectedEntries = emptySet()
+                                },
+                                onMuteClick = {
+                                    val ids = selectedEntries.map { it.id.toString() }
+                                    val unmute = selectedEntries.all { it.id.toString() in mutedIds }
+                                    if (unmute) com.fabxdi.dibadge.util.ChatMutes.unmute(ids) else com.fabxdi.dibadge.util.ChatMutes.mute(ids)
+                                    android.widget.Toast.makeText(homeContext, if (unmute) "Notifications on" else "Notifications muted", android.widget.Toast.LENGTH_SHORT).show()
+                                    selectedEntries = emptySet()
+                                }
                             )
                         }
                     },
@@ -530,6 +569,8 @@ fun MainDashboard(
                                                             photoUrl = chatPhotos[entry.id.toString()].orEmpty(),
                                                             draft = chatDrafts[entry.id.toString()].orEmpty(),
                                                             colorKey = otherUids[entry.id.toString()].orEmpty(),
+                                                            isPinned = entry.id.toString() in pinnedIds,
+                                                            isMuted = entry.id.toString() in mutedIds,
                                                             isSelected = selectedEntries.contains(entry),
                                                             onClick = {
                                                                 if (selectedEntries.isNotEmpty()) {
@@ -696,17 +737,11 @@ fun MainDashboard(
         )
     }
 
-    if (showQrSheet) {
-        QrButtonSheet(
-            onScanQrClick = {
-                showQrSheet = false
-                showQrScannerScreen = true
-            },
-            onMyQrClick = {
-                showQrSheet = false
-                showMyQrCodeScreen = true
-            },
-            onDismiss = { showQrSheet = false }
+    pendingInvite?.let { code ->
+        ScannedPersonSheet(
+            code = code,
+            ownCode = myQrCode,
+            onClose = { PendingInvite.code.value = null }
         )
     }
 
