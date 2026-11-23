@@ -258,7 +258,50 @@ fun ConnectionProfileScreen(
                             }
                         }
 
-                        Spacer(Modifier.height(14.dp))
+                        // Actions sit right under the name, role and date
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            when {
+                                connected -> {
+                                    ProfileBarPill("Chat", accent, Modifier.weight(1f), true, onChat) {
+                                        ChatFilledIcon(tint = accent, contentDescription = null, size = 18)
+                                    }
+                                    ProfileBarPill("Call", accent, Modifier.weight(1f), true, { onCall(false) }) {
+                                        Icon(Icons.Outlined.Call, null, tint = accent, modifier = Modifier.size(18.dp))
+                                    }
+                                    ProfileBarPill("Video", accent, Modifier.weight(1f), true, { onCall(true) }) {
+                                        Icon(Icons.Outlined.Videocam, null, tint = accent, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                                received -> {
+                                    ProfileBarPill("Decline", secondary, Modifier.weight(1f), true, onDecline) {
+                                        Icon(Icons.Outlined.Close, null, tint = secondary, modifier = Modifier.size(18.dp))
+                                    }
+                                    ProfileBarPill("Accept", accent, Modifier.weight(1f), true, onAccept) {
+                                        Icon(Icons.Outlined.Check, null, tint = accent, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                                sent -> {
+                                    ProfileBarPill("Pending", secondary, Modifier.weight(1f), false, {}) {
+                                        Icon(Icons.Outlined.Schedule, null, tint = secondary, modifier = Modifier.size(18.dp))
+                                    }
+                                    ProfileBarPill("Cancel request", accent, Modifier.weight(1f), true, onCancel) {
+                                        Icon(Icons.Outlined.Close, null, tint = accent, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                                else -> {
+                                    ProfileBarPill("Connect", accent, Modifier.width(160.dp), true, onConnect) {
+                                        Icon(Icons.Outlined.PersonAdd, null, tint = accent, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(16.dp))
                         if (item.bio.isNotBlank()) ProfileDetailRow(Icons.Outlined.Info, "About", item.bio, primary, secondary)
                         if (country.isNotBlank()) ProfileDetailRow(Icons.Outlined.LocationOn, "Location", country, primary, secondary)
                         if (connected && item.badgeNumber.isNotBlank()) {
@@ -305,62 +348,16 @@ fun ConnectionProfileScreen(
                                 }
                             }
                         }
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.navigationBarsPadding().height(16.dp))
                     }
                 }
 
-                // The actions are always pinned at the bottom
-                Column(modifier = Modifier.fillMaxWidth().background(pageBg)) {
-                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(secondary.copy(alpha = 0.2f)))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = if (!connected && !received && !sent) Arrangement.Center else Arrangement.spacedBy(10.dp)
-                    ) {
-                        when {
-                            connected -> {
-                                ProfileBarPill("Chat", accent, Modifier.weight(1f), true, onChat) {
-                                    ChatFilledIcon(tint = accent, contentDescription = null, size = 18)
-                                }
-                                ProfileBarPill("Call", accent, Modifier.weight(1f), true, { onCall(false) }) {
-                                    Icon(Icons.Outlined.Call, null, tint = accent, modifier = Modifier.size(18.dp))
-                                }
-                                ProfileBarPill("Video", accent, Modifier.weight(1f), true, { onCall(true) }) {
-                                    Icon(Icons.Outlined.Videocam, null, tint = accent, modifier = Modifier.size(18.dp))
-                                }
-                            }
-                            received -> {
-                                ProfileBarPill("Decline", secondary, Modifier.weight(1f), true, onDecline) {
-                                    Icon(Icons.Outlined.Close, null, tint = secondary, modifier = Modifier.size(18.dp))
-                                }
-                                ProfileBarPill("Accept", accent, Modifier.weight(1f), true, onAccept) {
-                                    Icon(Icons.Outlined.Check, null, tint = accent, modifier = Modifier.size(18.dp))
-                                }
-                            }
-                            sent -> {
-                                ProfileBarPill("Pending", secondary, Modifier.weight(1f), false, {}) {
-                                    Icon(Icons.Outlined.Schedule, null, tint = secondary, modifier = Modifier.size(18.dp))
-                                }
-                                ProfileBarPill("Cancel request", accent, Modifier.weight(1f), true, onCancel) {
-                                    Icon(Icons.Outlined.Close, null, tint = accent, modifier = Modifier.size(18.dp))
-                                }
-                            }
-                            else -> {
-                                ProfileBarPill("Connect", accent, Modifier.width(160.dp), true, onConnect) {
-                                    Icon(Icons.Outlined.PersonAdd, null, tint = accent, modifier = Modifier.size(18.dp))
-                                }
-                            }
-                        }
-                    }
-                }
             }
         }
     }
 }
 
-/** Outlined action pill pinned at the bottom of the profile screen. */
+/** Outlined action pill shown under the date on the profile screen. */
 @Composable
 private fun ProfileBarPill(
     label: String,

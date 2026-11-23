@@ -3,6 +3,8 @@ package com.fabxdi.dibadge.ui.settings
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -23,13 +25,13 @@ import com.fabxdi.dibadge.ui.theme.DiBadgeTheme
 import com.fabxdi.dibadge.util.FilePickerUtils
 import com.fabxdi.dibadge.util.SubscriptionManager
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
-import com.google.firebase.firestore.FieldValue
-import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun DataPrivacyScreen(
@@ -45,6 +47,27 @@ fun DataPrivacyScreen(
     var cacheBytes by remember { mutableLongStateOf(0L) }
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
     var isDeleting by remember { mutableStateOf(false) }
+    var isExporting by remember { mutableStateOf(false) }
+    var pendingExport by remember { mutableStateOf<String?>(null) }
+
+    // The person picks where to save the file (Downloads is the default), so no storage permission is needed
+    val saveExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        val text = pendingExport
+        pendingExport = null
+        if (uri == null || text == null) return@rememberLauncherForActivityResult
+        coroutineScope.launch {
+            val saved = withContext(Dispatchers.IO) {
+                try {
+                    context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) } != null
+                } catch (e: Exception) {
+                    false
+                }
+            }
+            snackbarHostState.showSnackbar(if (saved) "Your data was saved" else "Could not save the file. Try again")
+        }
+    }
 
     LaunchedEffect(Unit) {
         cacheBytes = withContext(Dispatchers.IO) {
@@ -52,29 +75,61 @@ fun DataPrivacyScreen(
         }
     }
 
+    fun exportData() {
+        val user = FirebaseAuth.getInstance().currentUser
+        if (user == null) {
+            coroutineScope.launch { snackbarHostState.showSnackbar("Sign in to download your data") }
+            return
+        }
+        isExporting = true
+        AccountDataExport.build(user.uid, user.email.orEmpty().ifBlank { userEmail }) { json ->
+            isExporting = false
+            if (json == null) {
+                coroutineScope.launch { snackbarHostState.showSnackbar("Could not read your data. Check your connection") }
+            } else {
+                pendingExport = json
+                val day = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+                saveExportLauncher.launch("dibadge-data-$day.json")
+            }
+        }
+    }
+
     fun deleteAccount() {
         val user = FirebaseAuth.getInstance().currentUser ?: return
         isDeleting = true
-        // The request lets a Cloud Function remove this user's Firestore and Storage data
-        val ref = FirebaseFirestore.getInstance().collection("accountDeletionRequests").document(user.uid)
-        ref.set(mapOf("requestedAt" to FieldValue.serverTimestamp()))
-            .addOnSuccessListener {
-                user.delete()
-                    .addOnSuccessListener {
+        // A fresh token, then the Worker removes the data and the sign-in on the server
+        user.getIdToken(true)
+            .addOnSuccessListener { tokenResult ->
+                val token = tokenResult.token
+                coroutineScope.launch {
+                    // Photo, signature and other files first: after the account is gone Storage refuses the request
+                    AccountDeletion.deleteStorageFiles(user.uid)
+                    if (token == null) {
                         isDeleting = false
-                        onDeleteAccountConfirmed()
+                        snackbarHostState.showSnackbar("Could not delete your account. Try again")
+                        return@launch
                     }
-                    .addOnFailureListener { e ->
-                        ref.delete()
-                        isDeleting = false
-                        coroutineScope.launch {
-                            snackbarHostState.showSnackbar(
-                                if (e is FirebaseAuthRecentLoginRequiredException)
-                                    "For your security, sign out and sign in again, then delete your account"
-                                else "Could not delete your account. Try again"
-                            )
+                    val (code, body) = AccountDeletion.request(token)
+                    isDeleting = false
+                    when {
+                        code in 200..299 -> {
+                            withContext(Dispatchers.IO) {
+                                // Files kept only on this phone: chat media, My Credentials files, the profile photo copy
+                                File(context.filesDir, "media").deleteRecursively()
+                                File(context.filesDir, "documents").deleteRecursively()
+                                File(context.filesDir, "profile_photo.jpg").delete()
+                            }
+                            FirebaseAuth.getInstance().signOut()
+                            onDeleteAccountConfirmed()
                         }
+                        code == 403 && body.contains("recent_login_required") ->
+                            snackbarHostState.showSnackbar("For your security, sign out and sign in again, then delete your account")
+                        code == -1 ->
+                            snackbarHostState.showSnackbar("Could not reach the server. Check your connection")
+                        else ->
+                            snackbarHostState.showSnackbar("Could not delete your account. Try again")
                     }
+                }
             }
             .addOnFailureListener {
                 isDeleting = false
@@ -185,24 +240,9 @@ fun DataPrivacyScreen(
             SettingsCard {
                 SettingsRow(
                     title = "Download my data",
-                    subtitle = "Get a copy of your profile and activity",
+                    subtitle = if (isExporting) "Preparing…" else "Save a copy of your profile and activity to your phone",
                     showChevron = false,
-                    onClick = {
-                        val uid = FirebaseAuth.getInstance().currentUser?.uid
-                        val targetEmail = userEmail.ifBlank { "your email" }
-                        if (uid == null) {
-                            coroutineScope.launch { snackbarHostState.showSnackbar("Sign in to request your data") }
-                        } else {
-                            FirebaseFirestore.getInstance().collection("dataExportRequests").document(uid)
-                                .set(mapOf("requestedAt" to FieldValue.serverTimestamp()))
-                                .addOnSuccessListener {
-                                    coroutineScope.launch { snackbarHostState.showSnackbar("Request sent. We will email your data to $targetEmail") }
-                                }
-                                .addOnFailureListener {
-                                    coroutineScope.launch { snackbarHostState.showSnackbar("Could not send the request. Try again") }
-                                }
-                        }
-                    }
+                    onClick = { if (!isExporting) exportData() }
                 )
 
                 HorizontalDivider(thickness = 1.dp, color = colors.outline)
@@ -299,7 +339,10 @@ fun DataPrivacyScreen(
             },
             text = {
                 Text(
-                    text = "This permanently deletes your account and your data. This cannot be undone.",
+                    text = "This permanently deletes your profile, photo, signature, tasks, leaves, claims, credentials, connections and blocked list, and frees your username.\n\n" +
+                            "Files saved on this phone (media and credential files) are removed too.\n\n" +
+                            "Messages you already sent stay with the people and groups who received them.\n\n" +
+                            "This cannot be undone. You can download your data first.",
                     fontSize = 14.sp,
                     color = secondaryTextColor
                 )
